@@ -447,24 +447,55 @@ const filterExercises = () => {
   });
 };
 
+const renderExRows = items => {
+  if (!items.length) {
+    return '<p class="t2" style="padding:16px 4px;text-align:center">No exercises found</p>';
+  }
+  return items.map(e => `
+    <div class="ex-row" data-a="libex" data-id="${esc(e.id)}">
+      <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+      <div class="ex-info">
+        <div class="ex-name">${esc(e.name)}</div>
+        <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+      </div>
+    </div>
+  `).join('');
+};
+
+function updateLibResults() {
+  const exList = $('#ex-list');
+  if (!exList) return;
+  const filtered = filterExercises();
+  const visible = filtered.slice(0, libPageSize);
+
+  exList.innerHTML = renderExRows(visible);
+
+  const countEl = $('#ex-count');
+  if (countEl) countEl.textContent = `${filtered.length} exercises`;
+
+  const moreContainer = $('#ex-more-container');
+  if (moreContainer) {
+    moreContainer.innerHTML = visible.length < filtered.length
+      ? `<button class="btn s" data-a="libmore">Load more (${filtered.length - visible.length} remaining)</button>`
+      : '';
+  }
+
+  const searchInput = $('#lib-search-input') || document.querySelector('input[data-f="libsearch"]');
+  if (searchInput && document.activeElement === searchInput) {
+    searchInput.focus({ preventScroll: true });
+  }
+}
+
 function vLib() {
   const filtered = filterExercises();
   const visible = filtered.slice(0, libPageSize);
 
   return `<h1>Library</h1>` +
-    `<input class="txt" placeholder="Search 1,300+ exercises..." data-f="libsearch" value="${esc(libQuery)}">` +
+    `<input id="lib-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="libsearch" value="${esc(libQuery)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">` +
     `<div class="chips">${BP_CATEGORIES.map(c => `<button class="chip ${libCategory === c ? 'on' : ''}" data-a="libcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div>` +
-    `<div class="row" style="margin-bottom:12px"><label class="t2 sm" style="flex:1">Equipment:<select data-f="libeq">${EQ_OPTIONS.map(eq => `<option value="${esc(eq)}" ${libEquipment === eq ? 'selected' : ''}>${esc(eq.toUpperCase())}</option>`).join('')}</select></label><span class="t2 sm" style="align-self:flex-end;margin-bottom:10px">${filtered.length} exercises</span></div>` +
-    `<div class="card" style="padding:0 12px">${visible.map(e => `
-      <div class="ex-row" data-a="libex" data-id="${esc(e.id)}">
-        <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
-        <div class="ex-info">
-          <div class="ex-name">${esc(e.name)}</div>
-          <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
-        </div>
-      </div>
-    `).join('')}</div>` +
-    (visible.length < filtered.length ? `<button class="btn s" data-a="libmore">Load more (${filtered.length - visible.length} remaining)</button>` : '');
+    `<div class="row" style="margin-bottom:12px"><label class="t2 sm" style="flex:1">Equipment:<select data-f="libeq">${EQ_OPTIONS.map(eq => `<option value="${esc(eq)}" ${libEquipment === eq ? 'selected' : ''}>${esc(eq.toUpperCase())}</option>`).join('')}</select></label><span id="ex-count" class="t2 sm" style="align-self:flex-end;margin-bottom:10px">${filtered.length} exercises</span></div>` +
+    `<div id="ex-list" class="card" style="padding:0 12px">${renderExRows(visible)}</div>` +
+    `<div id="ex-more-container">${visible.length < filtered.length ? `<button class="btn s" data-a="libmore">Load more (${filtered.length - visible.length} remaining)</button>` : ''}</div>`;
 }
 
 // 4. Interactive Calendar View
@@ -883,13 +914,20 @@ document.addEventListener('click', e => {
     case 'rskip': stopRest(); return;
 
     // Library category and pagination
-    case 'libcat':
+    case 'libcat': {
       libCategory = t.dataset.cat;
       libPageSize = 40;
-      break;
-    case 'libmore':
+      document.querySelectorAll('.chips button[data-a="libcat"]').forEach(btn => {
+        btn.classList.toggle('on', btn.dataset.cat === libCategory);
+      });
+      updateLibResults();
+      return;
+    }
+    case 'libmore': {
       libPageSize += 40;
-      break;
+      updateLibResults();
+      return;
+    }
     case 'libex': {
       const ex = X(id);
       showExerciseModal(ex);
@@ -1061,19 +1099,22 @@ const handleFieldUpdate = t => {
   const i = t.dataset.i, f = t.dataset.f;
 
   if (f === 'libsearch') {
+    libQuery = t.value;
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      libQuery = t.value;
       libPageSize = 40;
-      render();
-    }, 150);
+      updateLibResults();
+      if (t && typeof t.focus === 'function') {
+        t.focus({ preventScroll: true });
+      }
+    }, 200);
     return;
   }
 
   if (f === 'libeq') {
     libEquipment = t.value;
     libPageSize = 40;
-    render();
+    updateLibResults();
     return;
   }
 
