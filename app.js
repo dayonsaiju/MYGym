@@ -92,11 +92,12 @@ let S = {
   weights: [],
   cfg: { rest: 90, flash: true },
   sched: {},
-  act: null
+  act: null,
+  deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '4.0.0';
-const SHELL_VERSION = 'mygym-v4.0.0-guided';
+const APP_VERSION = '4.1.0';
+const SHELL_VERSION = 'mygym-v4.1.0-smart';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -404,6 +405,269 @@ const toast = (m, u) => {
   tt = setTimeout(() => { t.className = ''; }, 4000);
 };
 
+const getStartOfWeek = (d = new Date()) => {
+  const date = new Date(d);
+  const day = date.getDay(); // 0 is Sun, 1 is Mon
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date.getTime();
+};
+
+const setVolume = s => (Number(s.w) > 0 ? Number(s.w) : 1) * (Number(s.r) || 0);
+const vol = l => Math.round(l.ex.reduce((a, x) => a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => b + (Number(s.w) || 0) * (Number(s.r) || 0), 0) : 0), 0));
+
+// ---- 100% Offline Deterministic Recovery & ACWR Engine ----
+const calcWorkload = (logs = S.logs) => {
+  const now = Date.now();
+  const dayMs = 86400000;
+  const acuteCutoff = now - 7 * dayMs;
+  const chronicCutoff = now - 28 * dayMs;
+
+  let acuteVolume = 0;
+  let chronicVolumeTotal = 0;
+  let acuteWorkouts = 0;
+  let chronicWorkouts = 0;
+
+  for (const l of logs) {
+    if (!l.date || !Array.isArray(l.ex)) continue;
+    const lDate = typeof l.date === 'number' ? l.date : new Date(l.date).getTime();
+    if (isNaN(lDate)) continue;
+
+    let logVol = 0;
+    for (const x of l.ex) {
+      if (!Array.isArray(x.sets)) continue;
+      for (const s of x.sets) {
+        logVol += setVolume(s);
+      }
+    }
+
+    if (lDate >= acuteCutoff && lDate <= now + 3600000) {
+      acuteVolume += logVol;
+      acuteWorkouts++;
+    }
+    if (lDate >= chronicCutoff && lDate <= now + 3600000) {
+      chronicVolumeTotal += logVol;
+      chronicWorkouts++;
+    }
+  }
+
+  // Chronic Workload = Average weekly volume over the trailing 28 days (4 weeks)
+  const chronicWeeklyAvg = Math.round(chronicVolumeTotal / 4);
+  acuteVolume = Math.round(acuteVolume);
+
+  let acwr = 0;
+  if (chronicWeeklyAvg > 0) {
+    acwr = Math.round((acuteVolume / chronicWeeklyAvg) * 100) / 100;
+  } else if (acuteVolume > 0) {
+    acwr = 1.0;
+  }
+
+  let status = 'Optimal Progress Zone 🟢';
+  let zoneCode = 'optimal';
+  let color = 'var(--gn)';
+  let desc = 'Balanced for steady progressive overload';
+
+  if (acwr < 0.8) {
+    status = 'Recovery / Underreaching Zone 🔵';
+    zoneCode = 'under';
+    color = 'var(--bl)';
+    desc = 'Low acute fatigue · Volume progression recommended';
+  } else if (acwr <= 1.3) {
+    status = 'Optimal Progress Zone 🟢';
+    zoneCode = 'optimal';
+    color = 'var(--gn)';
+    desc = 'Optimal progress zone · High adaptation with low fatigue';
+  } else if (acwr <= 1.5) {
+    status = 'High Load Warning 🟡';
+    zoneCode = 'warning';
+    color = 'var(--am)';
+    desc = 'High acute load · Monitor fatigue accumulation';
+  } else {
+    status = 'Overreaching / Deload Needed 🔴';
+    zoneCode = 'danger';
+    color = 'var(--rd)';
+    desc = 'Elevated fatigue (>1.5× baseline) · Deload recommended';
+  }
+
+  return {
+    acuteVolume,
+    chronicWeeklyAvg,
+    acwr,
+    status,
+    zoneCode,
+    color,
+    desc,
+    acuteWorkouts,
+    chronicWorkouts
+  };
+};
+
+const checkDeloadStatus = (logs = S.logs) => {
+  const workload = calcWorkload(logs);
+  const now = Date.now();
+  const dayMs = 86400000;
+
+  // Condition 1: ACWR > 1.5
+  if (workload.acwr > 1.5) {
+    return {
+      recommended: true,
+      reason: 'ACWR Fatigue Spike (>1.5)',
+      detail: `Acute workload (${workload.acuteVolume.toLocaleString()} kg) is ${workload.acwr}× your chronic baseline. Deload recommended to avert overtraining.`
+    };
+  }
+
+  // Condition 2: 4+ consecutive weeks without a rest/deload week
+  if (logs.length >= 8) {
+    const w1 = logs.filter(l => l.date >= now - 7 * dayMs && l.date <= now);
+    const w2 = logs.filter(l => l.date >= now - 14 * dayMs && l.date < now - 7 * dayMs);
+    const w3 = logs.filter(l => l.date >= now - 21 * dayMs && l.date < now - 14 * dayMs);
+    const w4 = logs.filter(l => l.date >= now - 28 * dayMs && l.date < now - 21 * dayMs);
+    const all4WeeksActive = [w1, w2, w3, w4].every(w => w.length >= 2);
+    const hasAnyDeload = [w1, w2, w3, w4].some(w => w.some(l => l.isDeload));
+    if (all4WeeksActive && !hasAnyDeload) {
+      return {
+        recommended: true,
+        reason: '4 Consecutive Hard Weeks',
+        detail: 'You have trained 4 straight weeks without a recovery week. A planned deload now promotes muscle supercompensation.'
+      };
+    }
+  }
+
+  // Condition 3: Stagnant progressive overload with consecutive RIR 0 sets across 3 workouts
+  if (logs.length >= 3) {
+    const last3 = logs.slice(-3);
+    const allHadFailure = last3.every(l =>
+      l.ex && l.ex.some(x => x.sets && x.sets.some(s => s.rir === 0 || s.rpe >= 10))
+    );
+    const hasStalledRoutines = S.routines && S.routines.some(r => r.ex && r.ex.some(x => (x.stalls || 0) >= 2));
+    const v0 = vol(last3[0]), v1 = vol(last3[1]), v2 = vol(last3[2]);
+    const stagnantVolume = v2 <= v1 && v1 <= v0;
+    if (allHadFailure && (hasStalledRoutines || stagnantVolume)) {
+      return {
+        recommended: true,
+        reason: 'Stagnant Overload with Repeated Failure',
+        detail: 'Consecutive sessions reached absolute failure (RIR 0) with plateaus. CNS fatigue is masking true strength.'
+      };
+    }
+  }
+
+  return { recommended: false, reason: '', detail: '' };
+};
+
+const getWeeklyMuscleVolumes = (logs = S.logs) => {
+  const startOfWeek = getStartOfWeek();
+  const groups = {
+    Chest: 0,
+    Back: 0,
+    Legs: 0,
+    Shoulders: 0,
+    Arms: 0
+  };
+
+  for (const l of logs) {
+    if (!l.date || !Array.isArray(l.ex)) continue;
+    const lDate = typeof l.date === 'number' ? l.date : new Date(l.date).getTime();
+    if (isNaN(lDate) || lDate < startOfWeek) continue;
+
+    for (const x of l.ex) {
+      if (!Array.isArray(x.sets)) continue;
+      const count = x.sets.length;
+      const exInfo = X(x.id);
+      const g = exInfo.g;
+      if (groups[g] !== undefined) {
+        groups[g] += count;
+      }
+    }
+  }
+
+  // Thresholds: MEV: 8-10 sets, MAV: 12-18 sets, MRV: 20-22+ sets
+  return Object.entries(groups).map(([name, sets]) => {
+    let zone = 'Below MEV';
+    let zoneClass = 'vol-low';
+    let color = 'var(--bl)';
+    if (sets >= 10 && sets <= 18) {
+      zone = 'MAV (Optimal)';
+      zoneClass = 'vol-opt';
+      color = 'var(--gn)';
+    } else if (sets > 18 && sets <= 20) {
+      zone = 'Near MRV';
+      zoneClass = 'vol-warn';
+      color = 'var(--am)';
+    } else if (sets > 20) {
+      zone = '> MRV (Danger)';
+      zoneClass = 'vol-danger';
+      color = 'var(--rd)';
+    } else if (sets >= 8) {
+      zone = 'MEV (Maintenance)';
+      zoneClass = 'vol-low';
+      color = 'var(--bl)';
+    }
+
+    return { name, sets, zone, zoneClass, color };
+  });
+};
+
+function showRirPicker(i, j) {
+  const x = S.act?.ex[i];
+  const s = x?.sets[j];
+  if (!s) return;
+  const currentRir = s.rir != null ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
+  const exInfo = X(x.id);
+
+  modal(`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">Set ${j + 1} Intensity (RIR)</h2>
+      <button class="btn s sm-btn" data-a="close">✕</button>
+    </div>
+    <p class="t2 sm" style="margin-bottom:12px"><b>${esc(exInfo.name)}</b> · Reps In Reserve indicates how many more reps you could have performed with strict form before failure (<b>RPE = 10 - RIR</b>).</p>
+    
+    <div class="rir-choices-grid">
+      <button class="rir-choice-card ${currentRir >= 3 ? 'sel' : ''}" data-a="setrir" data-i="${i}" data-j="${j}" data-rir="3">
+        <div class="rir-choice-top">
+          <span class="rir-num-tag rir-3">3+ RIR</span>
+          <span class="rir-rpe-tag">RPE ≤ 7</span>
+        </div>
+        <div class="rir-choice-title">Submaximal / Warmup</div>
+        <div class="rir-choice-desc">3+ reps left. Low neuromuscular strain; speed & form focus.</div>
+      </button>
+
+      <button class="rir-choice-card ${currentRir === 2 ? 'sel' : ''}" data-a="setrir" data-i="${i}" data-j="${j}" data-rir="2">
+        <div class="rir-choice-top">
+          <span class="rir-num-tag rir-2">2 RIR</span>
+          <span class="rir-rpe-tag">RPE 8</span>
+        </div>
+        <div class="rir-choice-title">Hypertrophy Sweet Spot</div>
+        <div class="rir-choice-desc">2 reps left. Optimal mechanical tension with low systemic fatigue.</div>
+      </button>
+
+      <button class="rir-choice-card ${currentRir === 1 ? 'sel' : ''}" data-a="setrir" data-i="${i}" data-j="${j}" data-rir="1">
+        <div class="rir-choice-top">
+          <span class="rir-num-tag rir-1">1 RIR</span>
+          <span class="rir-rpe-tag">RPE 9</span>
+        </div>
+        <div class="rir-choice-title">High Intensity Stimulus</div>
+        <div class="rir-choice-desc">1 rep left. High motor unit recruitment; elevated fatigue cost.</div>
+      </button>
+
+      <button class="rir-choice-card fail ${currentRir === 0 ? 'sel' : ''}" data-a="setrir" data-i="${i}" data-j="${j}" data-rir="0">
+        <div class="rir-choice-top">
+          <span class="rir-num-tag rir-0">0 RIR 💥</span>
+          <span class="rir-rpe-tag">RPE 10</span>
+        </div>
+        <div class="rir-choice-title">Absolute Muscular Failure</div>
+        <div class="rir-choice-desc">Zero reps left. Maximum fatigue generated; flags exercise as high-fatigue.</div>
+      </button>
+    </div>
+
+    ${currentRir != null ? `
+      <div style="margin-top:14px;text-align:center">
+        <button class="btn s sm-btn red" data-a="setrir" data-i="${i}" data-j="${j}" data-rir="clear">Clear Intensity</button>
+      </div>
+    ` : ''}
+  `);
+}
+
 const newSets = (id, n = 3) => {
   const l = lastSet(id);
   const defReps = X(id).t === 't' ? 30 : 8;
@@ -411,6 +675,7 @@ const newSets = (id, n = 3) => {
     w: l ? l.w : 0,
     r: l ? l.r : defReps,
     rpe: '',
+    rir: null,
     done: false
   }));
 };
@@ -436,9 +701,117 @@ const vTrain = () => {
   const todayRoutine = todayRid ? S.routines.find(r => r.id === todayRid) : null;
   const completedToday = S.logs.some(l => dk(l.date) === dk(Date.now()));
 
+  const workload = calcWorkload(S.logs);
+  const deloadInfo = checkDeloadStatus(S.logs);
+  const muscleVolumes = getWeeklyMuscleVolumes(S.logs);
+
   return `<h1>Train</h1>` +
     `<div class="card row"><span><b>${streak()}</b> day streak 🔥</span><span class="t2">${S.logs.length} workouts</span></div>` +
     (S.act ? `<button class="btn" data-a="tab" data-k="work" style="margin-bottom:12px">⚡ Resume Workout: ${esc(S.act.name)}</button>` : '') +
+
+    // Deload Status Card
+    (S.deload && S.deload.active ? `
+      <div class="card deload-active-banner">
+        <div class="row">
+          <div>
+            <div class="deload-badge">⚡ Deload Protocol Active</div>
+            <div class="deload-title">Target sets halved (-50%) · Target load -20%</div>
+            <div class="t2 sm" style="margin-top:4px">Allowing neuromuscular & systemic recovery while preserving muscle mass.</div>
+          </div>
+          <button class="btn s sm-btn" data-a="enddeload" style="border:1px solid rgba(255,255,255,0.3)">End Deload</button>
+        </div>
+      </div>
+    ` : (deloadInfo.recommended ? `
+      <div class="card deload-recommend-card">
+        <div class="row">
+          <div>
+            <div class="deload-badge warn">⚡ Deload Recommended: High Fatigue Detected</div>
+            <div class="deload-title">${esc(deloadInfo.reason)}</div>
+            <div class="t2 sm" style="margin-top:4px">${esc(deloadInfo.detail)}</div>
+          </div>
+        </div>
+        <div class="row g" style="margin-top:10px">
+          <button class="btn" data-a="startdeload">⚡ Start Deload Week (-50% Sets, -20% Wt)</button>
+        </div>
+      </div>
+    ` : '')) +
+
+    // ACWR Recovery Engine Card
+    `<div class="card acwr-card">
+      <div class="row" style="margin-bottom:8px">
+        <div>
+          <div class="acwr-badge-row">
+            <span class="acwr-tag" style="background:${workload.color}22;color:${workload.color};border:1px solid ${workload.color}66">
+              ${esc(workload.status)}
+            </span>
+          </div>
+          <div class="acwr-title" style="margin-top:6px">
+            <b>ACWR: ${workload.acwr.toFixed(2)}</b>
+            <span class="t2 sm"> · ${esc(workload.desc)}</span>
+          </div>
+        </div>
+        ${!S.deload?.active && !deloadInfo.recommended ? `
+          <button class="chip" data-a="startdeload" title="Manually initiate deload protocol" style="font-size:12px;padding:4px 8px;min-height:30px">⚡ Deload</button>
+        ` : ''}
+      </div>
+
+      <div class="acwr-metrics-grid">
+        <div class="acwr-metric">
+          <div class="t2 sm">Acute Load (Last 7 Days)</div>
+          <div class="acwr-metric-val">${workload.acuteVolume.toLocaleString()} <span class="sm">kg</span></div>
+          <div class="t2 sm">${workload.acuteWorkouts} workouts logged</div>
+        </div>
+        <div class="acwr-metric">
+          <div class="t2 sm">Chronic Baseline (4-Wk Avg)</div>
+          <div class="acwr-metric-val">${workload.chronicWeeklyAvg.toLocaleString()} <span class="sm">kg/wk</span></div>
+          <div class="t2 sm">${workload.chronicWorkouts} workouts in 28d</div>
+        </div>
+      </div>
+
+      <div class="acwr-meter-track">
+        <div class="acwr-zone-band under" style="width:33.3%" title="Underreaching (<0.8)"></div>
+        <div class="acwr-zone-band optimal" style="width:25%" title="Optimal Zone (0.8 - 1.3)"></div>
+        <div class="acwr-zone-band warning" style="width:12.5%" title="High Load (1.3 - 1.5)"></div>
+        <div class="acwr-zone-band danger" style="width:29.2%" title="Overreaching (>1.5)"></div>
+        <div class="acwr-pointer" style="left:${Math.min(97, Math.max(3, (workload.acwr / 2.0) * 100))}%" title="ACWR: ${workload.acwr.toFixed(2)}"></div>
+      </div>
+    </div>` +
+
+    // Weekly Muscle Volume Map (MEV vs MRV Bars)
+    `<div class="card vol-card">
+      <div class="row" style="margin-bottom:8px">
+        <div>
+          <div class="vol-card-title">Weekly Muscle Volume</div>
+          <div class="t2 sm">Direct working sets completed this week (Mon - Sun)</div>
+        </div>
+        <div class="vol-legend">
+          <span class="vol-legend-dot blue"></span><span class="t2 sm" style="margin-right:8px">&lt;MEV</span>
+          <span class="vol-legend-dot emerald"></span><span class="t2 sm" style="margin-right:8px">MAV</span>
+          <span class="vol-legend-dot red"></span><span class="t2 sm">&gt;MRV</span>
+        </div>
+      </div>
+      <div class="vol-bars-list">
+        ${muscleVolumes.map(m => `
+          <div class="vol-item">
+            <div class="vol-item-header">
+              <span class="vol-item-name"><b>${esc(m.name)}</b></span>
+              <span class="vol-item-status" style="color:${m.color};font-weight:600">${m.sets} sets · ${m.zone}</span>
+            </div>
+            <div class="vol-track">
+              <div class="vol-marker mev" style="left:${(10/22)*100}%" title="MEV (10 sets)"></div>
+              <div class="vol-marker mrv" style="left:${(20/22)*100}%" title="MRV (20 sets)"></div>
+              <div class="vol-bar-fill ${m.zoneClass}" style="width:${Math.min(100, (m.sets / 22) * 100)}%;background:${m.color}"></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="vol-benchmarks row t2 sm" style="margin-top:10px;font-size:11px">
+        <span><b>MEV:</b> 8-10 sets</span>
+        <span><b>MAV:</b> 12-18 sets (Optimal)</span>
+        <span><b>MRV:</b> 20-22+ sets (Fatigue Limit)</span>
+      </div>
+    </div>` +
+
     (todayRoutine && !S.act ? `
       <div class="card today-split-hero">
         <div class="row">
@@ -550,14 +923,16 @@ function vWork() {
 
     <!-- Stepper Header & Breadcrumb Carousel -->
     <div class="work-stepper-container">
+      ${a.isDeload ? `<div class="deload-work-banner">⚡ <b>Deload Protocol Active:</b> Volume halved (-50%) & Load -20% for CNS recovery.</div>` : ''}
       <div class="work-stepper-title">Exercise ${curIdx + 1} of ${a.ex.length}: <b>${esc(exInfo.name)}</b></div>
       <div class="work-stepper-pills">
         ${a.ex.map((x, i) => {
           const e = X(x.id);
           const isDone = x.sets.length > 0 && x.sets.every(s => s.done);
           const isCur = i === curIdx;
-          return `<button class="work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''}" data-a="setcurex" data-i="${i}">
-            <span>${isDone ? '✓ ' : ''}${i + 1}. ${esc(e.name)}</span>
+          const hasFail = x.sets.some(s => s.rir === 0 || s.rpe >= 10);
+          return `<button class="work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''} ${hasFail ? 'has-fail' : ''}" data-a="setcurex" data-i="${i}">
+            <span>${isDone ? '✓ ' : ''}${hasFail ? '💥 ' : ''}${i + 1}. ${esc(e.name)}</span>
           </button>`;
         }).join('')}
       </div>
@@ -583,6 +958,7 @@ function vWork() {
           ${exInfo.tg ? `<span class="ex-badge">${esc(exInfo.tg)}</span>` : ''}
           <span class="ex-badge">${esc(exInfo.eq)}</span>
           ${exInfo.t === 't' ? '<span class="ex-badge">Timed (s)</span>' : ''}
+          ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
         </div>
       </div>
 
@@ -592,16 +968,19 @@ function vWork() {
           <span style="width:36px;text-align:center">Set</span>
           <span style="flex:1">${exInfo.t === 't' ? 'Duration' : 'Weight (kg)'}</span>
           <span style="flex:1">${exInfo.t === 't' ? 'Target (s)' : 'Reps'}</span>
-          <span style="width:50px;text-align:center">RPE</span>
+          <span style="width:58px;text-align:center">RIR</span>
           <span style="width:40px;text-align:center">Done</span>
         </div>
         ${currentEx.sets.map((s, j) => {
           const r = (f, v, u) => `<div class="set-input-wrap"><input type="number" inputmode="decimal" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}"><span class="u">${u}</span></div>`;
+          const isFail = s.rir === 0 || s.rpe >= 10;
+          const isSet = s.rir != null || (s.rpe != null && s.rpe !== '');
+          const rirText = s.rir != null ? (s.rir === 0 ? '0 💥' : (s.rir >= 3 ? '3+' : s.rir)) : (s.rpe != null && s.rpe !== '' ? (10 - +s.rpe) : 'RIR');
           return `<div class="set ${s.done ? 'd' : ''}" data-i="${curIdx}" data-j="${j}">
             <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">${j + 1}</button>
             ${exInfo.t === 't' ? '' : r('w', s.w, exInfo.t === 'b' ? '+kg' : 'kg')}
             ${r('r', s.r, exInfo.t === 't' ? 'sec' : 'reps')}
-            <input class="rpe" type="number" inputmode="decimal" placeholder="—" data-f="rpe" data-i="${curIdx}" data-j="${j}" value="${esc(s.rpe ?? '')}">
+            <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve / Intensity">${rirText}</button>
             <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
           </div>`;
         }).join('')}
@@ -977,15 +1356,13 @@ function vWeight() {
 }
 
 // 6. History & Settings View
-const vol = l => Math.round(l.ex.reduce((a, x) => a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => b + (Number(s.w) || 0) * (Number(s.r) || 0), 0) : 0), 0));
-
 const vHist = () => `<h1>History & Settings</h1>` +
   `<h2>Workout History</h2>` +
   (S.logs.length ? [...S.logs].reverse().map(l => `<button class="card" data-a="hist" data-id="${esc(l.id)}"><div class="row"><b>${esc(l.name)}</b><span class="t2 sm">${new Date(l.date).toLocaleDateString()}</span></div><div class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume · ${l.ex.length} exercises</div></button>`).join('') : '<p class="t2">No workouts yet.</p>') +
   `<h2>Preferences</h2>` +
   `<div class="card"><label class="t2 sm">Rest timer (seconds)</label><input type="number" inputmode="numeric" data-c="rest" value="${Number(S.cfg.rest) || 90}"><label class="row g" style="cursor:pointer;min-height:44px"><span>Visual flash when rest ends</span><input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}></label></div>` +
   `<h2>System & Cache Updates</h2>` +
-  `<button class="btn s" data-a="forceupdate" style="margin-bottom:8px">🔄 Force App Shell Reload (v4.0.0)</button>` +
+  `<button class="btn s" data-a="forceupdate" style="margin-bottom:8px">🔄 Force App Shell Reload (v4.1.0)</button>` +
   `<h2>Data Management</h2>` +
   `<button class="btn" data-a="exp">Export Backup (JSON)</button><label class="btn s">Restore Backup (JSON)<input type="file" id="f" accept="application/json,.json" hidden></label><button class="btn s red" data-a="wipe">Erase all data</button><p class="t2 sm">All data is 100% on-device & air-gapped.</p>`;
 
@@ -1363,11 +1740,15 @@ function finish() {
   const ex = a.ex.map(x => ({
     id: x.id,
     note: x.note || '',
-    sets: x.sets.filter(s => s.done).map(s => ({
-      w: Number(s.w) || 0,
-      r: Number(s.r) || 0,
-      rpe: s.rpe === '' || s.rpe == null ? null : +s.rpe
-    }))
+    sets: x.sets.filter(s => s.done).map(s => {
+      const rirVal = s.rir != null && s.rir !== '' ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
+      return {
+        w: Number(s.w) || 0,
+        r: Number(s.r) || 0,
+        rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
+        rir: rirVal
+      };
+    })
   })).filter(x => x.sets.length);
 
   if (!ex.length) return toast('Complete at least one set first');
@@ -1393,7 +1774,35 @@ function finish() {
     });
   }
 
-  const log = { id: uid(), date: Date.now(), name: a.name, dur: Date.now() - a.t0, ex };
+  // RIR & Fatigue Session Summary
+  const allLoggedSets = ex.flatMap(x => x.sets);
+  const setsWithRir = allLoggedSets.filter(s => s.rir != null);
+  let rirSummaryHtml = '';
+  if (setsWithRir.length) {
+    const sumRir = setsWithRir.reduce((acc, s) => acc + s.rir, 0);
+    const avgRir = Math.round((sumRir / setsWithRir.length) * 10) / 10;
+    let zoneTitle = '';
+    let zoneColor = 'var(--gn)';
+    if (avgRir <= 1.0) {
+      zoneTitle = 'High Strain / Peaking Zone';
+      zoneColor = 'var(--rd)';
+    } else if (avgRir <= 2.5) {
+      zoneTitle = 'Optimal Hypertrophy Zone';
+      zoneColor = 'var(--gn)';
+    } else {
+      zoneTitle = 'Submaximal / Recovery Zone';
+      zoneColor = 'var(--bl)';
+    }
+    rirSummaryHtml = `<div class="row" style="margin-top:6px"><b>Fatigue & Intensity:</b> <span style="font-weight:600;color:${zoneColor}">${zoneTitle}: Avg RIR ${avgRir}</span></div>`;
+  }
+
+  const failSetsCount = allLoggedSets.filter(s => s.rir === 0 || s.rpe >= 10).length;
+  const failureHtml = failSetsCount > 0 ? `<div class="row" style="margin-top:6px"><b>High Fatigue Sets:</b> <span style="color:var(--rd)">💥 ${failSetsCount} set(s) taken to Failure (RIR 0)</span></div>` : '';
+
+  const isDeload = !!a.isDeload;
+  const deloadHtml = isDeload ? `<div class="row" style="margin-top:6px"><b>Protocol:</b> <span style="color:var(--gn)">Deload Recovery Session (-50% target sets)</span></div>` : '';
+
+  const log = { id: uid(), date: Date.now(), name: a.name, dur: Date.now() - a.t0, ex, isDeload };
   S.logs.push(log);
   S.act = null;
   save('logs', 'act', 'routines');
@@ -1409,6 +1818,9 @@ function finish() {
       <div class="row" style="margin-top:6px"><b>Duration:</b> <span>${Math.round(log.dur / 60000)} min</span></div>
       <div class="row" style="margin-top:6px"><b>Completed Exercises:</b> <span>${log.ex.length}</span></div>
       <div class="row" style="margin-top:6px"><b>Completed Sets:</b> <span>${totalSetsCount}</span></div>
+      ${rirSummaryHtml}
+      ${failureHtml}
+      ${deloadHtml}
       <div class="row" style="margin-top:6px"><b>Active Streak:</b> <span>${streak()} days 🔥</span></div>
     </div>` +
     (prs.length ? `<h2>New Records! 🎉</h2>${prs.map(p => `<div class="card" style="padding:10px"><b>${esc(p)}</b></div>`).join('')}` : '') +
@@ -1599,22 +2011,31 @@ document.addEventListener('click', e => {
     // Workout Logger
     case 'start': {
       const r = S.routines.find(r => r.id === id);
+      const isDeloadActive = !!(S.deload && S.deload.active);
       S.act = {
         rid: r ? r.id : null,
-        name: r ? r.name : 'Workout',
+        name: r ? (isDeloadActive ? `${r.name} (Deload)` : r.name) : 'Workout',
+        isDeload: isDeloadActive,
         t0: Date.now(),
         curEx: 0,
-        ex: r ? r.ex.map(x => ({
-          id: x.id,
-          ss: !!x.ss,
-          note: x.note || '',
-          sets: Array.from({ length: Math.max(1, x.sets || 1) }, () => ({
-            w: x.w || 0,
-            r: x.prog === 'double' ? (x.cur || x.reps) : x.reps,
-            rpe: '',
-            done: false
-          }))
-        })) : []
+        ex: r ? r.ex.map(x => {
+          const baseSets = Math.max(1, x.sets || 1);
+          const targetSets = isDeloadActive ? Math.max(1, Math.round(baseSets * 0.5)) : baseSets;
+          const targetWeight = isDeloadActive ? Math.max(0, rd((x.w || 0) * 0.8)) : (x.w || 0);
+          const targetReps = x.prog === 'double' ? (x.cur || x.reps) : x.reps;
+          return {
+            id: x.id,
+            ss: !!x.ss,
+            note: x.note || '',
+            sets: Array.from({ length: targetSets }, () => ({
+              w: targetWeight,
+              r: targetReps,
+              rpe: '',
+              rir: null,
+              done: false
+            }))
+          };
+        }) : []
       };
       save('act');
       wake();
@@ -1706,11 +2127,53 @@ document.addEventListener('click', e => {
       if (s.done && !x.ss) startRest(S.cfg.rest);
       break;
     }
+    case 'openrir': {
+      showRirPicker(i, j);
+      return;
+    }
+    case 'setrir': {
+      const x = S.act?.ex[i], s = x?.sets[j];
+      if (!s) return;
+      const rirAttr = t.dataset.rir;
+      if (rirAttr === 'clear') {
+        s.rir = null;
+        s.rpe = '';
+      } else {
+        const val = +rirAttr;
+        s.rir = val;
+        s.rpe = 10 - val;
+      }
+      save('act');
+      close();
+      render();
+      return;
+    }
+    case 'startdeload': {
+      S.deload = {
+        active: true,
+        startedAt: Date.now()
+      };
+      save('deload');
+      render();
+      toast('⚡ Deload Protocol Active: Target sets halved & weights -20%');
+      return;
+    }
+    case 'enddeload': {
+      S.deload = {
+        active: false,
+        endedAt: Date.now(),
+        lastDeloadDate: Date.now()
+      };
+      save('deload');
+      render();
+      toast('Deload Completed: Normal routine targets restored');
+      return;
+    }
     case 'addset': {
       const x = S.act?.ex[i];
       if (!x) return;
-      const prev = x.sets.at(-1) || { w: 0, r: X(x.id).t === 't' ? 30 : 8, rpe: '' };
-      x.sets.push({ ...prev, done: false });
+      const prev = x.sets.at(-1) || { w: 0, r: X(x.id).t === 't' ? 30 : 8, rpe: '', rir: null };
+      x.sets.push({ ...prev, done: false, rir: null, rpe: '' });
       save('act');
       break;
     }
@@ -1903,7 +2366,14 @@ const handleFieldUpdate = t => {
     const x = S.act.ex[i];
     if (f === 'note') x.note = t.value;
     else if (x.sets && x.sets[t.dataset.j]) {
-      x.sets[t.dataset.j][f] = f === 'rpe' ? t.value : parseFloat(t.value) || 0;
+      const s = x.sets[t.dataset.j];
+      if (f === 'rpe') {
+        s.rpe = t.value;
+        const num = parseFloat(t.value);
+        s.rir = !isNaN(num) ? Math.max(0, Math.min(10, 10 - num)) : null;
+      } else {
+        s[f] = parseFloat(t.value) || 0;
+      }
     }
     save('act');
   }
@@ -2017,11 +2487,13 @@ document.addEventListener('touchcancel', () => {
   }
 
   // 2. Load stored state from IndexedDB / localStorage
-  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act']) {
+  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload']) {
     try {
       const v = await get(k);
       if (k === 'cfg' && v && typeof v === 'object') {
         S.cfg = { ...S.cfg, ...v };
+      } else if (k === 'deload' && v && typeof v === 'object') {
+        S.deload = { ...S.deload, ...v };
       } else if (v != null) {
         S[k] = v;
       }
@@ -2030,6 +2502,7 @@ document.addEventListener('touchcancel', () => {
     }
   }
   if (!S.sched || typeof S.sched !== 'object') S.sched = {};
+  if (!S.deload || typeof S.deload !== 'object') S.deload = { active: false, startedAt: null, lastDeloadDate: null };
 
   // 3. Seed starter routines & split schedule if fresh install or empty routines
   if ((await get('seeded')) == null || !S.routines || !S.routines.length) {

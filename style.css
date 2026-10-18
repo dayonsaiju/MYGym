@@ -6,6 +6,8 @@
   --ac: #0A84FF;
   --rd: #FF453A;
   --gn: #30D158;
+  --am: #FFD60A;
+  --bl: #64D2FF;
 }
 
 * {
@@ -1116,5 +1118,335 @@ input[type="checkbox"] {
   font-size: 22px;
   font-weight: 700;
   margin-top: 4px;
+}
+
+/* RIR Pills & Interactive Logger */
+.rir-pill {
+  width: 58px;
+  min-height: 44px;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--c2);
+  color: var(--t2);
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  cursor: pointer;
+  flex: none;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.rir-pill:active {
+  transform: scale(0.96);
+}
+
+.rir-pill.rir-set {
+  background: rgba(10, 132, 255, 0.16);
+  border-color: var(--ac);
+  color: var(--ac);
+}
+
+.rir-pill.rir-fail {
+  background: rgba(255, 69, 58, 0.22);
+  border-color: var(--rd);
+  color: var(--rd);
+  box-shadow: 0 0 8px rgba(255, 69, 58, 0.35);
+  animation: pulse-fail 1.8s infinite;
+}
+
+@keyframes pulse-fail {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.ex-badge.fail-badge {
+  background: rgba(255, 69, 58, 0.2);
+  border: 1px solid var(--rd);
+  color: var(--rd);
+  font-weight: 700;
+}
+
+.work-step-pill.has-fail {
+  border-color: rgba(255, 69, 58, 0.6);
+  color: #ff9f97;
+}
+
+/* RIR Modal Selection Sheet */
+.rir-choices-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.rir-choice-card {
+  background: var(--c2);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 12px 14px;
+  text-align: left;
+  display: block;
+  width: 100%;
+  cursor: pointer;
+  transition: transform 0.12s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.rir-choice-card:active {
+  transform: scale(0.98);
+}
+
+.rir-choice-card.sel {
+  border-color: var(--ac);
+  background: rgba(10, 132, 255, 0.15);
+}
+
+.rir-choice-card.fail.sel {
+  border-color: var(--rd);
+  background: rgba(255, 69, 58, 0.18);
+}
+
+.rir-choice-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.rir-num-tag {
+  font-size: 14px;
+  font-weight: 800;
+  border-radius: 6px;
+  padding: 3px 8px;
+}
+
+.rir-num-tag.rir-3 { background: rgba(100, 210, 255, 0.2); color: var(--bl); }
+.rir-num-tag.rir-2 { background: rgba(48, 209, 88, 0.2); color: var(--gn); }
+.rir-num-tag.rir-1 { background: rgba(255, 214, 10, 0.2); color: var(--am); }
+.rir-num-tag.rir-0 { background: rgba(255, 69, 58, 0.25); color: var(--rd); }
+
+.rir-rpe-tag {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t2);
+}
+
+.rir-choice-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.rir-choice-desc {
+  font-size: 12px;
+  color: var(--t2);
+  margin-top: 3px;
+  line-height: 1.35;
+}
+
+/* ACWR Card & Overtraining Engine */
+.acwr-card {
+  background: linear-gradient(180deg, var(--c2) 0%, var(--c1) 100%);
+  border: 1px solid var(--bd);
+  margin-bottom: 14px;
+  padding: 14px 16px;
+}
+
+.acwr-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.acwr-tag {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.acwr-title {
+  font-size: 15px;
+  line-height: 1.35;
+}
+
+.acwr-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.acwr-metric {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.acwr-metric-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: #FFFFFF;
+  margin: 2px 0;
+}
+
+.acwr-metric-val .sm {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--t2);
+}
+
+/* ACWR Meter Bar */
+.acwr-meter-track {
+  position: relative;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  display: flex;
+  overflow: visible;
+  margin: 10px 0 6px;
+}
+
+.acwr-zone-band {
+  height: 100%;
+}
+.acwr-zone-band.under { background: var(--bl); opacity: 0.75; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+.acwr-zone-band.optimal { background: var(--gn); opacity: 0.85; }
+.acwr-zone-band.warning { background: var(--am); opacity: 0.85; }
+.acwr-zone-band.danger { background: var(--rd); opacity: 0.85; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+
+.acwr-pointer {
+  position: absolute;
+  top: -4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 2.5px solid #000000;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 2;
+  transition: left 0.3s ease;
+}
+
+/* Deload Protocol UI */
+.deload-active-banner {
+  border: 1.5px solid var(--gn);
+  background: linear-gradient(180deg, rgba(48, 209, 88, 0.16) 0%, var(--c1) 100%);
+  margin-bottom: 14px;
+  padding: 14px 16px;
+}
+
+.deload-recommend-card {
+  border: 1.5px solid var(--rd);
+  background: linear-gradient(180deg, rgba(255, 69, 58, 0.16) 0%, var(--c1) 100%);
+  margin-bottom: 14px;
+  padding: 14px 16px;
+}
+
+.deload-badge {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--gn);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.deload-badge.warn {
+  color: var(--rd);
+}
+
+.deload-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 2px;
+}
+
+.deload-work-banner {
+  background: rgba(48, 209, 88, 0.14);
+  border: 1px solid var(--gn);
+  color: #FFFFFF;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  margin-bottom: 12px;
+  line-height: 1.4;
+}
+
+/* Weekly Muscle Volume Map (MEV vs MRV Bars) */
+.vol-card {
+  background: var(--c1);
+  border: 1px solid var(--bd);
+  margin-bottom: 14px;
+  padding: 14px 16px;
+}
+
+.vol-card-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.vol-legend {
+  display: flex;
+  align-items: center;
+}
+
+.vol-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  margin-right: 4px;
+}
+.vol-legend-dot.blue { background: var(--bl); }
+.vol-legend-dot.emerald { background: var(--gn); }
+.vol-legend-dot.red { background: var(--rd); }
+
+.vol-bars-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.vol-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  font-size: 13px;
+}
+
+.vol-track {
+  position: relative;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: visible;
+}
+
+.vol-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.vol-marker {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.3);
+  z-index: 1;
 }
 
