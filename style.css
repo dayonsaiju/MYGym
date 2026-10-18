@@ -1450,3 +1450,149 @@ input[type="checkbox"] {
   z-index: 1;
 }
 
+/* Recovery & Fatigue Insights Accordion */
+.recovery-accordion {
+  margin-top: 18px;
+  margin-bottom: 24px;
+  border: 1px solid var(--bd);
+  background: var(--c1);
+  border-radius: 14px;
+  overflow: hidden;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.recovery-accordion[open] {
+  border-color: rgba(10, 132, 255, 0.4);
+}
+
+.recovery-accordion-summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  user-select: none;
+}
+
+.recovery-accordion-summary::-webkit-details-marker {
+  display: none;
+}
+
+.recovery-summary-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.recovery-icon {
+  font-size: 22px;
+  background: var(--c2);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.recovery-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.recovery-chevron {
+  font-size: 18px;
+  color: var(--t2);
+  transition: transform 0.2s ease;
+}
+
+.recovery-accordion[open] .recovery-chevron {
+  transform: rotate(180deg);
+}
+
+.recovery-accordion-content {
+  padding: 4px 16px 16px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Unilateral / Each Side (L / R) Dual Completion Pills */
+.uni-ck-group {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex: none;
+}
+
+.uni-ck {
+  min-width: 38px;
+  height: 44px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--c2);
+  color: var(--t2);
+  font-size: 13px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.uni-ck:active {
+  transform: scale(0.94);
+}
+
+.uni-ck.d {
+  background: var(--gn);
+  border-color: var(--gn);
+  color: #000000;
+  font-weight: 800;
+}
+
+/* Notes Textarea in Active Workout */
+textarea.note {
+  width: 100%;
+  background: var(--c2);
+  border: 1px solid var(--bd);
+  color: #FFFFFF;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  resize: vertical;
+  min-height: 52px;
+  margin-top: 10px;
+  box-sizing: border-box;
+}
+
+textarea.note:focus {
+  border-color: var(--ac);
+  outline: none;
+}
+
+/* Train Tab Clean Streak Header */
+.train-streak-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: var(--c1);
+  border: 0.5px solid var(--bd);
+  border-radius: 10px;
+}
+
+.train-streak-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+

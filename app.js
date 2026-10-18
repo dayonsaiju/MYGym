@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '4.1.0';
-const SHELL_VERSION = 'mygym-v4.1.0-smart';
+const APP_VERSION = '4.2.0';
+const SHELL_VERSION = 'mygym-v4.2.0-clean';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -414,8 +414,47 @@ const getStartOfWeek = (d = new Date()) => {
   return date.getTime();
 };
 
-const setVolume = s => (Number(s.w) > 0 ? Number(s.w) : 1) * (Number(s.r) || 0);
-const vol = l => Math.round(l.ex.reduce((a, x) => a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => b + (Number(s.w) || 0) * (Number(s.r) || 0), 0) : 0), 0));
+const isUnilateralExercise = name => {
+  const n = String(name || '').toLowerCase();
+  return n.includes('single arm') || n.includes('one arm') || n.includes('one-arm') ||
+         n.includes('single leg') || n.includes('one leg') || n.includes('one-leg') ||
+         n.includes('dumbbell row') || n.includes('split squat') || n.includes('bulgarian') ||
+         n.includes('lunge') || n.includes('lateral raise') || n.includes('curl') ||
+         n.includes('step-up') || n.includes('kickback') || n.includes('pistol') ||
+         n.includes('concentration') || n.includes('cable lateral') || n.includes('single-arm') ||
+         n.includes('single-leg') || n.includes('unilateral');
+};
+
+const getLastExerciseNote = id => {
+  if (!id) return '';
+  for (let k = S.logs.length - 1; k >= 0; k--) {
+    const lx = S.logs[k].ex?.find(x => String(x.id) === String(id));
+    if (lx && lx.note) return lx.note;
+  }
+  for (const r of S.routines) {
+    const rx = r.ex?.find(x => String(x.id) === String(id));
+    if (rx && rx.note) return rx.note;
+  }
+  return '';
+};
+
+const setVolume = (s, isUni = false) => {
+  const w = Number(s.w) > 0 ? Number(s.w) : 1;
+  const r = Number(s.r) || 0;
+  const uni = isUni || s.uni;
+  const hasBoth = s.done || (s.sideL && s.sideR);
+  const hasOne = s.sideL || s.sideR;
+  const mult = uni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
+  return w * r * mult;
+};
+
+const vol = l => Math.round(l.ex.reduce((a, x) => a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => {
+  const isUni = x.uni || s.uni;
+  const hasBoth = s.done || (s.sideL && s.sideR);
+  const hasOne = s.sideL || s.sideR;
+  const mult = isUni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
+  return b + (Number(s.w) || 0) * (Number(s.r) || 0) * mult;
+}, 0) : 0), 0));
 
 // ---- 100% Offline Deterministic Recovery & ACWR Engine ----
 const calcWorkload = (logs = S.logs) => {
@@ -437,8 +476,9 @@ const calcWorkload = (logs = S.logs) => {
     let logVol = 0;
     for (const x of l.ex) {
       if (!Array.isArray(x.sets)) continue;
+      const isUni = !!x.uni;
       for (const s of x.sets) {
-        logVol += setVolume(s);
+        logVol += setVolume(s, isUni || !!s.uni);
       }
     }
 
@@ -676,7 +716,9 @@ const newSets = (id, n = 3) => {
     r: l ? l.r : defReps,
     rpe: '',
     rir: null,
-    done: false
+    done: false,
+    sideL: false,
+    sideR: false
   }));
 };
 
@@ -706,151 +748,178 @@ const vTrain = () => {
   const muscleVolumes = getWeeklyMuscleVolumes(S.logs);
 
   return `<h1>Train</h1>` +
-    `<div class="card row"><span><b>${streak()}</b> day streak 🔥</span><span class="t2">${S.logs.length} workouts</span></div>` +
+    `<div class="card train-streak-row">
+      <div class="train-streak-val">🔥 <b>${streak()}</b> Day Streak</div>
+      <span class="t2 sm">${S.logs.length} workouts completed</span>
+    </div>` +
     (S.act ? `<button class="btn" data-a="tab" data-k="work" style="margin-bottom:12px">⚡ Resume Workout: ${esc(S.act.name)}</button>` : '') +
 
-    // Deload Status Card
+    // Active Deload Banner at top (subtle & actionable if deload is ongoing)
     (S.deload && S.deload.active ? `
       <div class="card deload-active-banner">
         <div class="row">
           <div>
             <div class="deload-badge">⚡ Deload Protocol Active</div>
-            <div class="deload-title">Target sets halved (-50%) · Target load -20%</div>
-            <div class="t2 sm" style="margin-top:4px">Allowing neuromuscular & systemic recovery while preserving muscle mass.</div>
+            <div class="deload-title" style="font-size:15px">Target sets halved (-50%) · Target load -20%</div>
+            <div class="t2 sm" style="margin-top:2px">Restoring CNS recovery while preserving adaptations.</div>
           </div>
           <button class="btn s sm-btn" data-a="enddeload" style="border:1px solid rgba(255,255,255,0.3)">End Deload</button>
         </div>
       </div>
-    ` : (deloadInfo.recommended ? `
-      <div class="card deload-recommend-card">
-        <div class="row">
-          <div>
-            <div class="deload-badge warn">⚡ Deload Recommended: High Fatigue Detected</div>
-            <div class="deload-title">${esc(deloadInfo.reason)}</div>
-            <div class="t2 sm" style="margin-top:4px">${esc(deloadInfo.detail)}</div>
-          </div>
-        </div>
-        <div class="row g" style="margin-top:10px">
-          <button class="btn" data-a="startdeload">⚡ Start Deload Week (-50% Sets, -20% Wt)</button>
-        </div>
-      </div>
-    ` : '')) +
+    ` : '') +
 
-    // ACWR Recovery Engine Card
-    `<div class="card acwr-card">
-      <div class="row" style="margin-bottom:8px">
-        <div>
-          <div class="acwr-badge-row">
-            <span class="acwr-tag" style="background:${workload.color}22;color:${workload.color};border:1px solid ${workload.color}66">
-              ${esc(workload.status)}
-            </span>
-          </div>
-          <div class="acwr-title" style="margin-top:6px">
-            <b>ACWR: ${workload.acwr.toFixed(2)}</b>
-            <span class="t2 sm"> · ${esc(workload.desc)}</span>
-          </div>
-        </div>
-        ${!S.deload?.active && !deloadInfo.recommended ? `
-          <button class="chip" data-a="startdeload" title="Manually initiate deload protocol" style="font-size:12px;padding:4px 8px;min-height:30px">⚡ Deload</button>
-        ` : ''}
-      </div>
-
-      <div class="acwr-metrics-grid">
-        <div class="acwr-metric">
-          <div class="t2 sm">Acute Load (Last 7 Days)</div>
-          <div class="acwr-metric-val">${workload.acuteVolume.toLocaleString()} <span class="sm">kg</span></div>
-          <div class="t2 sm">${workload.acuteWorkouts} workouts logged</div>
-        </div>
-        <div class="acwr-metric">
-          <div class="t2 sm">Chronic Baseline (4-Wk Avg)</div>
-          <div class="acwr-metric-val">${workload.chronicWeeklyAvg.toLocaleString()} <span class="sm">kg/wk</span></div>
-          <div class="t2 sm">${workload.chronicWorkouts} workouts in 28d</div>
-        </div>
-      </div>
-
-      <div class="acwr-meter-track">
-        <div class="acwr-zone-band under" style="width:33.3%" title="Underreaching (<0.8)"></div>
-        <div class="acwr-zone-band optimal" style="width:25%" title="Optimal Zone (0.8 - 1.3)"></div>
-        <div class="acwr-zone-band warning" style="width:12.5%" title="High Load (1.3 - 1.5)"></div>
-        <div class="acwr-zone-band danger" style="width:29.2%" title="Overreaching (>1.5)"></div>
-        <div class="acwr-pointer" style="left:${Math.min(97, Math.max(3, (workload.acwr / 2.0) * 100))}%" title="ACWR: ${workload.acwr.toFixed(2)}"></div>
-      </div>
-    </div>` +
-
-    // Weekly Muscle Volume Map (MEV vs MRV Bars)
-    `<div class="card vol-card">
-      <div class="row" style="margin-bottom:8px">
-        <div>
-          <div class="vol-card-title">Weekly Muscle Volume</div>
-          <div class="t2 sm">Direct working sets completed this week (Mon - Sun)</div>
-        </div>
-        <div class="vol-legend">
-          <span class="vol-legend-dot blue"></span><span class="t2 sm" style="margin-right:8px">&lt;MEV</span>
-          <span class="vol-legend-dot emerald"></span><span class="t2 sm" style="margin-right:8px">MAV</span>
-          <span class="vol-legend-dot red"></span><span class="t2 sm">&gt;MRV</span>
-        </div>
-      </div>
-      <div class="vol-bars-list">
-        ${muscleVolumes.map(m => `
-          <div class="vol-item">
-            <div class="vol-item-header">
-              <span class="vol-item-name"><b>${esc(m.name)}</b></span>
-              <span class="vol-item-status" style="color:${m.color};font-weight:600">${m.sets} sets · ${m.zone}</span>
-            </div>
-            <div class="vol-track">
-              <div class="vol-marker mev" style="left:${(10/22)*100}%" title="MEV (10 sets)"></div>
-              <div class="vol-marker mrv" style="left:${(20/22)*100}%" title="MRV (20 sets)"></div>
-              <div class="vol-bar-fill ${m.zoneClass}" style="width:${Math.min(100, (m.sets / 22) * 100)}%;background:${m.color}"></div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-      <div class="vol-benchmarks row t2 sm" style="margin-top:10px;font-size:11px">
-        <span><b>MEV:</b> 8-10 sets</span>
-        <span><b>MAV:</b> 12-18 sets (Optimal)</span>
-        <span><b>MRV:</b> 20-22+ sets (Fatigue Limit)</span>
-      </div>
-    </div>` +
-
+    // Today's Split Banner Prominently at Top (One-Tap Start)
     (todayRoutine && !S.act ? `
       <div class="card today-split-hero">
         <div class="row">
           <div>
-            <div class="today-split-badge">⭐ Today's Schedule (${DAYS[todayDay]})</div>
+            <div class="today-split-badge">⭐ Today's Split (${DAYS[todayDay]})</div>
             <div class="today-split-title">${esc(todayRoutine.name)}</div>
           </div>
           ${completedToday
-            ? `<span class="today-chip" style="background:var(--gn);color:#000000;font-size:12px;padding:6px 12px;font-weight:700">✓ Done Today</span>`
-            : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start</button>`
+            ? `<span class="today-chip" style="background:var(--gn);color:#000000;font-size:12px;padding:6px 14px;font-weight:700">✓ Done Today</span>`
+            : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start Workout</button>`
           }
         </div>
         <div class="t2 sm" style="margin-top:8px">${todayRoutine.ex.map(x => `${esc(X(x.id).name)} (${x.sets}×${x.reps})`).join(' · ')}</div>
       </div>
     ` : (!todayRoutine && !S.act ? `
-      <div class="card row" style="margin-bottom:12px">
-        <span class="t2 sm">🌿 <b>${DAYS[todayDay]}:</b> Rest Day on your Split Schedule</span>
-        <button class="btn s" data-a="tab" data-k="cal">Edit Split</button>
+      <div class="card row" style="margin-bottom:12px;padding:12px 14px">
+        <span class="t2 sm">🌿 <b>${DAYS[todayDay]}:</b> Scheduled Rest Day</span>
+        <button class="btn s" data-a="tab" data-k="cal" style="min-height:32px;font-size:12px">Edit Split</button>
       </div>
     ` : '')) +
+
+    // Main Content: Routines Prominently Visible Without Massive Scrolling
     '<h2>Routines</h2>' +
     (S.routines.length ? S.routines.map(r => {
       const scheduledDays = Object.entries(S.sched || {})
         .filter(([_, rid]) => rid === r.id)
         .map(([day]) => DAYS_SHORT[+day]);
-      return `<div class="card">
+      return `<div class="card" style="margin-bottom:10px">
         <div class="row">
           <b>${esc(r.name)}</b>
           <span class="t2 sm">${r.ex.length} exercises</span>
         </div>
         ${scheduledDays.length ? `<div style="margin:4px 0"><span class="today-chip" style="font-size:10px;padding:2px 6px">${scheduledDays.join(', ')}</span></div>` : ''}
         <div class="t2 sm" style="margin-top:6px">${r.ex.map(x => `${esc(X(x.id).name)} ${x.sets}×${x.reps} @ ${x.w}kg`).join(' · ')}</div>
-        <div class="row g">
+        <div class="row g" style="margin-top:10px">
           <button class="btn" data-a="start" data-id="${esc(r.id)}">Start</button>
           <button class="btn s" data-a="edit" data-id="${esc(r.id)}">Edit</button>
         </div>
       </div>`;
     }).join('') : '<p class="t2">No routines saved yet.</p>') +
-    `<button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button><button class="btn s" data-a="start">Empty workout</button>`;
+    `<div class="row g" style="margin-top:8px;margin-bottom:8px">
+      <button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button>
+      <button class="btn s" data-a="start">Empty workout</button>
+    </div>` +
+
+    // Bottom of Train Tab: Clean Collapsible Recovery & Muscle Fatigue Insights
+    `<details class="card recovery-accordion" ${deloadInfo.recommended ? 'open' : ''}>
+      <summary class="recovery-accordion-summary">
+        <div class="recovery-summary-left">
+          <span class="recovery-icon">📊</span>
+          <div>
+            <div class="recovery-title">Recovery & Muscle Fatigue Insights</div>
+            <div class="t2 sm">ACWR: ${workload.acwr.toFixed(2)} · ${esc(workload.status)}</div>
+          </div>
+        </div>
+        <span class="recovery-chevron">⌄</span>
+      </summary>
+
+      <div class="recovery-accordion-content">
+        ${deloadInfo.recommended && !S.deload?.active ? `
+          <div class="card deload-recommend-card" style="margin:12px 0 10px">
+            <div class="row">
+              <div>
+                <div class="deload-badge warn">⚡ Deload Recommended</div>
+                <div class="deload-title" style="font-size:15px">${esc(deloadInfo.reason)}</div>
+                <div class="t2 sm" style="margin-top:2px">${esc(deloadInfo.detail)}</div>
+              </div>
+            </div>
+            <div class="row g" style="margin-top:10px">
+              <button class="btn" data-a="startdeload">⚡ Start Deload Week (-50% Sets, -20% Wt)</button>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- ACWR Recovery Engine Card Inside Accordion -->
+        <div class="card acwr-card" style="margin:10px 0 12px;border:1px solid rgba(255,255,255,0.08)">
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <div class="acwr-badge-row">
+                <span class="acwr-tag" style="background:${workload.color}22;color:${workload.color};border:1px solid ${workload.color}66">
+                  ${esc(workload.status)}
+                </span>
+              </div>
+              <div class="acwr-title" style="margin-top:6px">
+                <b>ACWR: ${workload.acwr.toFixed(2)}</b>
+                <span class="t2 sm"> · ${esc(workload.desc)}</span>
+              </div>
+            </div>
+            ${!S.deload?.active && !deloadInfo.recommended ? `
+              <button class="chip" data-a="startdeload" title="Manually initiate deload protocol" style="font-size:12px;padding:4px 8px;min-height:30px">⚡ Deload</button>
+            ` : ''}
+          </div>
+
+          <div class="acwr-metrics-grid">
+            <div class="acwr-metric">
+              <div class="t2 sm">Acute Load (7 Days)</div>
+              <div class="acwr-metric-val">${workload.acuteVolume.toLocaleString()} <span class="sm">kg</span></div>
+              <div class="t2 sm">${workload.acuteWorkouts} workouts</div>
+            </div>
+            <div class="acwr-metric">
+              <div class="t2 sm">Chronic Baseline (4-Wk Avg)</div>
+              <div class="acwr-metric-val">${workload.chronicWeeklyAvg.toLocaleString()} <span class="sm">kg/wk</span></div>
+              <div class="t2 sm">${workload.chronicWorkouts} workouts in 28d</div>
+            </div>
+          </div>
+
+          <div class="acwr-meter-track">
+            <div class="acwr-zone-band under" style="width:33.3%" title="Underreaching (<0.8)"></div>
+            <div class="acwr-zone-band optimal" style="width:25%" title="Optimal Zone (0.8 - 1.3)"></div>
+            <div class="acwr-zone-band warning" style="width:12.5%" title="High Load (1.3 - 1.5)"></div>
+            <div class="acwr-zone-band danger" style="width:29.2%" title="Overreaching (>1.5)"></div>
+            <div class="acwr-pointer" style="left:${Math.min(97, Math.max(3, (workload.acwr / 2.0) * 100))}%" title="ACWR: ${workload.acwr.toFixed(2)}"></div>
+          </div>
+        </div>
+
+        <!-- Weekly Muscle Volume Map Inside Accordion -->
+        <div class="card vol-card" style="margin:0;border:1px solid rgba(255,255,255,0.08)">
+          <div class="row" style="margin-bottom:8px">
+            <div>
+              <div class="vol-card-title">Weekly Muscle Volume</div>
+              <div class="t2 sm">Direct working sets completed this week (Mon - Sun)</div>
+            </div>
+            <div class="vol-legend">
+              <span class="vol-legend-dot blue"></span><span class="t2 sm" style="margin-right:8px">&lt;MEV</span>
+              <span class="vol-legend-dot emerald"></span><span class="t2 sm" style="margin-right:8px">MAV</span>
+              <span class="vol-legend-dot red"></span><span class="t2 sm">&gt;MRV</span>
+            </div>
+          </div>
+          <div class="vol-bars-list">
+            ${muscleVolumes.map(m => `
+              <div class="vol-item">
+                <div class="vol-item-header">
+                  <span class="vol-item-name"><b>${esc(m.name)}</b></span>
+                  <span class="vol-item-status" style="color:${m.color};font-weight:600">${m.sets} sets · ${m.zone}</span>
+                </div>
+                <div class="vol-track">
+                  <div class="vol-marker mev" style="left:${(10/22)*100}%" title="MEV (10 sets)"></div>
+                  <div class="vol-marker mrv" style="left:${(20/22)*100}%" title="MRV (20 sets)"></div>
+                  <div class="vol-bar-fill ${m.zoneClass}" style="width:${Math.min(100, (m.sets / 22) * 100)}%;background:${m.color}"></div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          <div class="vol-benchmarks row t2 sm" style="margin-top:10px;font-size:11px">
+            <span><b>MEV:</b> 8-10 sets</span>
+            <span><b>MAV:</b> 12-18 sets (Optimal)</span>
+            <span><b>MRV:</b> 20-22+ sets (Fatigue Limit)</span>
+          </div>
+        </div>
+      </div>
+    </details>`;
 };
 
 // 2. Active Guided Workout View
@@ -946,6 +1015,7 @@ function vWork() {
           <button class="chip on" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
           <button class="chip" data-a="libex" data-id="${esc(exInfo.id)}">ℹ️ Form</button>
           <button class="chip ${currentEx.ss ? 'on' : ''}" data-a="ss" data-i="${curIdx}">Superset</button>
+          <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
         </div>
       </div>
       <div class="work-hero-info">
@@ -958,6 +1028,7 @@ function vWork() {
           ${exInfo.tg ? `<span class="ex-badge">${esc(exInfo.tg)}</span>` : ''}
           <span class="ex-badge">${esc(exInfo.eq)}</span>
           ${exInfo.t === 't' ? '<span class="ex-badge">Timed (s)</span>' : ''}
+          ${currentEx.uni ? '<span class="ex-badge" style="background:rgba(100,210,255,0.2);color:var(--bl);border:1px solid var(--bl)">⚖️ Each Side (L/R)</span>' : ''}
           ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
         </div>
       </div>
@@ -969,7 +1040,7 @@ function vWork() {
           <span style="flex:1">${exInfo.t === 't' ? 'Duration' : 'Weight (kg)'}</span>
           <span style="flex:1">${exInfo.t === 't' ? 'Target (s)' : 'Reps'}</span>
           <span style="width:58px;text-align:center">RIR</span>
-          <span style="width:40px;text-align:center">Done</span>
+          <span style="width:${currentEx.uni ? '84px' : '40px'};text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
         </div>
         ${currentEx.sets.map((s, j) => {
           const r = (f, v, u) => `<div class="set-input-wrap"><input type="number" inputmode="decimal" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}"><span class="u">${u}</span></div>`;
@@ -981,7 +1052,14 @@ function vWork() {
             ${exInfo.t === 't' ? '' : r('w', s.w, exInfo.t === 'b' ? '+kg' : 'kg')}
             ${r('r', s.r, exInfo.t === 't' ? 'sec' : 'reps')}
             <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve / Intensity">${rirText}</button>
-            <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
+            ${currentEx.uni ? `
+              <div class="uni-ck-group">
+                <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
+                <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
+              </div>
+            ` : `
+              <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
+            `}
           </div>`;
         }).join('')}
       </div>
@@ -990,7 +1068,7 @@ function vWork() {
         <button class="btn s" data-a="addset" data-i="${curIdx}">${ic('plus', 16)} Add set</button>
         <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
       </div>
-      <input class="note" placeholder="Exercise cues/notes (grip, seat, tempo)..." data-f="note" data-i="${curIdx}" value="${esc(currentEx.note || '')}" style="margin-top:10px">
+      <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
     </div>
 
     <!-- Sticky Stepper Controls Navigation -->
@@ -1362,7 +1440,7 @@ const vHist = () => `<h1>History & Settings</h1>` +
   `<h2>Preferences</h2>` +
   `<div class="card"><label class="t2 sm">Rest timer (seconds)</label><input type="number" inputmode="numeric" data-c="rest" value="${Number(S.cfg.rest) || 90}"><label class="row g" style="cursor:pointer;min-height:44px"><span>Visual flash when rest ends</span><input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}></label></div>` +
   `<h2>System & Cache Updates</h2>` +
-  `<button class="btn s" data-a="forceupdate" style="margin-bottom:8px">🔄 Force App Shell Reload (v4.1.0)</button>` +
+  `<button class="btn s" data-a="forceupdate" style="margin-bottom:8px">🔄 Force App Shell Reload (v4.2.0)</button>` +
   `<h2>Data Management</h2>` +
   `<button class="btn" data-a="exp">Export Backup (JSON)</button><label class="btn s">Restore Backup (JSON)<input type="file" id="f" accept="application/json,.json" hidden></label><button class="btn s red" data-a="wipe">Erase all data</button><p class="t2 sm">All data is 100% on-device & air-gapped.</p>`;
 
@@ -1740,13 +1818,19 @@ function finish() {
   const ex = a.ex.map(x => ({
     id: x.id,
     note: x.note || '',
-    sets: x.sets.filter(s => s.done).map(s => {
+    uni: !!x.uni,
+    sets: x.sets.filter(s => s.done || (x.uni && (s.sideL || s.sideR))).map(s => {
       const rirVal = s.rir != null && s.rir !== '' ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
+      const isDone = s.done || (x.uni && s.sideL && s.sideR);
       return {
         w: Number(s.w) || 0,
         r: Number(s.r) || 0,
         rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
-        rir: rirVal
+        rir: rirVal,
+        uni: !!x.uni,
+        sideL: !!s.sideL,
+        sideR: !!s.sideR,
+        done: !!isDone
       };
     })
   })).filter(x => x.sets.length);
@@ -1770,7 +1854,11 @@ function finish() {
   if (r) {
     a.ex.forEach(x => {
       const rx = r.ex.find(q => String(q.id) === String(x.id));
-      if (rx && x.sets.some(s => s.done)) notes.push(X(x.id).name + ': ' + prog(rx, x.sets));
+      if (rx) {
+        if (x.note !== undefined) rx.note = x.note;
+        if (x.uni !== undefined) rx.uni = x.uni;
+        if (x.sets.some(s => s.done || s.sideL || s.sideR)) notes.push(X(x.id).name + ': ' + prog(rx, x.sets));
+      }
     });
   }
 
@@ -1866,7 +1954,9 @@ document.addEventListener('click', e => {
     }
     case 'addextoworkout': {
       if (S.act) {
-        S.act.ex.push({ id, ss: false, note: '', sets: newSets(id) });
+        const isUni = isUnilateralExercise(X(id).name);
+        const lastNote = getLastExerciseNote(id);
+        S.act.ex.push({ id, ss: false, uni: isUni, note: lastNote, sets: newSets(id) });
         save('act');
         close();
         view = 'work';
@@ -1969,6 +2059,8 @@ document.addEventListener('click', e => {
 
       // Preserve entered weights/reps structure while replacing exercise identity
       curEx.id = newId;
+      curEx.uni = isUnilateralExercise(X(newId).name);
+      curEx.note = getLastExerciseNote(newId);
 
       // Update base routine permanently if option was checked
       if (updatePerm && S.act.rid) {
@@ -1977,6 +2069,8 @@ document.addEventListener('click', e => {
           const rx = routine.ex.find(x => String(x.id) === String(oldId)) || routine.ex[swapIdx];
           if (rx) {
             rx.id = newId;
+            rx.uni = curEx.uni;
+            if (curEx.note) rx.note = curEx.note;
             save('routines');
           }
         }
@@ -2023,16 +2117,20 @@ document.addEventListener('click', e => {
           const targetSets = isDeloadActive ? Math.max(1, Math.round(baseSets * 0.5)) : baseSets;
           const targetWeight = isDeloadActive ? Math.max(0, rd((x.w || 0) * 0.8)) : (x.w || 0);
           const targetReps = x.prog === 'double' ? (x.cur || x.reps) : x.reps;
+          const isUni = x.uni !== undefined ? !!x.uni : isUnilateralExercise(X(x.id).name);
           return {
             id: x.id,
             ss: !!x.ss,
-            note: x.note || '',
+            uni: isUni,
+            note: x.note || getLastExerciseNote(x.id),
             sets: Array.from({ length: targetSets }, () => ({
               w: targetWeight,
               r: targetReps,
               rpe: '',
               rir: null,
-              done: false
+              done: false,
+              sideL: false,
+              sideR: false
             }))
           };
         }) : []
@@ -2122,9 +2220,69 @@ document.addEventListener('click', e => {
     case 'done': {
       const x = S.act?.ex[i], s = x?.sets[j];
       if (!s) return;
-      s.done = !s.done;
+      if (x.uni) {
+        if (s.done) {
+          s.done = false;
+          s.sideL = false;
+          s.sideR = false;
+        } else {
+          s.done = true;
+          s.sideL = true;
+          s.sideR = true;
+          if (!x.ss) startRest(S.cfg.rest);
+        }
+      } else {
+        s.done = !s.done;
+        if (s.done && !x.ss) startRest(S.cfg.rest);
+      }
       save('act');
-      if (s.done && !x.ss) startRest(S.cfg.rest);
+      break;
+    }
+    case 'toggleuni': {
+      const x = S.act?.ex[i];
+      if (x) {
+        x.uni = !x.uni;
+        if (x.sets) {
+          x.sets.forEach(s => {
+            if (x.uni) {
+              s.sideL = s.done ? true : !!s.sideL;
+              s.sideR = s.done ? true : !!s.sideR;
+              s.done = !!(s.sideL && s.sideR);
+            } else {
+              s.done = (s.sideL && s.sideR) || s.done;
+            }
+          });
+        }
+        if (S.act.rid) {
+          const r = S.routines.find(r => r.id === S.act.rid);
+          const rx = r?.ex.find(e => e.id === x.id);
+          if (rx) {
+            rx.uni = x.uni;
+            save('routines');
+          }
+        }
+        save('act');
+      }
+      break;
+    }
+    case 'donel': {
+      const x = S.act?.ex[i], s = x?.sets[j];
+      if (!s) return;
+      s.sideL = !s.sideL;
+      const wasDone = s.done;
+      s.done = !!(s.sideL && s.sideR);
+      save('act');
+      if (!wasDone && s.done && !x.ss) startRest(S.cfg.rest);
+      break;
+    }
+    case 'doner': {
+      const x = S.act?.ex[i], s = x?.sets[j];
+      if (!s) return;
+      s.sideR = !s.sideR;
+      const wasDone = s.done;
+      s.done = !!(s.sideL && s.sideR);
+      save('act');
+      if (!wasDone && s.done && !x.ss) startRest(S.cfg.rest);
       break;
     }
     case 'openrir': {
@@ -2173,7 +2331,7 @@ document.addEventListener('click', e => {
       const x = S.act?.ex[i];
       if (!x) return;
       const prev = x.sets.at(-1) || { w: 0, r: X(x.id).t === 't' ? 30 : 8, rpe: '', rir: null };
-      x.sets.push({ ...prev, done: false, rir: null, rpe: '' });
+      x.sets.push({ ...prev, done: false, sideL: false, sideR: false, rir: null, rpe: '' });
       save('act');
       break;
     }
@@ -2205,7 +2363,9 @@ document.addEventListener('click', e => {
       if (cb) {
         cb(id);
       } else if (S.act) {
-        S.act.ex.push({ id, ss: false, note: '', sets: newSets(id) });
+        const isUni = isUnilateralExercise(X(id).name);
+        const lastNote = getLastExerciseNote(id);
+        S.act.ex.push({ id, ss: false, uni: isUni, note: lastNote, sets: newSets(id) });
         S.act.curEx = S.act.ex.length - 1;
         save('act');
         render();
@@ -2364,8 +2524,14 @@ const handleFieldUpdate = t => {
 
   if (f && S.act && S.act.ex[i]) {
     const x = S.act.ex[i];
-    if (f === 'note') x.note = t.value;
-    else if (x.sets && x.sets[t.dataset.j]) {
+    if (f === 'note') {
+      x.note = t.value;
+      if (S.act.rid) {
+        const r = S.routines.find(r => r.id === S.act.rid);
+        const rx = r?.ex.find(e => String(e.id) === String(x.id));
+        if (rx) rx.note = t.value;
+      }
+    } else if (x.sets && x.sets[t.dataset.j]) {
       const s = x.sets[t.dataset.j];
       if (f === 'rpe') {
         s.rpe = t.value;
@@ -2388,6 +2554,7 @@ const handleFieldUpdate = t => {
 };
 
 document.addEventListener('input', e => handleFieldUpdate(e.target));
+document.addEventListener('blur', e => handleFieldUpdate(e.target), true);
 document.addEventListener('change', e => {
   const t = e.target;
   handleFieldUpdate(t);
@@ -2561,7 +2728,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=4.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=4.2.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
