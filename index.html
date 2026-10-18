@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self';">
   <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
   <meta name="description" content="MyGyM - Minimalist Offline-First Progressive Web App for Weightlifting">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,8 +13,34 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./style.css?v=4.0.0">
   <title>MyGyM</title>
+  <script>
+    // Self-healing force cache clear & auto-reload for iOS Safari PWA
+    (function() {
+      var SHELL_VERSION = 'mygym-v4.0.0-guided';
+      var cachedVersion = localStorage.getItem('mygym_shell_version');
+      if (cachedVersion !== SHELL_VERSION) {
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            return Promise.all(keys.map(function(k) { return caches.delete(k); }));
+          }).then(function() {
+            localStorage.setItem('mygym_shell_version', SHELL_VERSION);
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              navigator.serviceWorker.getRegistrations().then(function(regs) {
+                regs.forEach(function(r) { r.update(); });
+              });
+            }
+            if (cachedVersion) {
+              window.location.reload(true);
+            }
+          });
+        } else {
+          localStorage.setItem('mygym_shell_version', SHELL_VERSION);
+        }
+      }
+    })();
+  </script>
 </head>
 <body>
   <main id="v"></main>
@@ -27,6 +53,6 @@
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=4.0.0"></script>
 </body>
 </html>

@@ -561,37 +561,105 @@ input[type="checkbox"] {
   color: inherit;
   position: relative;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .cal-day.today {
-  border: 1px solid var(--ac);
+  border: 1.5px solid var(--ac);
+}
+
+.cal-day.has-w {
+  background: rgba(48, 209, 88, 0.16);
+  color: #30D158;
+  font-weight: 700;
+  border: 1px solid rgba(48, 209, 88, 0.45);
+  box-shadow: 0 0 12px rgba(48, 209, 88, 0.35);
+}
+
+.cal-day.today.has-w {
+  border: 2px solid #30D158;
+  box-shadow: 0 0 16px rgba(48, 209, 88, 0.5);
 }
 
 .cal-day.has-w::after {
   content: '';
   position: absolute;
-  bottom: 5px;
+  bottom: 4px;
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: var(--ac);
+  background: #30D158;
+  box-shadow: 0 0 6px #30D158;
 }
 
 .cal-day.sel {
   background: var(--ac);
   color: #FFFFFF;
   font-weight: 600;
+  box-shadow: 0 0 12px rgba(10, 132, 255, 0.4);
+}
+
+.cal-day.sel.has-w {
+  background: var(--gn);
+  color: #000000;
+  box-shadow: 0 0 16px rgba(48, 209, 88, 0.6);
 }
 
 .cal-day.sel.has-w::after {
-  background: #FFFFFF;
+  background: #000000;
 }
 
 .cal-day.other {
   opacity: 0.25;
 }
 
-/* Bodyweight Tracking & SVG Chart */
+/* Bodyweight & Waist Tracking & SVG Chart */
+.chart-toggle-chips {
+  display: flex;
+  justify-content: center;
+  margin: 6px 0 12px;
+}
+
+.dual-chart-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 12px;
+  margin: 6px 0 10px;
+  color: var(--t2);
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.w {
+  background: var(--ac);
+  box-shadow: 0 0 6px var(--ac);
+}
+
+.legend-dot.waist {
+  background: var(--gn);
+  box-shadow: 0 0 6px var(--gn);
+}
+
+.meas-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
 .stat-grid {
   display: flex;
   gap: 8px;
@@ -608,7 +676,7 @@ input[type="checkbox"] {
 }
 
 .stat-val {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.5px;
 }
@@ -624,7 +692,7 @@ input[type="checkbox"] {
 .svg-chart {
   width: 100%;
   height: 180px;
-  margin: 14px 0;
+  margin: 10px 0;
   display: block;
   overflow: visible;
 }
@@ -638,14 +706,14 @@ input[type="checkbox"] {
 }
 
 .weight-val {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .diff-tag {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 6px;
 }
 
@@ -856,9 +924,17 @@ input[type="checkbox"] {
 }
 
 .work-nav-stepper {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
   display: flex;
-  gap: 10px;
-  margin: 14px 0 8px;
+  gap: 8px;
+  margin: 16px -16px -24px;
+  padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
+  background: rgba(24, 24, 26, 0.92);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border-top: 0.5px solid var(--bd);
 }
 
 .work-nav-btn {
@@ -867,12 +943,70 @@ input[type="checkbox"] {
   font-size: 14px;
   font-weight: 600;
   border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .work-nav-btn.fin-step {
   background: var(--gn);
   color: #000000;
   font-weight: 700;
+  box-shadow: 0 0 16px rgba(48, 209, 88, 0.45);
+}
+
+/* Swap Exercise Modal Styles */
+.swap-perm-box {
+  background: var(--c2);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  border: 0.5px solid var(--bd);
+}
+
+.swap-perm-box input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+
+.swap-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--bd);
+  cursor: pointer;
+}
+
+.swap-row:last-child {
+  border-bottom: none;
+}
+
+.swap-row .ex-thumb {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #000000;
+  flex: none;
+}
+
+.swap-badge-match {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(10, 132, 255, 0.2);
+  color: var(--ac);
+  margin-left: 4px;
 }
 
 /* ---- Routine Builder & Exercise Cards ---- */

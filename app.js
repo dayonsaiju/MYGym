@@ -95,8 +95,13 @@ let S = {
   act: null
 };
 
+const APP_VERSION = '4.0.0';
+const SHELL_VERSION = 'mygym-v4.0.0-guided';
+
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
+let swapQuery = '', swapCategory = 'All', swapIdx = 0;
+let bodyMetricView = 'both'; // 'both', 'weight', 'waist'
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -429,6 +434,7 @@ const vTrain = () => {
   const todayDay = new Date().getDay();
   const todayRid = S.sched ? (S.sched[todayDay] || '') : '';
   const todayRoutine = todayRid ? S.routines.find(r => r.id === todayRid) : null;
+  const completedToday = S.logs.some(l => dk(l.date) === dk(Date.now()));
 
   return `<h1>Train</h1>` +
     `<div class="card row"><span><b>${streak()}</b> day streak 🔥</span><span class="t2">${S.logs.length} workouts</span></div>` +
@@ -437,10 +443,13 @@ const vTrain = () => {
       <div class="card today-split-hero">
         <div class="row">
           <div>
-            <div class="today-split-badge">⭐ Scheduled for Today (${DAYS[todayDay]})</div>
+            <div class="today-split-badge">⭐ Today's Schedule (${DAYS[todayDay]})</div>
             <div class="today-split-title">${esc(todayRoutine.name)}</div>
           </div>
-          <button class="btn" data-a="start" data-id="${esc(todayRoutine.id)}">Start Workout</button>
+          ${completedToday
+            ? `<span class="today-chip" style="background:var(--gn);color:#000000;font-size:12px;padding:6px 12px;font-weight:700">✓ Done Today</span>`
+            : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start</button>`
+          }
         </div>
         <div class="t2 sm" style="margin-top:8px">${todayRoutine.ex.map(x => `${esc(X(x.id).name)} (${x.sets}×${x.reps})`).join(' · ')}</div>
       </div>
@@ -559,12 +568,16 @@ function vWork() {
       <div class="work-hero-media">
         <img class="work-hero-gif" src="./media/${esc(exInfo.gif || exInfo.img)}" alt="${esc(exInfo.name)}" loading="eager" onerror="this.onerror=null;this.src='./media/${esc(exInfo.img || exInfo.gif)}';">
         <div class="work-hero-overlay">
+          <button class="chip on" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
           <button class="chip" data-a="libex" data-id="${esc(exInfo.id)}">ℹ️ Form</button>
           <button class="chip ${currentEx.ss ? 'on' : ''}" data-a="ss" data-i="${curIdx}">Superset</button>
         </div>
       </div>
       <div class="work-hero-info">
-        <div class="work-hero-title">${esc(exInfo.name)}</div>
+        <div class="row" style="margin-bottom:4px">
+          <div class="work-hero-title">${esc(exInfo.name)}</div>
+          <button class="chip" data-a="swapex" data-i="${curIdx}" style="font-size:12px;padding:0 10px;min-height:32px">⇄ Change</button>
+        </div>
         <div class="work-hero-tags">
           <span class="ex-badge ac">${esc(exInfo.g)}</span>
           ${exInfo.tg ? `<span class="ex-badge">${esc(exInfo.tg)}</span>` : ''}
@@ -601,16 +614,16 @@ function vWork() {
       <input class="note" placeholder="Exercise cues/notes (grip, seat, tempo)..." data-f="note" data-i="${curIdx}" value="${esc(currentEx.note || '')}" style="margin-top:10px">
     </div>
 
-    <!-- Stepper Navigation Buttons -->
+    <!-- Sticky Stepper Controls Navigation -->
     <div class="work-nav-stepper">
       <button class="btn s work-nav-btn" data-a="workprev" ${curIdx === 0 ? 'disabled style="opacity:0.3"' : ''}>
         ‹ Prev Exercise
       </button>
       <button class="btn s work-nav-btn" data-a="worklist">
-        ${ic('list', 16)} All (${curIdx + 1}/${a.ex.length})
+        ☰ Overview (${curIdx + 1}/${a.ex.length})
       </button>
       ${curIdx === a.ex.length - 1
-        ? `<button class="btn work-nav-btn fin-step" data-a="fin">Finish Workout ›</button>`
+        ? `<button class="btn work-nav-btn fin-step" data-a="fin">Finish Workout 🎉</button>`
         : `<button class="btn work-nav-btn" data-a="worknext">Next Exercise ›</button>`
       }
     </div>
@@ -707,7 +720,7 @@ function vCal() {
     const d = prevMonthTotalDays - i;
     cells.push(`<div class="cal-day other">${d}</div>`);
   }
-  // Current month days
+  // Current month days with green radial glow on completed workout days
   for (let d = 1; d <= totalDays; d++) {
     const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const isToday = dateStr === todayStr;
@@ -721,6 +734,7 @@ function vCal() {
   const selDateDisplay = new Date(calSelectedDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
   const todayDay = new Date().getDay();
+  const SPLIT_DAYS = [1, 2, 3, 4, 5, 6, 0]; // Monday to Sunday grid
 
   return `<h1>Calendar & Split</h1>` +
     `<div class="card row"><span><b>${streak()}</b> Day Active Streak 🔥</span><span class="t2">${workoutDates.size} active days</span></div>` +
@@ -735,9 +749,10 @@ function vCal() {
         cells.join('') +
       `</div>` +
     `</div>` +
-    `<h2>Weekly Split Schedule</h2>` +
+    `<h2>Weekly Split Schedule (Mon - Sun)</h2>` +
     `<div class="card" style="padding:4px 14px">` +
-      DAYS.map((dayName, dayIdx) => {
+      SPLIT_DAYS.map(dayIdx => {
+        const dayName = DAYS[dayIdx];
         const assignedRid = S.sched ? (S.sched[dayIdx] || '') : '';
         const isToday = todayDay === dayIdx;
         const assignedRoutine = S.routines.find(r => r.id === assignedRid);
@@ -748,7 +763,7 @@ function vCal() {
           </div>
           <div class="sched-day-picker">
             <select data-f="sched" data-day="${dayIdx}">
-              <option value="">Rest Day</option>
+              <option value="">🌿 Rest Day</option>
               ${S.routines.map(r => `<option value="${esc(r.id)}" ${assignedRid === r.id ? 'selected' : ''}>${esc(r.name)} (${r.ex.length} ex)</option>`).join('')}
             </select>
           </div>
@@ -765,86 +780,199 @@ function vCal() {
     `).join('') : '<p class="t2">No workouts logged on this date.</p>');
 }
 
-// 5. Body Weight Tracker & SVG Line Chart
+// 5. Body Weight & Waist Measurements Tracker with Dual SVG Trend Chart
 function vWeight() {
   const sorted = [...S.weights].sort((a, b) => a.t - b.t);
-  const current = sorted.length ? sorted.at(-1).w : null;
-  const weightsArr = sorted.map(x => x.w);
-  const minW = sorted.length ? Math.min(...weightsArr) : 0;
-  const maxW = sorted.length ? Math.max(...weightsArr) : 0;
+  const weightsArr = sorted.filter(x => x.w != null && x.w > 0).map(x => x.w);
+  const waistsArr = sorted.filter(x => x.waist != null && x.waist > 0).map(x => x.waist);
+
+  const latestW = weightsArr.length ? weightsArr.at(-1) : null;
+  const latestWaist = waistsArr.length ? waistsArr.at(-1) : null;
+
+  const minW = weightsArr.length ? Math.min(...weightsArr) : 0;
+  const maxW = weightsArr.length ? Math.max(...weightsArr) : 0;
+
+  const minWaist = waistsArr.length ? Math.min(...waistsArr) : 0;
+  const maxWaist = waistsArr.length ? Math.max(...waistsArr) : 0;
+
+  const firstW = weightsArr.length ? weightsArr[0] : null;
+  const firstWaist = waistsArr.length ? waistsArr[0] : null;
+
+  const diffW = (latestW != null && firstW != null && weightsArr.length > 1) ? rd(latestW - firstW) : null;
+  const diffWaist = (latestWaist != null && firstWaist != null && waistsArr.length > 1) ? rd(latestWaist - firstWaist) : null;
+
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // SVG Chart calculation
+  // Build SVG Chart
   let chartSvg = '';
-  if (sorted.length >= 2) {
-    const W = 340, H = 160, pad = 24;
-    const rangeW = (maxW - minW) || 1;
-    const getX = (idx, total) => pad + (idx / (total - 1)) * (W - 2 * pad);
-    const getY = val => H - pad - ((val - minW) / rangeW) * (H - 2 * pad);
+  const W = 340, H = 180, pad = 28;
 
-    const points = sorted.map((d, i) => `${getX(i, sorted.length)},${getY(d.w)}`);
-    const pathD = `M ` + points.join(' L ');
-    const areaD = `${pathD} L ${getX(sorted.length - 1, sorted.length)},${H - pad} L ${pad},${H - pad} Z`;
+  if (bodyMetricView === 'weight') {
+    const wEntries = sorted.filter(x => x.w != null && x.w > 0);
+    if (wEntries.length >= 2) {
+      const rangeW = (maxW - minW) || 1;
+      const getX = (i, total) => pad + (i / (total - 1)) * (W - 2 * pad);
+      const getY = val => H - pad - ((val - minW) / rangeW) * (H - 2 * pad);
 
-    chartSvg = `
-      <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
-        <defs>
-          <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stop-color="#0A84FF" stop-opacity="0.35"/>
-            <stop offset="100%" stop-color="#0A84FF" stop-opacity="0.0"/>
-          </linearGradient>
-        </defs>
-        <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
-        <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
-        <path d="${areaD}" fill="url(#wg)"/>
-        <path d="${pathD}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round"/>
-        ${sorted.map((d, i) => `<circle cx="${getX(i, sorted.length)}" cy="${getY(d.w)}" r="3.5" fill="#FFFFFF" stroke="var(--ac)" stroke-width="2"/>`).join('')}
-      </svg>
-    `;
+      const points = wEntries.map((d, i) => `${getX(i, wEntries.length)},${getY(d.w)}`);
+      const pathD = `M ` + points.join(' L ');
+      const areaD = `${pathD} L ${getX(wEntries.length - 1, wEntries.length)},${H - pad} L ${pad},${H - pad} Z`;
+
+      chartSvg = `
+        <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
+          <defs>
+            <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#0A84FF" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#0A84FF" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
+          <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
+          <text x="${pad}" y="${pad - 8}" fill="var(--t2)" font-size="10">${maxW.toFixed(1)} kg</text>
+          <text x="${pad}" y="${H - pad + 16}" fill="var(--t2)" font-size="10">${minW.toFixed(1)} kg</text>
+          <path d="${areaD}" fill="url(#wg)"/>
+          <path d="${pathD}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round"/>
+          ${wEntries.map((d, i) => `<circle cx="${getX(i, wEntries.length)}" cy="${getY(d.w)}" r="3.5" fill="#FFFFFF" stroke="var(--ac)" stroke-width="2"/>`).join('')}
+        </svg>
+      `;
+    }
+  } else if (bodyMetricView === 'waist') {
+    const waistEntries = sorted.filter(x => x.waist != null && x.waist > 0);
+    if (waistEntries.length >= 2) {
+      const rangeWaist = (maxWaist - minWaist) || 1;
+      const getX = (i, total) => pad + (i / (total - 1)) * (W - 2 * pad);
+      const getY = val => H - pad - ((val - minWaist) / rangeWaist) * (H - 2 * pad);
+
+      const points = waistEntries.map((d, i) => `${getX(i, waistEntries.length)},${getY(d.waist)}`);
+      const pathD = `M ` + points.join(' L ');
+      const areaD = `${pathD} L ${getX(waistEntries.length - 1, waistEntries.length)},${H - pad} L ${pad},${H - pad} Z`;
+
+      chartSvg = `
+        <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
+          <defs>
+            <linearGradient id="waistg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#30D158" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#30D158" stop-opacity="0.0"/>
+            </linearGradient>
+          </defs>
+          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
+          <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
+          <text x="${pad}" y="${pad - 8}" fill="var(--t2)" font-size="10">${maxWaist.toFixed(1)} cm</text>
+          <text x="${pad}" y="${H - pad + 16}" fill="var(--t2)" font-size="10">${minWaist.toFixed(1)} cm</text>
+          <path d="${areaD}" fill="url(#waistg)"/>
+          <path d="${pathD}" fill="none" stroke="var(--gn)" stroke-width="2.5" stroke-linecap="round"/>
+          ${waistEntries.map((d, i) => `<circle cx="${getX(i, waistEntries.length)}" cy="${getY(d.waist)}" r="3.5" fill="#FFFFFF" stroke="var(--gn)" stroke-width="2"/>`).join('')}
+        </svg>
+      `;
+    }
+  } else {
+    // Both Overlay View
+    if (sorted.length >= 2) {
+      const rangeW = (maxW - minW) || 1;
+      const rangeWaist = (maxWaist - minWaist) || 1;
+      const getX = (i, total) => pad + (i / (total - 1)) * (W - 2 * pad);
+
+      const wPoints = [];
+      const waistPoints = [];
+
+      sorted.forEach((d, i) => {
+        const x = getX(i, sorted.length);
+        if (d.w != null && d.w > 0) {
+          const y = H - pad - ((d.w - minW) / rangeW) * (H - 2 * pad);
+          wPoints.push({ x, y, val: d.w });
+        }
+        if (d.waist != null && d.waist > 0) {
+          const y = H - pad - ((d.waist - minWaist) / rangeWaist) * (H - 2 * pad);
+          waistPoints.push({ x, y, val: d.waist });
+        }
+      });
+
+      const wPath = wPoints.length >= 2 ? `M ` + wPoints.map(p => `${p.x},${p.y}`).join(' L ') : '';
+      const waistPath = waistPoints.length >= 2 ? `M ` + waistPoints.map(p => `${p.x},${p.y}`).join(' L ') : '';
+
+      chartSvg = `
+        <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
+          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
+          <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
+          <text x="${pad}" y="${pad - 8}" fill="var(--ac)" font-size="10">Weight: ${maxW ? maxW.toFixed(1) + 'kg' : ''}</text>
+          <text x="${W - pad}" y="${pad - 8}" fill="var(--gn)" font-size="10" text-anchor="end">Waist: ${maxWaist ? maxWaist.toFixed(1) + 'cm' : ''}</text>
+          ${wPath ? `<path d="${wPath}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round"/>` : ''}
+          ${waistPath ? `<path d="${waistPath}" fill="none" stroke="var(--gn)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 3"/>` : ''}
+          ${wPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="#FFFFFF" stroke="var(--ac)" stroke-width="2"/>`).join('')}
+          ${waistPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="#FFFFFF" stroke="var(--gn)" stroke-width="2"/>`).join('')}
+        </svg>
+      `;
+    }
   }
 
-  return `<h1>Body Weight</h1>` +
+  return `<h1>Body Measurements</h1>` +
     `<div class="stat-grid">` +
-      `<div class="stat-box"><div class="stat-val">${current != null ? Number(current).toFixed(1) : '--'}</div><div class="stat-lbl">Current (kg)</div></div>` +
-      `<div class="stat-box"><div class="stat-val">${minW ? Number(minW).toFixed(1) : '--'}</div><div class="stat-lbl">Lowest</div></div>` +
-      `<div class="stat-box"><div class="stat-val">${maxW ? Number(maxW).toFixed(1) : '--'}</div><div class="stat-lbl">Highest</div></div>` +
+      `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
+      `<div class="stat-box"><div class="stat-val">${latestWaist != null ? latestWaist.toFixed(1) + ' cm' : '--'}</div><div class="stat-lbl">Waist</div></div>` +
+      `<div class="stat-box"><div class="stat-val">${diffW != null ? (diffW > 0 ? '+' + diffW : diffW) + ' kg' : '--'}</div><div class="stat-lbl">Net Weight</div></div>` +
+      `<div class="stat-box"><div class="stat-val">${diffWaist != null ? (diffWaist > 0 ? '+' + diffWaist : diffWaist) + ' cm' : '--'}</div><div class="stat-lbl">Net Waist</div></div>` +
     `</div>` +
     `<div class="card">` +
-      `<b>Trend Chart</b>` +
-      (chartSvg || '<p class="t2 sm" style="margin:20px 0">Log at least 2 entries to display trend chart.</p>') +
-    `</div>` +
-    `<h2>Log Weight</h2>` +
-    `<div class="card">` +
-      `<div class="row">` +
-        `<input type="number" step="0.1" inputmode="decimal" id="wt-input" placeholder="Weight (kg)" style="width:50%">` +
-        `<input type="date" id="wt-date" value="${esc(todayStr)}" style="width:45%">` +
+      `<div class="row"><b>Trend Chart</b></div>` +
+      `<div class="chips chart-toggle-chips">` +
+        `<button class="chip ${bodyMetricView === 'both' ? 'on' : ''}" data-a="setwv" data-v="both">Both (Overlay)</button>` +
+        `<button class="chip ${bodyMetricView === 'weight' ? 'on' : ''}" data-a="setwv" data-v="weight">Weight (kg)</button>` +
+        `<button class="chip ${bodyMetricView === 'waist' ? 'on' : ''}" data-a="setwv" data-v="waist">Waist (cm)</button>` +
       `</div>` +
-      `<button class="btn" data-a="logweight" style="margin-top:10px">Save Weight Entry</button>` +
+      `<div class="dual-chart-legend">` +
+        `<span class="legend-item"><span class="legend-dot w"></span> Weight (${latestW != null ? latestW.toFixed(1) + ' kg' : '--'})</span>` +
+        `<span class="legend-item"><span class="legend-dot waist"></span> Waist (${latestWaist != null ? latestWaist.toFixed(1) + ' cm' : '--'})</span>` +
+      `</div>` +
+      (chartSvg || '<p class="t2 sm" style="margin:20px 0;text-align:center">Log at least 2 entries to display trend chart.</p>') +
     `</div>` +
-    `<h2>History</h2>` +
+    `<h2>Log Measurements</h2>` +
+    `<div class="card">` +
+      `<div class="meas-inputs">` +
+        `<input type="number" step="0.1" inputmode="decimal" id="wt-input" placeholder="Weight (kg)">` +
+        `<input type="number" step="0.5" inputmode="decimal" id="waist-input" placeholder="Waist (cm)">` +
+      `</div>` +
+      `<div class="row" style="margin-top:8px">` +
+        `<input type="date" id="wt-date" value="${esc(todayStr)}" style="flex:1">` +
+        `<button class="btn" data-a="logweight" style="width:auto;flex:1;margin:0">Save Entry</button>` +
+      `</div>` +
+    `</div>` +
+    `<h2>Measurement History</h2>` +
     `<div class="card" style="padding:0 14px">` +
       (sorted.length ? [...sorted].reverse().map((item, idx, arr) => {
-        const next = arr[idx + 1];
-        let diffHtml = '';
-        if (next) {
-          const diff = rd(item.w - next.w);
-          if (diff > 0) diffHtml = `<span class="diff-tag up">+${diff} kg</span>`;
-          else if (diff < 0) diffHtml = `<span class="diff-tag down">${diff} kg</span>`;
-          else diffHtml = `<span class="diff-tag same">0 kg</span>`;
+        const prev = arr[idx + 1];
+        let diffWHtml = '';
+        if (prev && item.w != null && prev.w != null) {
+          const d = rd(item.w - prev.w);
+          if (d > 0) diffWHtml = `<span class="diff-tag up">+${d} kg</span>`;
+          else if (d < 0) diffWHtml = `<span class="diff-tag down">${d} kg</span>`;
+          else diffWHtml = `<span class="diff-tag same">0 kg</span>`;
         }
+        let diffWaistHtml = '';
+        if (prev && item.waist != null && prev.waist != null) {
+          const d = rd(item.waist - prev.waist);
+          if (d > 0) diffWaistHtml = `<span class="diff-tag up">+${d} cm</span>`;
+          else if (d < 0) diffWaistHtml = `<span class="diff-tag down">${d} cm</span>`;
+          else diffWaistHtml = `<span class="diff-tag same">0 cm</span>`;
+        }
+
         return `
           <div class="weight-row">
             <div>
-              <div class="weight-val">${Number(item.w).toFixed(1)} kg</div>
+              <div class="weight-val">
+                ${item.w != null ? `${Number(item.w).toFixed(1)} kg` : ''}
+                ${item.w != null && item.waist != null ? ' · ' : ''}
+                ${item.waist != null ? `<span style="color:var(--gn)">${Number(item.waist).toFixed(1)} cm</span>` : ''}
+              </div>
               <div class="t2 sm">${esc(item.date)}</div>
             </div>
-            <div class="row" style="gap:8px">
-              ${diffHtml}
+            <div class="row" style="gap:6px">
+              ${diffWHtml}
+              ${diffWaistHtml}
               <button class="x" data-a="delweight" data-id="${esc(item.id)}">${ic('trash', 18)}</button>
             </div>
           </div>
         `;
-      }).join('') : '<p class="t2 sm" style="padding:14px 0">No body weight entries yet.</p>') +
+      }).join('') : '<p class="t2 sm" style="padding:14px 0">No measurement entries logged yet.</p>') +
     `</div>`;
 }
 
@@ -856,6 +984,8 @@ const vHist = () => `<h1>History & Settings</h1>` +
   (S.logs.length ? [...S.logs].reverse().map(l => `<button class="card" data-a="hist" data-id="${esc(l.id)}"><div class="row"><b>${esc(l.name)}</b><span class="t2 sm">${new Date(l.date).toLocaleDateString()}</span></div><div class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume · ${l.ex.length} exercises</div></button>`).join('') : '<p class="t2">No workouts yet.</p>') +
   `<h2>Preferences</h2>` +
   `<div class="card"><label class="t2 sm">Rest timer (seconds)</label><input type="number" inputmode="numeric" data-c="rest" value="${Number(S.cfg.rest) || 90}"><label class="row g" style="cursor:pointer;min-height:44px"><span>Visual flash when rest ends</span><input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}></label></div>` +
+  `<h2>System & Cache Updates</h2>` +
+  `<button class="btn s" data-a="forceupdate" style="margin-bottom:8px">🔄 Force App Shell Reload (v4.0.0)</button>` +
   `<h2>Data Management</h2>` +
   `<button class="btn" data-a="exp">Export Backup (JSON)</button><label class="btn s">Restore Backup (JSON)<input type="file" id="f" accept="application/json,.json" hidden></label><button class="btn s red" data-a="wipe">Erase all data</button><p class="t2 sm">All data is 100% on-device & air-gapped.</p>`;
 
@@ -875,7 +1005,7 @@ function render() {
     ['train', 'act', 'Train'],
     ['lib', 'list', 'Library'],
     ['cal', 'cal', 'Calendar'],
-    ['weight', 'weight', 'Weight'],
+    ['weight', 'weight', 'Body'],
     ['hist', 'clock', 'History']
   ].map(([k, i, t]) => `<button data-a="tab" data-k="${k}" class="${view === k || (view === 'work' && k === 'train') ? 'on' : ''}">${ic(i)}<span>${t}</span></button>`).join('');
 }
@@ -948,6 +1078,85 @@ function showExercisePicker(title = 'Add Exercise') {
     </div>
     <div id="pick-list" class="card" style="max-height:55vh;overflow-y:auto;padding:0 12px">
       ${renderPickResults()}
+    </div>
+  `);
+}
+
+// ---- In-Session Exercise Swap Modal ----
+const renderSwapResults = () => {
+  const curEx = S.act?.ex[swapIdx];
+  if (!curEx) return '<p class="t2" style="padding:16px;text-align:center">No active exercise</p>';
+  const curInfo = X(curEx.id);
+  const q = (swapQuery || '').trim().toLowerCase();
+
+  const filtered = EXDB.filter(e => {
+    if (String(e.id) === String(curEx.id)) return false;
+    if (swapCategory !== 'All' && e.g !== swapCategory) return false;
+    if (q) {
+      return e.name.toLowerCase().includes(q) || e.tg.toLowerCase().includes(q) || e.eq.toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  // Sort: prioritize exercises that share the same target muscle group
+  filtered.sort((a, b) => {
+    const aMatch = a.tg && curInfo.tg && a.tg.toLowerCase() === curInfo.tg.toLowerCase() ? 1 : 0;
+    const bMatch = b.tg && curInfo.tg && b.tg.toLowerCase() === curInfo.tg.toLowerCase() ? 1 : 0;
+    return bMatch - aMatch;
+  });
+
+  const visible = filtered.slice(0, 40);
+
+  if (!visible.length) {
+    return '<p class="t2" style="padding:24px;text-align:center">No alternative exercises found</p>';
+  }
+
+  return visible.map(e => {
+    const sameTg = e.tg && curInfo.tg && e.tg.toLowerCase() === curInfo.tg.toLowerCase();
+    return `
+      <div class="swap-row" data-a="doswap" data-id="${esc(e.id)}">
+        <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+        <div style="flex:1;min-width:0">
+          <div class="ex-name" style="display:flex;align-items:center;flex-wrap:wrap">
+            <span>${esc(e.name)}</span>
+            ${sameTg ? '<span class="swap-badge-match">Same Target</span>' : ''}
+          </div>
+          <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+        </div>
+        <button class="chip on" style="pointer-events:none">Swap ⇄</button>
+      </div>
+    `;
+  }).join('');
+};
+
+function showSwapModal(idx) {
+  if (!S.act || !S.act.ex[idx]) return;
+  swapIdx = idx;
+  const curEx = S.act.ex[idx];
+  const exInfo = X(curEx.id);
+  swapCategory = exInfo.g;
+  swapQuery = '';
+
+  const r = S.act.rid ? S.routines.find(r => r.id === S.act.rid) : null;
+
+  modal(`
+    <h2>⇄ Swap "${esc(exInfo.name)}"</h2>
+    <p class="t2 sm" style="margin-top:-6px;margin-bottom:12px">Choose a replacement movement for this session.</p>
+    ${r ? `
+      <label class="swap-perm-box">
+        <span class="sm">
+          <b>Update routine permanently</b><br>
+          <span class="t2">Replaces in "${esc(r.name)}" for future workouts</span>
+        </span>
+        <input type="checkbox" id="swap-perm-check">
+      </label>
+    ` : ''}
+    <input id="swap-search-input" class="txt" placeholder="Search 1,300+ replacements..." data-f="swapsearch" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="chips" style="margin-bottom:8px">
+      ${BP_CATEGORIES.map(c => `<button class="chip ${swapCategory === c ? 'on' : ''}" data-a="swapcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+    </div>
+    <div id="swap-list" class="card" style="max-height:50vh;overflow-y:auto;padding:0 12px">
+      ${renderSwapResults()}
     </div>
   `);
 }
@@ -1039,7 +1248,8 @@ const valid = o => {
     w && typeof w === 'object' && !Array.isArray(w) &&
     typeof w.id === 'string' && w.id.length <= 100 &&
     typeof w.date === 'string' && w.date.length <= 20 &&
-    Number.isFinite(w.w) && w.w > 0 && w.w < 500
+    (w.w == null || (Number.isFinite(w.w) && w.w > 0 && w.w < 500)) &&
+    (w.waist == null || (Number.isFinite(w.waist) && w.waist > 0 && w.waist < 500))
   );
 
   if (!o.routines.every(validRoutine) || !o.logs.every(validLog)) return false;
@@ -1119,7 +1329,8 @@ async function imp(f) {
       S.weights = o.weights.map(w => ({
         id: String(w.id).slice(0, 50),
         date: String(w.date).slice(0, 10),
-        w: rd(Math.max(10, Math.min(500, Number(w.w) || 70))),
+        w: w.w != null && Number.isFinite(+w.w) ? rd(Math.max(10, Math.min(500, +w.w))) : null,
+        waist: w.waist != null && Number.isFinite(+w.waist) ? rd(Math.max(10, Math.min(300, +w.waist))) : null,
         t: Number(w.t) || new Date(w.date + 'T12:00:00').getTime() || Date.now()
       }));
     }
@@ -1267,27 +1478,122 @@ document.addEventListener('click', e => {
       calSelectedDate = t.dataset.date;
       break;
 
-    // Body Weight
+    // Body Measurements (Weight + Waist)
+    case 'setwv': {
+      bodyMetricView = t.dataset.v;
+      render();
+      return;
+    }
     case 'logweight': {
-      const inp = $('#wt-input');
+      const inpW = $('#wt-input');
+      const inpWaist = $('#waist-input');
       const dinp = $('#wt-date');
-      const val = parseFloat(inp?.value);
+      const valW = parseFloat(inpW?.value);
+      const valWaist = parseFloat(inpWaist?.value);
       const dateVal = dinp?.value || new Date().toISOString().slice(0, 10);
-      if (Number.isFinite(val) && val > 0 && val < 500) {
-        S.weights.push({ id: uid(), date: dateVal, w: rd(val), t: new Date(dateVal + 'T12:00:00').getTime() });
-        save('weights');
-        inp.value = '';
-        toast(`Logged ${rd(val)} kg`);
-      } else {
-        toast('Please enter a valid weight');
+
+      const hasW = Number.isFinite(valW) && valW > 0 && valW < 500;
+      const hasWaist = Number.isFinite(valWaist) && valWaist > 0 && valWaist < 300;
+
+      if (!hasW && !hasWaist) {
+        toast('Please enter a valid weight or waist size');
+        return;
       }
+
+      // Check if entry for date already exists to merge
+      const existing = S.weights.find(x => x.date === dateVal);
+      if (existing) {
+        if (hasW) existing.w = rd(valW);
+        if (hasWaist) existing.waist = rd(valWaist);
+        existing.t = new Date(dateVal + 'T12:00:00').getTime();
+      } else {
+        S.weights.push({
+          id: uid(),
+          date: dateVal,
+          w: hasW ? rd(valW) : null,
+          waist: hasWaist ? rd(valWaist) : null,
+          t: new Date(dateVal + 'T12:00:00').getTime()
+        });
+      }
+      save('weights');
+      if (inpW) inpW.value = '';
+      if (inpWaist) inpWaist.value = '';
+      const feedback = [
+        hasW ? `${rd(valW)} kg` : null,
+        hasWaist ? `${rd(valWaist)} cm waist` : null
+      ].filter(Boolean).join(' · ');
+      toast(`Logged ${feedback}`);
+      render();
       break;
     }
     case 'delweight': {
       S.weights = S.weights.filter(x => x.id !== id);
       save('weights');
       toast('Entry deleted');
+      render();
       break;
+    }
+
+    // Exercise Swap
+    case 'swapex': {
+      showSwapModal(+t.dataset.i);
+      return;
+    }
+    case 'swapcat': {
+      swapCategory = t.dataset.cat;
+      document.querySelectorAll('.chips button[data-a="swapcat"]').forEach(btn => {
+        btn.classList.toggle('on', btn.dataset.cat === swapCategory);
+      });
+      const swapList = $('#swap-list');
+      if (swapList) swapList.innerHTML = renderSwapResults();
+      return;
+    }
+    case 'doswap': {
+      if (!S.act || !S.act.ex[swapIdx]) return;
+      const curEx = S.act.ex[swapIdx];
+      const oldId = curEx.id;
+      const newId = id;
+      const updatePerm = Boolean($('#swap-perm-check')?.checked);
+
+      // Preserve entered weights/reps structure while replacing exercise identity
+      curEx.id = newId;
+
+      // Update base routine permanently if option was checked
+      if (updatePerm && S.act.rid) {
+        const routine = S.routines.find(r => r.id === S.act.rid);
+        if (routine && routine.ex) {
+          const rx = routine.ex.find(x => String(x.id) === String(oldId)) || routine.ex[swapIdx];
+          if (rx) {
+            rx.id = newId;
+            save('routines');
+          }
+        }
+      }
+
+      save('act');
+      close();
+      render();
+      toast(`Swapped to ${X(newId).name}${updatePerm ? ' (routine updated)' : ''}`);
+      return;
+    }
+
+    // Force Update & Shell Cache Bust
+    case 'forceupdate': {
+      if (confirm('Clear local app shell cache and force reload latest version?')) {
+        (async () => {
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map(k => caches.delete(k)));
+          }
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const r of regs) await r.unregister();
+          }
+          localStorage.setItem('mygym_shell_version', SHELL_VERSION);
+          window.location.reload(true);
+        })();
+      }
+      return;
     }
 
     // Workout Logger
@@ -1320,6 +1626,8 @@ document.addEventListener('click', e => {
         S.act.curEx--;
         save('act');
         render();
+        const v = $('#v');
+        if (v) v.scrollTop = 0;
       }
       return;
     }
@@ -1328,6 +1636,8 @@ document.addEventListener('click', e => {
         S.act.curEx++;
         save('act');
         render();
+        const v = $('#v');
+        if (v) v.scrollTop = 0;
       }
       return;
     }
@@ -1336,6 +1646,8 @@ document.addEventListener('click', e => {
         S.act.curEx = Math.max(0, Math.min(S.act.ex.length - 1, +t.dataset.i));
         save('act');
         render();
+        const v = $('#v');
+        if (v) v.scrollTop = 0;
       }
       return;
     }
@@ -1576,6 +1888,17 @@ const handleFieldUpdate = t => {
     return;
   }
 
+  if (f === 'swapsearch') {
+    swapQuery = t.value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      const list = $('#swap-list');
+      if (list) list.innerHTML = renderSwapResults();
+      if (t && typeof t.focus === 'function') t.focus({ preventScroll: true });
+    }, 150);
+    return;
+  }
+
   if (f && S.act && S.act.ex[i]) {
     const x = S.act.ex[i];
     if (f === 'note') x.note = t.value;
@@ -1765,6 +2088,15 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js');
+    navigator.serviceWorker.register('./sw.js?v=4.0.0').then(reg => {
+      reg.update();
+    }).catch(err => console.warn('SW registration issue:', err));
+
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!window._swReloading) {
+        window._swReloading = true;
+        window.location.reload();
+      }
+    });
   }
 })();
