@@ -91,10 +91,25 @@ let S = {
   logs: [],
   weights: [],
   cfg: { rest: 90, flash: true },
+  sched: {},
   act: null
 };
 
 let view = 'train', P, E, U, wl, ac, tt;
+let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const fmtDur = ms => {
+  const s = Math.floor(Math.max(0, ms) / 1000);
+  const m = Math.floor(s / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  if (m < 60) return `${m}:${sec}`;
+  const h = Math.floor(m / 60);
+  const min = String(m % 60).padStart(2, '0');
+  return `${h}:${min}:${sec}`;
+};
+
 const save = (...k) => Promise.all(k.map(x => put(x, S[x])));
 
 // ---- Air-Gapped Exercise Database ----
@@ -410,25 +425,201 @@ const EQ_OPTIONS = ['All', 'body weight', 'barbell', 'dumbbell', 'cable', 'lever
 // ---- Views ----
 
 // 1. Train View
-const vTrain = () => `<h1>Train</h1><div class="card row"><span><b>${streak()}</b> day streak 🔥</span><span class="t2">${S.logs.length} workouts</span></div>` +
-  (S.act ? `<button class="btn" data-a="tab" data-k="work">Resume: ${esc(S.act.name)}</button>` : '') +
-  '<h2>Routines</h2>' +
-  S.routines.map(r => `<div class="card"><div class="row"><b>${esc(r.name)}</b><span class="t2">${r.ex.length} exercises</span></div><div class="t2 sm">${r.ex.map(x => esc(X(x.id).name) + ' ' + x.sets + '×' + x.reps + ' @ ' + x.w + ' kg').join(' · ')}</div><div class="row g"><button class="btn" data-a="start" data-id="${esc(r.id)}">Start</button><button class="btn s" data-a="edit" data-id="${esc(r.id)}">Edit</button></div></div>`).join('') +
-  `<button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button><button class="btn s" data-a="start">Empty workout</button>`;
+const vTrain = () => {
+  const todayDay = new Date().getDay();
+  const todayRid = S.sched ? (S.sched[todayDay] || '') : '';
+  const todayRoutine = todayRid ? S.routines.find(r => r.id === todayRid) : null;
 
-// 2. Active Workout View
+  return `<h1>Train</h1>` +
+    `<div class="card row"><span><b>${streak()}</b> day streak 🔥</span><span class="t2">${S.logs.length} workouts</span></div>` +
+    (S.act ? `<button class="btn" data-a="tab" data-k="work" style="margin-bottom:12px">⚡ Resume Workout: ${esc(S.act.name)}</button>` : '') +
+    (todayRoutine && !S.act ? `
+      <div class="card today-split-hero">
+        <div class="row">
+          <div>
+            <div class="today-split-badge">⭐ Scheduled for Today (${DAYS[todayDay]})</div>
+            <div class="today-split-title">${esc(todayRoutine.name)}</div>
+          </div>
+          <button class="btn" data-a="start" data-id="${esc(todayRoutine.id)}">Start Workout</button>
+        </div>
+        <div class="t2 sm" style="margin-top:8px">${todayRoutine.ex.map(x => `${esc(X(x.id).name)} (${x.sets}×${x.reps})`).join(' · ')}</div>
+      </div>
+    ` : (!todayRoutine && !S.act ? `
+      <div class="card row" style="margin-bottom:12px">
+        <span class="t2 sm">🌿 <b>${DAYS[todayDay]}:</b> Rest Day on your Split Schedule</span>
+        <button class="btn s" data-a="tab" data-k="cal">Edit Split</button>
+      </div>
+    ` : '')) +
+    '<h2>Routines</h2>' +
+    (S.routines.length ? S.routines.map(r => {
+      const scheduledDays = Object.entries(S.sched || {})
+        .filter(([_, rid]) => rid === r.id)
+        .map(([day]) => DAYS_SHORT[+day]);
+      return `<div class="card">
+        <div class="row">
+          <b>${esc(r.name)}</b>
+          <span class="t2 sm">${r.ex.length} exercises</span>
+        </div>
+        ${scheduledDays.length ? `<div style="margin:4px 0"><span class="today-chip" style="font-size:10px;padding:2px 6px">${scheduledDays.join(', ')}</span></div>` : ''}
+        <div class="t2 sm" style="margin-top:6px">${r.ex.map(x => `${esc(X(x.id).name)} ${x.sets}×${x.reps} @ ${x.w}kg`).join(' · ')}</div>
+        <div class="row g">
+          <button class="btn" data-a="start" data-id="${esc(r.id)}">Start</button>
+          <button class="btn s" data-a="edit" data-id="${esc(r.id)}">Edit</button>
+        </div>
+      </div>`;
+    }).join('') : '<p class="t2">No routines saved yet.</p>') +
+    `<button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button><button class="btn s" data-a="start">Empty workout</button>`;
+};
+
+// 2. Active Guided Workout View
+const startWorkTimer = () => {
+  if (workTimerInterval) clearInterval(workTimerInterval);
+  workTimerInterval = setInterval(() => {
+    if (view !== 'work' || !S.act) {
+      clearInterval(workTimerInterval);
+      workTimerInterval = null;
+      return;
+    }
+    const timerEl = $('#work-live-timer');
+    if (timerEl && S.act) {
+      const allSets = S.act.ex.flatMap(x => x.sets);
+      const doneSets = allSets.filter(s => s.done).length;
+      const pct = allSets.length ? Math.round((doneSets / allSets.length) * 100) : 0;
+      timerEl.textContent = `⏱️ ${fmtDur(Date.now() - S.act.t0)} · ${pct}% completed (${doneSets}/${allSets.length} sets)`;
+    }
+  }, 1000);
+};
+
 function vWork() {
   const a = S.act;
   if (!a) { view = 'train'; return vTrain(); }
-  return `<div class="row"><h1>${esc(a.name)}</h1><button class="btn" data-a="fin">Finish</button></div>` +
-    a.ex.map((x, i) => {
-      const e = X(x.id);
-      const r = (f, v, u) => `<input type="number" inputmode="decimal" data-f="${f}" data-i="${i}" data-j="@" value="${v}"><span class="u">${u}</span>`;
-      return `<div class="card ${x.ss ? 'ss' : ''}"><div class="row"><b>${esc(e.name)}</b><button class="chip ${x.ss ? 'on' : ''}" data-a="ss" data-i="${i}">Superset</button></div><div class="t2 sm">${esc(e.g)}${e.t === 't' ? ' · seconds' : ''}</div>` +
-        x.sets.map((s, j) => `<div class="set ${s.done ? 'd' : ''}" data-i="${i}" data-j="${j}"><button class="n" data-a="done" data-i="${i}" data-j="${j}">${j + 1}</button>${(e.t === 't' ? '' : r('w', s.w, e.t === 'b' ? '+kg' : 'kg')) + r('r', s.r, e.t === 't' ? 'sec' : 'reps')}<input class="rpe" type="number" inputmode="decimal" placeholder="RPE" data-f="rpe" data-i="${i}" data-j="@" value="${esc(s.rpe ?? '')}"><button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${i}" data-j="${j}">${ic('chk', 18)}</button></div>`.replace(/data-j="@"/g, `data-j="${j}"`)).join('') +
-        `<button class="btn s" data-a="addset" data-i="${i}">${ic('plus', 18)} Duplicate set</button><input class="note" placeholder="Notes" data-f="note" data-i="${i}" value="${esc(x.note || '')}"></div>`;
-    }).join('') +
-    '<button class="btn s" data-a="addex">Add exercise</button><button class="btn s red" data-a="cancel">Discard workout</button>';
+  startWorkTimer();
+
+  if (!a.ex || !a.ex.length) {
+    return `<div class="work-top-bar">
+      <div class="work-title-group">
+        <div class="work-routine-name">${esc(a.name)}</div>
+        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
+      </div>
+      <div class="work-top-actions">
+        <button class="btn s sm-btn red" data-a="cancel">Discard</button>
+      </div>
+    </div>
+    <div class="card" style="text-align:center;padding:32px 16px">
+      <p class="t2">No exercises added to this workout session yet.</p>
+      <button class="btn" data-a="addex" style="margin-top:12px">${ic('plus', 18)} Add First Exercise</button>
+    </div>`;
+  }
+
+  const curIdx = Math.min(Math.max(0, a.curEx || 0), a.ex.length - 1);
+  a.curEx = curIdx;
+
+  const currentEx = a.ex[curIdx];
+  const exInfo = X(currentEx.id);
+
+  const allSets = a.ex.flatMap(x => x.sets);
+  const doneSets = allSets.filter(s => s.done).length;
+  const totalSets = allSets.length;
+  const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+
+  return `
+    <div class="work-top-bar">
+      <div class="work-title-group">
+        <div class="work-routine-name">${esc(a.name)}</div>
+        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
+      </div>
+      <div class="work-top-actions">
+        <button class="btn sm-btn" data-a="fin">Finish</button>
+        <button class="btn s sm-btn red" data-a="cancel">✕</button>
+      </div>
+    </div>
+
+    <!-- Overall Workout Progress Bar -->
+    <div class="work-progress-bar">
+      <div class="work-progress-fill" style="width: ${pct}%"></div>
+    </div>
+
+    <!-- Stepper Header & Breadcrumb Carousel -->
+    <div class="work-stepper-container">
+      <div class="work-stepper-title">Exercise ${curIdx + 1} of ${a.ex.length}: <b>${esc(exInfo.name)}</b></div>
+      <div class="work-stepper-pills">
+        ${a.ex.map((x, i) => {
+          const e = X(x.id);
+          const isDone = x.sets.length > 0 && x.sets.every(s => s.done);
+          const isCur = i === curIdx;
+          return `<button class="work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''}" data-a="setcurex" data-i="${i}">
+            <span>${isDone ? '✓ ' : ''}${i + 1}. ${esc(e.name)}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- Live Exercise Card with Animated Demonstration Preview -->
+    <div class="card work-hero-card" id="work-hero-card">
+      <div class="work-hero-media">
+        <img class="work-hero-gif" src="./media/${esc(exInfo.gif || exInfo.img)}" alt="${esc(exInfo.name)}" loading="eager" onerror="this.onerror=null;this.src='./media/${esc(exInfo.img || exInfo.gif)}';">
+        <div class="work-hero-overlay">
+          <button class="chip" data-a="libex" data-id="${esc(exInfo.id)}">ℹ️ Form</button>
+          <button class="chip ${currentEx.ss ? 'on' : ''}" data-a="ss" data-i="${curIdx}">Superset</button>
+        </div>
+      </div>
+      <div class="work-hero-info">
+        <div class="work-hero-title">${esc(exInfo.name)}</div>
+        <div class="work-hero-tags">
+          <span class="ex-badge ac">${esc(exInfo.g)}</span>
+          ${exInfo.tg ? `<span class="ex-badge">${esc(exInfo.tg)}</span>` : ''}
+          <span class="ex-badge">${esc(exInfo.eq)}</span>
+          ${exInfo.t === 't' ? '<span class="ex-badge">Timed (s)</span>' : ''}
+        </div>
+      </div>
+
+      <!-- Set Logger Table for active exercise -->
+      <div class="work-sets-container">
+        <div class="set-header-row">
+          <span style="width:36px;text-align:center">Set</span>
+          <span style="flex:1">${exInfo.t === 't' ? 'Duration' : 'Weight (kg)'}</span>
+          <span style="flex:1">${exInfo.t === 't' ? 'Target (s)' : 'Reps'}</span>
+          <span style="width:50px;text-align:center">RPE</span>
+          <span style="width:40px;text-align:center">Done</span>
+        </div>
+        ${currentEx.sets.map((s, j) => {
+          const r = (f, v, u) => `<div class="set-input-wrap"><input type="number" inputmode="decimal" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}"><span class="u">${u}</span></div>`;
+          return `<div class="set ${s.done ? 'd' : ''}" data-i="${curIdx}" data-j="${j}">
+            <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">${j + 1}</button>
+            ${exInfo.t === 't' ? '' : r('w', s.w, exInfo.t === 'b' ? '+kg' : 'kg')}
+            ${r('r', s.r, exInfo.t === 't' ? 'sec' : 'reps')}
+            <input class="rpe" type="number" inputmode="decimal" placeholder="—" data-f="rpe" data-i="${curIdx}" data-j="${j}" value="${esc(s.rpe ?? '')}">
+            <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div class="row g" style="margin-top:12px">
+        <button class="btn s" data-a="addset" data-i="${curIdx}">${ic('plus', 16)} Add set</button>
+        <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
+      </div>
+      <input class="note" placeholder="Exercise cues/notes (grip, seat, tempo)..." data-f="note" data-i="${curIdx}" value="${esc(currentEx.note || '')}" style="margin-top:10px">
+    </div>
+
+    <!-- Stepper Navigation Buttons -->
+    <div class="work-nav-stepper">
+      <button class="btn s work-nav-btn" data-a="workprev" ${curIdx === 0 ? 'disabled style="opacity:0.3"' : ''}>
+        ‹ Prev Exercise
+      </button>
+      <button class="btn s work-nav-btn" data-a="worklist">
+        ${ic('list', 16)} All (${curIdx + 1}/${a.ex.length})
+      </button>
+      ${curIdx === a.ex.length - 1
+        ? `<button class="btn work-nav-btn fin-step" data-a="fin">Finish Workout ›</button>`
+        : `<button class="btn work-nav-btn" data-a="worknext">Next Exercise ›</button>`
+      }
+    </div>
+
+    <div class="row g" style="margin-top:14px">
+      <button class="btn s" data-a="addex">${ic('plus', 16)} Add Exercise</button>
+      <button class="btn s red" data-a="cancel">Discard Workout</button>
+    </div>
+  `;
 }
 
 // 3. Air-Gapped Exercise Library View
@@ -529,7 +720,9 @@ function vCal() {
   const selLogs = S.logs.filter(l => new Date(l.date).toISOString().slice(0, 10) === calSelectedDate);
   const selDateDisplay = new Date(calSelectedDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
-  return `<h1>Calendar</h1>` +
+  const todayDay = new Date().getDay();
+
+  return `<h1>Calendar & Split</h1>` +
     `<div class="card row"><span><b>${streak()}</b> Day Active Streak 🔥</span><span class="t2">${workoutDates.size} active days</span></div>` +
     `<div class="card">` +
       `<div class="cal-nav">` +
@@ -541,6 +734,27 @@ function vCal() {
         ['S','M','T','W','T','F','S'].map(d => `<div class="cal-day-name">${d}</div>`).join('') +
         cells.join('') +
       `</div>` +
+    `</div>` +
+    `<h2>Weekly Split Schedule</h2>` +
+    `<div class="card" style="padding:4px 14px">` +
+      DAYS.map((dayName, dayIdx) => {
+        const assignedRid = S.sched ? (S.sched[dayIdx] || '') : '';
+        const isToday = todayDay === dayIdx;
+        const assignedRoutine = S.routines.find(r => r.id === assignedRid);
+        return `<div class="sched-day-row ${isToday ? 'today' : ''}">
+          <div class="sched-day-header">
+            <span class="sched-day-name">${dayName}</span>
+            ${isToday ? '<span class="today-chip">Today</span>' : ''}
+          </div>
+          <div class="sched-day-picker">
+            <select data-f="sched" data-day="${dayIdx}">
+              <option value="">Rest Day</option>
+              ${S.routines.map(r => `<option value="${esc(r.id)}" ${assignedRid === r.id ? 'selected' : ''}>${esc(r.name)} (${r.ex.length} ex)</option>`).join('')}
+            </select>
+          </div>
+          ${assignedRoutine && isToday && !S.act ? `<button class="btn s sched-start-btn" data-a="start" data-id="${esc(assignedRoutine.id)}">Start</button>` : ''}
+        </div>`;
+      }).join('') +
     `</div>` +
     `<h2>${esc(selDateDisplay)}</h2>` +
     (selLogs.length ? selLogs.map(l => `
@@ -697,14 +911,90 @@ function showExerciseModal(ex) {
   `);
 }
 
+// ---- Exercise Picker Modal ----
+const renderPickResults = () => {
+  const q = (pickQuery || '').trim().toLowerCase();
+  const filtered = EXDB.filter(e => {
+    if (pickCategory !== 'All' && e.g !== pickCategory) return false;
+    if (q) {
+      return e.name.toLowerCase().includes(q) || e.tg.toLowerCase().includes(q) || e.eq.toLowerCase().includes(q);
+    }
+    return true;
+  }).slice(0, 50);
+
+  if (!filtered.length) {
+    return '<p class="t2" style="padding:24px;text-align:center">No exercises found</p>';
+  }
+
+  return filtered.map(e => `
+    <div class="ex-row" data-a="pick" data-id="${esc(e.id)}">
+      <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+      <div class="ex-info">
+        <div class="ex-name">${esc(e.name)}</div>
+        <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+      </div>
+      <button class="chip on" style="pointer-events:none">+ Add</button>
+    </div>
+  `).join('');
+};
+
+function showExercisePicker(title = 'Add Exercise') {
+  pickQuery = '';
+  pickCategory = 'All';
+  modal(`<h2>${esc(title)}</h2>
+    <input id="pick-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="picksearch" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <div class="chips" style="margin-bottom:8px">
+      ${BP_CATEGORIES.map(c => `<button class="chip ${pickCategory === c ? 'on' : ''}" data-a="pickcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
+    </div>
+    <div id="pick-list" class="card" style="max-height:55vh;overflow-y:auto;padding:0 12px">
+      ${renderPickResults()}
+    </div>
+  `);
+}
+
 // ---- Routine Editor ----
 function showE() {
-  modal(`<h2>${E.isNew ? 'New' : 'Edit'} routine</h2><input class="txt" data-e="name" placeholder="Routine name" value="${esc(E.name)}">` +
-    E.ex.map((x, i) => `<div class="card"><div class="row"><b>${esc(X(x.id).name)}</b><button class="chip" data-a="rmx" data-i="${i}">Remove</button></div><div class="grid">` +
-      [['sets', 'Sets'], ['reps', 'Reps'], ['reps2', 'Top reps (double)'], ['w', 'Start weight (kg)'], ['inc', 'Increase (kg)']].map(([f, l]) => `<label>${l}<input type="number" inputmode="decimal" data-e="${f}" data-i="${i}" value="${x[f]}"></label>`).join('') +
-      `<label>Progression<select data-e="prog" data-i="${i}">${[['linear', 'Linear'], ['gslp', 'Greyskull LP'], ['double', 'Double']].map(([v, l]) => `<option value="${v}"${x.prog === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label></div></div>`).join('') +
-    `<button class="btn s" data-a="adde">Add exercise</button><button class="btn" data-a="savee">Save</button>` +
-    (E.isNew ? '' : '<button class="btn s red" data-a="delr">Delete routine</button>'));
+  modal(`<h2>${E.isNew ? 'New' : 'Edit'} routine</h2>
+    <input class="txt" data-e="name" placeholder="Routine name (e.g. Upper Body)" value="${esc(E.name)}">
+    <div style="margin:12px 0 6px" class="t2 sm"><b>Exercises in Routine (${E.ex.length}):</b></div>` +
+    (E.ex.length ? E.ex.map((x, i) => {
+      const ex = X(x.id);
+      return `<div class="card routine-ex-card">
+        <div class="row">
+          <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+            <img class="ex-thumb" src="./media/${esc(ex.img || ex.gif)}" alt="${esc(ex.name)}" onerror="this.style.display='none'">
+            <div style="flex:1;min-width:0">
+              <div class="ex-name">${esc(ex.name)}</div>
+              <div class="ex-meta">${esc(ex.tg || ex.g)} · ${esc(ex.eq)}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <button class="btn-icon" data-a="mvu" data-i="${i}" ${i === 0 ? 'disabled style="opacity:0.25"' : ''} title="Move Up">▲</button>
+            <button class="btn-icon" data-a="mvd" data-i="${i}" ${i === E.ex.length - 1 ? 'disabled style="opacity:0.25"' : ''} title="Move Down">▼</button>
+            <button class="btn-icon red" data-a="rmx" data-i="${i}" title="Remove">✕</button>
+          </div>
+        </div>
+        <div class="grid" style="margin-top:10px">
+          <label>Sets<input type="number" inputmode="numeric" data-e="sets" data-i="${i}" value="${x.sets}"></label>
+          <label>Target Reps<input type="number" inputmode="numeric" data-e="reps" data-i="${i}" value="${x.reps}"></label>
+          <label>Top Reps (Double)<input type="number" inputmode="numeric" data-e="reps2" data-i="${i}" value="${x.reps2}"></label>
+          <label>Weight (kg)<input type="number" inputmode="decimal" data-e="w" data-i="${i}" value="${x.w}"></label>
+          <label>Increase (kg)<input type="number" inputmode="decimal" data-e="inc" data-i="${i}" value="${x.inc}"></label>
+          <label>Progression
+            <select data-e="prog" data-i="${i}">
+              <option value="linear"${x.prog === 'linear' ? ' selected' : ''}>Linear</option>
+              <option value="gslp"${x.prog === 'gslp' ? ' selected' : ''}>Greyskull LP</option>
+              <option value="double"${x.prog === 'double' ? ' selected' : ''}>Double</option>
+            </select>
+          </label>
+        </div>
+        <input class="note" placeholder="Form cues / notes..." data-e="note" data-i="${i}" value="${esc(x.note || '')}" style="margin-top:8px">
+      </div>`;
+    }).join('') : '<p class="t2" style="text-align:center;padding:16px 0">No exercises added yet. Tap below to add exercises.</p>') +
+    `<button class="btn s" data-a="adde" style="margin-top:6px">${ic('plus', 18)} Add exercise</button>
+     <button class="btn" data-a="savee" style="margin-top:6px">Save Routine</button>` +
+    (E.isNew ? '' : '<button class="btn s red" data-a="delr" style="margin-top:6px">Delete routine</button>')
+  );
 }
 
 // ---- Backup & Security Hardened Validation ----
@@ -715,6 +1005,7 @@ const valid = o => {
   if (!Array.isArray(o.routines) || !Array.isArray(o.logs)) return false;
   if (o.routines.length > 500 || o.logs.length > 5000) return false;
   if (o.weights && (!Array.isArray(o.weights) || o.weights.length > 5000)) return false;
+  if (o.sched && (typeof o.sched !== 'object' || Array.isArray(o.sched))) return false;
 
   const validRoutine = r => (
     r && typeof r === 'object' && !Array.isArray(r) &&
@@ -758,10 +1049,10 @@ const valid = o => {
 };
 
 function exp() {
-  const b = new Blob([JSON.stringify({ app: 'lift', v: 1, exported: Date.now(), routines: S.routines, logs: S.logs, weights: S.weights, cfg: S.cfg }, null, 2)], { type: 'application/json' });
+  const b = new Blob([JSON.stringify({ app: 'lift', v: 1, exported: Date.now(), routines: S.routines, logs: S.logs, weights: S.weights, cfg: S.cfg, sched: S.sched || {} }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b);
-  a.download = `lift-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `mygym-backup-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.append(a);
   a.click();
   a.remove();
@@ -838,7 +1129,14 @@ async function imp(f) {
       if (typeof o.cfg.flash === 'boolean') S.cfg.flash = o.cfg.flash;
     }
 
-    await save('routines', 'logs', 'weights', 'cfg');
+    if (o.sched && typeof o.sched === 'object' && !Array.isArray(o.sched)) {
+      S.sched = {};
+      for (const [day, rid] of Object.entries(o.sched)) {
+        if (typeof rid === 'string' && rid.length <= 50) S.sched[day] = rid;
+      }
+    }
+
+    await save('routines', 'logs', 'weights', 'cfg', 'sched');
     toast('Backup restored');
     render();
   } catch (err) {
@@ -891,9 +1189,19 @@ function finish() {
   stopRest();
   wl?.release?.();
 
-  modal(`<h2>Workout complete</h2>${mmLog(log)}<p>${vol(log)} kg volume · ${Math.round(log.dur / 60000)} min · ${streak()} day streak</p>` +
-    (prs.length ? `<h2>New records</h2>${prs.map(p => `<div>${esc(p)}</div>`).join('')}` : '') +
-    (notes.length ? `<h2>Next session</h2>${notes.map(p => `<div class="t2">${esc(p)}</div>`).join('')}` : ''));
+  const totalSetsCount = log.ex.reduce((acc, x) => acc + x.sets.length, 0);
+
+  modal(`<h2>Workout Complete! 🏆</h2>
+    ${mmLog(log)}
+    <div class="card" style="margin:12px 0;padding:12px">
+      <div class="row"><b>Total Volume:</b> <span>${vol(log)} kg</span></div>
+      <div class="row" style="margin-top:6px"><b>Duration:</b> <span>${Math.round(log.dur / 60000)} min</span></div>
+      <div class="row" style="margin-top:6px"><b>Completed Exercises:</b> <span>${log.ex.length}</span></div>
+      <div class="row" style="margin-top:6px"><b>Completed Sets:</b> <span>${totalSetsCount}</span></div>
+      <div class="row" style="margin-top:6px"><b>Active Streak:</b> <span>${streak()} days 🔥</span></div>
+    </div>` +
+    (prs.length ? `<h2>New Records! 🎉</h2>${prs.map(p => `<div class="card" style="padding:10px"><b>${esc(p)}</b></div>`).join('')}` : '') +
+    (notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''));
   view = 'train';
   render();
 }
@@ -989,10 +1297,11 @@ document.addEventListener('click', e => {
         rid: r ? r.id : null,
         name: r ? r.name : 'Workout',
         t0: Date.now(),
+        curEx: 0,
         ex: r ? r.ex.map(x => ({
           id: x.id,
           ss: !!x.ss,
-          note: '',
+          note: x.note || '',
           sets: Array.from({ length: Math.max(1, x.sets || 1) }, () => ({
             w: x.w || 0,
             r: x.prog === 'double' ? (x.cur || x.reps) : x.reps,
@@ -1005,6 +1314,77 @@ document.addEventListener('click', e => {
       wake();
       view = 'work';
       break;
+    }
+    case 'workprev': {
+      if (S.act && S.act.curEx > 0) {
+        S.act.curEx--;
+        save('act');
+        render();
+      }
+      return;
+    }
+    case 'worknext': {
+      if (S.act && S.act.curEx < S.act.ex.length - 1) {
+        S.act.curEx++;
+        save('act');
+        render();
+      }
+      return;
+    }
+    case 'setcurex': {
+      if (S.act) {
+        S.act.curEx = Math.max(0, Math.min(S.act.ex.length - 1, +t.dataset.i));
+        save('act');
+        render();
+      }
+      return;
+    }
+    case 'worklist': {
+      if (!S.act) return;
+      modal(`<h2>Workout Overview</h2>
+        <div style="margin-bottom:12px" class="t2 sm">${S.act.ex.length} exercises in ${esc(S.act.name)}</div>
+        ${S.act.ex.map((x, idx) => {
+          const ex = X(x.id);
+          const doneCount = x.sets.filter(s => s.done).length;
+          const isCur = idx === S.act.curEx;
+          return `<div class="card" style="margin-bottom:8px;border-color:${isCur ? 'var(--ac)' : 'var(--bd)'}">
+            <div class="row">
+              <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;cursor:pointer" data-a="jumpworkex" data-i="${idx}">
+                <img class="ex-thumb" src="./media/${esc(ex.img || ex.gif)}" alt="${esc(ex.name)}" onerror="this.style.display='none'">
+                <div style="flex:1;min-width:0">
+                  <div class="ex-name">${idx + 1}. ${esc(ex.name)}</div>
+                  <div class="ex-meta">${doneCount}/${x.sets.length} sets completed</div>
+                </div>
+              </div>
+              <button class="chip ${isCur ? 'on' : ''}" data-a="jumpworkex" data-i="${idx}">${isCur ? 'Active' : 'Jump'}</button>
+              <button class="btn-icon red" data-a="rmworkex" data-i="${idx}" title="Remove">✕</button>
+            </div>
+          </div>`;
+        }).join('')}
+        <button class="btn s" data-a="addex" style="margin-top:8px">${ic('plus', 16)} Add Another Exercise</button>
+      `);
+      return;
+    }
+    case 'jumpworkex': {
+      close();
+      if (S.act) {
+        S.act.curEx = +t.dataset.i;
+        save('act');
+        render();
+      }
+      return;
+    }
+    case 'rmworkex': {
+      if (S.act && S.act.ex.length > 1) {
+        S.act.ex.splice(+t.dataset.i, 1);
+        if (S.act.curEx >= S.act.ex.length) S.act.curEx = S.act.ex.length - 1;
+        save('act');
+        close();
+        render();
+      } else {
+        toast('Workout must have at least one exercise');
+      }
+      return;
     }
     case 'done': {
       const x = S.act?.ex[i], s = x?.sets[j];
@@ -1022,6 +1402,15 @@ document.addEventListener('click', e => {
       save('act');
       break;
     }
+    case 'delset': {
+      const x = S.act?.ex[i];
+      if (x && x.sets.length > 1) {
+        x.sets.pop();
+        save('act');
+        break;
+      }
+      return;
+    }
     case 'ss': {
       if (S.act?.ex[i]) {
         S.act.ex[i].ss = !S.act.ex[i].ss;
@@ -1030,19 +1419,33 @@ document.addEventListener('click', e => {
       break;
     }
     case 'addex': {
-      modal(`<h2>Add exercise</h2><input class="txt" placeholder="Search exercises..." data-f="picksearch"><div class="card" id="pick-list" style="max-height:60vh;overflow-y:auto">` +
-        EXDB.slice(0, 50).map(e => `<button class="li" data-a="pick" data-id="${esc(e.id)}">${esc(e.name)}</button>`).join('') +
-      `</div>`);
+      P = null;
+      showExercisePicker('Add Exercise to Workout');
       return;
     }
     case 'pick': {
+      const cb = P;
+      P = null;
       close();
-      if (P) P(id);
-      else if (S.act) {
+      if (cb) {
+        cb(id);
+      } else if (S.act) {
         S.act.ex.push({ id, ss: false, note: '', sets: newSets(id) });
+        S.act.curEx = S.act.ex.length - 1;
         save('act');
+        render();
+        toast('Exercise added to workout');
       }
-      break;
+      return;
+    }
+    case 'pickcat': {
+      pickCategory = t.dataset.cat;
+      document.querySelectorAll('.chips button[data-a="pickcat"]').forEach(btn => {
+        btn.classList.toggle('on', btn.dataset.cat === pickCategory);
+      });
+      const pickList = $('#pick-list');
+      if (pickList) pickList.innerHTML = renderPickResults();
+      return;
     }
     case 'fin': finish(); return;
     case 'cancel': if (confirm('Discard this workout?')) { S.act = null; save('act'); stopRest(); view = 'train'; } break;
@@ -1060,12 +1463,41 @@ document.addEventListener('click', e => {
     }
     case 'adde': {
       P = exId => {
-        E.ex.push({ id: exId, sets: 3, reps: 5, reps2: 8, w: 20, inc: 2.5, prog: 'linear', cur: 5, stalls: 0, ss: false });
+        const exData = X(exId);
+        E.ex.push({
+          id: exData.id,
+          sets: 3,
+          reps: exData.t === 't' ? 30 : 8,
+          reps2: exData.t === 't' ? 60 : 12,
+          w: exData.t === 'b' ? 0 : 20,
+          inc: 2.5,
+          prog: 'linear',
+          cur: exData.t === 't' ? 30 : 8,
+          stalls: 0,
+          note: '',
+          ss: false
+        });
         showE();
       };
-      modal(`<h2>Choose Exercise</h2><input class="txt" placeholder="Search..." data-f="picksearch"><div class="card" id="pick-list" style="max-height:60vh;overflow-y:auto">` +
-        EXDB.slice(0, 50).map(e => `<button class="li" data-a="pick" data-id="${esc(e.id)}">${esc(e.name)}</button>`).join('') +
-      `</div>`);
+      showExercisePicker('Choose Exercise for Routine');
+      return;
+    }
+    case 'mvu': {
+      const idx = +t.dataset.i;
+      if (E && E.ex && idx > 0) {
+        const item = E.ex.splice(idx, 1)[0];
+        E.ex.splice(idx - 1, 0, item);
+        showE();
+      }
+      return;
+    }
+    case 'mvd': {
+      const idx = +t.dataset.i;
+      if (E && E.ex && idx < E.ex.length - 1) {
+        const item = E.ex.splice(idx, 1)[0];
+        E.ex.splice(idx + 1, 0, item);
+        showE();
+      }
       return;
     }
     case 'rmx': E.ex.splice(i, 1); showE(); return;
@@ -1088,15 +1520,30 @@ document.addEventListener('click', e => {
     }
     case 'delr': if (confirm('Delete this routine?')) { S.routines = S.routines.filter(r => r.id !== E.id); save('routines'); close(); break; } return;
     case 'exp': exp(); return;
-    case 'wipe': if (confirm('Erase ALL data on this device?') && confirm('This cannot be undone. Continue?')) { S.routines = []; S.logs = []; S.weights = []; S.act = null; save('routines', 'logs', 'weights', 'act'); stopRest(); } break;
+    case 'wipe': if (confirm('Erase ALL data on this device?') && confirm('This cannot be undone. Continue?')) { S.routines = []; S.logs = []; S.weights = []; S.act = null; S.sched = {}; save('routines', 'logs', 'weights', 'cfg', 'sched', 'act'); stopRest(); } break;
   }
   render();
 });
 
 // Debounced Search and Field Updates
 let searchTimeout;
+let pickSearchTimeout;
 const handleFieldUpdate = t => {
   const i = t.dataset.i, f = t.dataset.f;
+
+  if (f === 'sched') {
+    const day = t.dataset.day;
+    if (!S.sched) S.sched = {};
+    if (t.value) {
+      S.sched[day] = t.value;
+    } else {
+      delete S.sched[day];
+    }
+    save('sched');
+    render();
+    toast('Split schedule updated');
+    return;
+  }
 
   if (f === 'libsearch') {
     libQuery = t.value;
@@ -1119,12 +1566,13 @@ const handleFieldUpdate = t => {
   }
 
   if (f === 'picksearch') {
-    const list = $('#pick-list');
-    if (list) {
-      const q = t.value.trim().toLowerCase();
-      const results = EXDB.filter(e => e.name.toLowerCase().includes(q) || e.tg.toLowerCase().includes(q)).slice(0, 50);
-      list.innerHTML = results.map(e => `<button class="li" data-a="pick" data-id="${esc(e.id)}">${esc(e.name)}</button>`).join('');
-    }
+    pickQuery = t.value;
+    clearTimeout(pickSearchTimeout);
+    pickSearchTimeout = setTimeout(() => {
+      const list = $('#pick-list');
+      if (list) list.innerHTML = renderPickResults();
+      if (t && typeof t.focus === 'function') t.focus({ preventScroll: true });
+    }, 150);
     return;
   }
 
@@ -1160,10 +1608,14 @@ document.addEventListener('change', e => {
   }
 });
 
-// Swipe left on a set row to delete (with undo)
-let sw;
+// Swipe handling: horizontal swipe on active exercise media navigates exercises; swipe left on set row deletes set
+let sw, heroSw;
 document.addEventListener('touchstart', e => {
   unlock();
+  const mediaEl = e.target.closest('.work-hero-media');
+  if (mediaEl && S.act && S.act.ex.length > 1) {
+    heroSw = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
   const r = e.target.closest('.set');
   sw = r && !e.target.closest('input,button') ? { r, x: e.touches[0].clientX, d: 0 } : null;
 }, { passive: true });
@@ -1175,7 +1627,27 @@ document.addEventListener('touchmove', e => {
   }
 }, { passive: true });
 
-const resetSwipe = () => {
+const resetSwipe = e => {
+  if (heroSw && e && e.changedTouches && e.changedTouches[0]) {
+    const dx = e.changedTouches[0].clientX - heroSw.x;
+    const dy = e.changedTouches[0].clientY - heroSw.y;
+    heroSw = null;
+    if (Math.abs(dx) > 50 && Math.abs(dy) < 60) {
+      if (dx < 0 && S.act && S.act.curEx < S.act.ex.length - 1) {
+        S.act.curEx++;
+        save('act');
+        render();
+        return;
+      } else if (dx > 0 && S.act && S.act.curEx > 0) {
+        S.act.curEx--;
+        save('act');
+        render();
+        return;
+      }
+    }
+  }
+  heroSw = null;
+
   if (!sw) return;
   const { r, d } = sw;
   sw = null;
@@ -1203,6 +1675,7 @@ document.addEventListener('touchcancel', () => {
     sw.r.style.transform = '';
     sw = null;
   }
+  heroSw = null;
 });
 
 // ---- Boot Sequence ----
@@ -1221,7 +1694,7 @@ document.addEventListener('touchcancel', () => {
   }
 
   // 2. Load stored state from IndexedDB / localStorage
-  for (const k of ['routines', 'logs', 'weights', 'cfg', 'act']) {
+  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act']) {
     try {
       const v = await get(k);
       if (k === 'cfg' && v && typeof v === 'object') {
@@ -1233,30 +1706,53 @@ document.addEventListener('touchcancel', () => {
       // Storage fallback absorbs
     }
   }
+  if (!S.sched || typeof S.sched !== 'object') S.sched = {};
 
-  // 3. Seed starter routine if fresh install
-  if ((await get('seeded')) == null) {
-    S.routines = [{
-      id: uid(),
-      name: 'Full Body A',
-      ex: [
-        ['0025', 3, 5, 5, 20], // Barbell squat
-        ['0047', 3, 5, 5, 20], // Barbell bench press
-        ['0027', 3, 5, 5, 30]  // Barbell bent over row
-      ].map(([id, sets, reps, reps2, w]) => ({
-        id: EXIDX[id] ? id : 'squat',
-        sets,
-        reps,
-        reps2,
-        w,
-        inc: 2.5,
-        prog: 'linear',
-        cur: reps,
-        stalls: 0,
-        ss: false
-      }))
-    }];
-    await save('routines');
+  // 3. Seed starter routines & split schedule if fresh install or empty routines
+  if ((await get('seeded')) == null || !S.routines || !S.routines.length) {
+    const upperId = uid();
+    const lowerId = uid();
+    const fullBodyId = uid();
+
+    S.routines = [
+      {
+        id: upperId,
+        name: 'Upper Body',
+        ex: [
+          { id: '0025', sets: 3, reps: 8, reps2: 12, w: 20, inc: 2.5, prog: 'linear', cur: 8, stalls: 0, note: '', ss: false }, // Barbell bench press
+          { id: '0047', sets: 3, reps: 8, reps2: 12, w: 20, inc: 2.5, prog: 'linear', cur: 8, stalls: 0, note: '', ss: false }, // Barbell incline bench press
+          { id: '0027', sets: 3, reps: 8, reps2: 12, w: 30, inc: 2.5, prog: 'linear', cur: 8, stalls: 0, note: '', ss: false }  // Barbell bent over row
+        ]
+      },
+      {
+        id: lowerId,
+        name: 'Lower Body',
+        ex: [
+          { id: '0043', sets: 3, reps: 5, reps2: 8, w: 20, inc: 2.5, prog: 'linear', cur: 5, stalls: 0, note: '', ss: false },  // Barbell full squat
+          { id: '0032', sets: 3, reps: 5, reps2: 8, w: 40, inc: 2.5, prog: 'linear', cur: 5, stalls: 0, note: '', ss: false },  // Barbell deadlift
+          { id: '0001', sets: 3, reps: 15, reps2: 20, w: 0, inc: 1, prog: 'linear', cur: 15, stalls: 0, note: '', ss: false }   // 3/4 sit-up
+        ]
+      },
+      {
+        id: fullBodyId,
+        name: 'Full Body',
+        ex: [
+          { id: '0043', sets: 3, reps: 5, reps2: 8, w: 20, inc: 2.5, prog: 'linear', cur: 5, stalls: 0, note: '', ss: false },
+          { id: '0025', sets: 3, reps: 5, reps2: 8, w: 20, inc: 2.5, prog: 'linear', cur: 5, stalls: 0, note: '', ss: false },
+          { id: '0032', sets: 3, reps: 5, reps2: 8, w: 40, inc: 2.5, prog: 'linear', cur: 5, stalls: 0, note: '', ss: false }
+        ]
+      }
+    ];
+
+    if (!S.sched || !Object.keys(S.sched).length) {
+      S.sched = {
+        1: upperId,    // Monday: Upper
+        3: lowerId,    // Wednesday: Lower
+        5: fullBodyId  // Friday: Full Body
+      };
+    }
+
+    await save('routines', 'sched');
     await put('seeded', 1);
   }
 

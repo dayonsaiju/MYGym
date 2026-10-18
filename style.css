@@ -652,3 +652,335 @@ input[type="checkbox"] {
 .diff-tag.up { background: rgba(255, 69, 58, 0.15); color: var(--rd); }
 .diff-tag.down { background: rgba(48, 209, 88, 0.15); color: var(--gn); }
 .diff-tag.same { background: var(--c2); color: var(--t2); }
+
+/* ---- Guided Workout Session UI ---- */
+.work-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.work-title-group {
+  flex: 1;
+  min-width: 0;
+}
+
+.work-routine-name {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.work-timer-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ac);
+  background: rgba(10, 132, 255, 0.12);
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+
+.work-top-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+
+.sm-btn {
+  min-width: unset;
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+.work-progress-bar {
+  height: 6px;
+  background: var(--c2);
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 6px 0 12px;
+}
+
+.work-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #0A84FF, #30D158);
+  border-radius: 999px;
+  transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.work-stepper-container {
+  margin-bottom: 12px;
+}
+
+.work-stepper-title {
+  font-size: 13px;
+  color: var(--t2);
+  margin-bottom: 6px;
+}
+
+.work-stepper-pills {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.work-stepper-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.work-step-pill {
+  min-height: 32px;
+  min-width: unset;
+  padding: 4px 12px;
+  border-radius: 16px;
+  background: var(--c1);
+  border: 0.5px solid var(--bd);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t2);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.work-step-pill.active {
+  border-color: var(--ac);
+  background: rgba(10, 132, 255, 0.18);
+  color: #FFFFFF;
+}
+
+.work-step-pill.done {
+  border-color: rgba(48, 209, 88, 0.5);
+  color: var(--gn);
+}
+
+.work-hero-card {
+  background: var(--c1);
+  border: 0.5px solid var(--bd);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+
+.work-hero-media {
+  position: relative;
+  width: 100%;
+  background: #000000;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 0.5px solid var(--bd);
+}
+
+.work-hero-gif {
+  width: 100%;
+  height: 220px;
+  object-fit: contain;
+  display: block;
+  background: #000000;
+}
+
+.work-hero-overlay {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 6px;
+}
+
+.work-hero-info {
+  margin-top: 12px;
+}
+
+.work-hero-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  text-transform: capitalize;
+}
+
+.work-hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 12px;
+}
+
+.work-sets-container {
+  margin-top: 8px;
+}
+
+.set-header-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 4px 6px;
+}
+
+.set-input-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.set-input-wrap input {
+  width: 100%;
+  padding-right: 28px;
+}
+
+.set-input-wrap .u {
+  position: absolute;
+  right: 8px;
+  font-size: 11px;
+  color: var(--t2);
+  pointer-events: none;
+}
+
+.work-nav-stepper {
+  display: flex;
+  gap: 10px;
+  margin: 14px 0 8px;
+}
+
+.work-nav-btn {
+  flex: 1;
+  min-height: 48px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.work-nav-btn.fin-step {
+  background: var(--gn);
+  color: #000000;
+  font-weight: 700;
+}
+
+/* ---- Routine Builder & Exercise Cards ---- */
+.routine-ex-card {
+  margin-bottom: 12px;
+  padding: 14px;
+}
+
+.btn-icon {
+  min-width: 36px;
+  min-height: 36px;
+  border-radius: 8px;
+  background: var(--c2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  padding: 0;
+}
+
+.btn-icon.red {
+  color: var(--rd);
+}
+
+/* ---- Split Scheduler & Today Hero ---- */
+.sched-day-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid var(--bd);
+}
+
+.sched-day-row:last-child {
+  border-bottom: none;
+}
+
+.sched-day-row.today {
+  background: rgba(10, 132, 255, 0.05);
+}
+
+.sched-day-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 90px;
+}
+
+.sched-day-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.today-chip {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--ac);
+  color: #FFFFFF;
+}
+
+.sched-day-picker {
+  flex: 1;
+}
+
+.sched-day-picker select {
+  width: 100%;
+  min-height: 38px;
+  background: var(--c2);
+  color: #FFFFFF;
+  border: 0.5px solid var(--bd);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.sched-start-btn {
+  padding: 6px 14px;
+  min-height: 36px;
+  min-width: unset;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--ac);
+  color: #FFFFFF;
+  border-radius: 8px;
+}
+
+.today-split-hero {
+  border: 1px solid var(--ac);
+  background: linear-gradient(180deg, rgba(10, 132, 255, 0.16) 0%, var(--c1) 100%);
+  margin-bottom: 14px;
+  padding: 16px;
+}
+
+.today-split-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ac);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.today-split-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
