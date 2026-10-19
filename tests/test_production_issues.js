@@ -595,21 +595,44 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.1.0-flow', () => {
-  assert(swCode.includes("'mygym-core-v5.1.0-flow'"), 'sw.js must use mygym-core-v5.1.0-flow cache name');
+it('sw.js cache key is bumped to mygym-core-v5.1.0-flow, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.1.0-flow';"), 'sw.js must use mygym-core-v5.1.0-flow cache name');
   assert(swCode.includes("'./style.css?v=5.1.0'"), 'sw.js must precache style.css?v=5.1.0');
   assert(swCode.includes("'./app.js?v=5.1.0'"), 'sw.js must precache app.js?v=5.1.0');
+  assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
+  assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
-it('index.html references versioned assets and updated shell version', () => {
+it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
   assert(htmlCode.includes('style.css?v=5.1.0'), 'index.html must link style.css?v=5.1.0');
   assert(htmlCode.includes('app.js?v=5.1.0'), 'index.html must load app.js?v=5.1.0');
   assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.1.0-flow'"), 'index.html must use mygym-v5.1.0-flow');
+  assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
-it('app.js has consistent versions', () => {
+it('app.js has consistent versions and dynamic Settings modal display', () => {
   assert.equal(api.APP_VERSION, '5.1.0');
   assert.equal(api.SHELL_VERSION, 'mygym-v5.1.0-flow');
+
+  // Verify settings modal HTML uses dynamic variables
+  assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
+});
+
+it('Hardcoded string audit: zero occurrences of 5.0.0 or v5.0.0-gold in app.js, index.html, sw.js', () => {
+  assert(!appCode.includes('v5.0.0-gold'), 'app.js must not contain v5.0.0-gold');
+  assert(!appCode.includes('5.0.0'), 'app.js must not contain 5.0.0');
+  assert(!htmlCode.includes('v5.0.0-gold'), 'index.html must not contain v5.0.0-gold');
+  assert(!htmlCode.includes('5.0.0'), 'index.html must not contain 5.0.0');
+  assert(!swCode.includes('v5.0.0-gold'), 'sw.js must not contain v5.0.0-gold');
+  assert(!swCode.includes('5.0.0'), 'sw.js must not contain 5.0.0');
+});
+
+it('forceupdate action executes aggressive SW unregister, cache eviction, and timestamp navigation', () => {
+  assert(appCode.includes('navigator.serviceWorker.getRegistrations()'), 'forceupdate must inspect SW registrations');
+  assert(appCode.includes('await r.unregister()'), 'forceupdate must unregister existing registrations');
+  assert(appCode.includes('await caches.delete(k)'), 'forceupdate must delete cache keys');
+  assert(appCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'forceupdate must redirect with timestamp');
+  assert(!appCode.includes('indexedDB.deleteDatabase'), 'forceupdate must never delete IndexedDB data');
 });
 
 console.log(`\n======================================================`);

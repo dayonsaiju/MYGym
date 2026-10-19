@@ -28,11 +28,13 @@
             localStorage.setItem('mygym_shell_version', SHELL_VERSION);
             if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
               navigator.serviceWorker.getRegistrations().then(function(regs) {
-                regs.forEach(function(r) { r.update(); });
+                for (var i = 0; i < regs.length; i++) {
+                  regs[i].unregister();
+                }
               });
             }
             if (cachedVersion) {
-              window.location.reload(true);
+              window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
             }
           });
         } else {

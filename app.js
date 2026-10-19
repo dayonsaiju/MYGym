@@ -2664,7 +2664,7 @@ function showSettingsModal() {
         <div class="card settings-card">
           <div class="settings-row">
             <span class="settings-label">App Shell Version</span>
-            <span class="chip on" style="font-family:monospace;font-size:11px">v5.1.0-flow</span>
+            <span class="chip on" style="font-family:monospace;font-size:11px">${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})</span>
           </div>
           <div class="settings-divider"></div>
           <div class="settings-row">
@@ -3144,16 +3144,20 @@ document.addEventListener('click', e => {
     case 'forceupdate': {
       if (confirm('Clear local app shell cache and force reload latest version?')) {
         (async () => {
-          if ('caches' in window) {
-            const keys = await caches.keys();
-            await Promise.all(keys.map(k => caches.delete(k)));
+          try {
+            if ('serviceWorker' in navigator) {
+              const registrations = await navigator.serviceWorker.getRegistrations();
+              for (const r of registrations) { await r.unregister(); }
+            }
+            if ('caches' in window) {
+              const keys = await caches.keys();
+              for (const k of keys) { await caches.delete(k); }
+            }
+            localStorage.setItem('mygym_shell_version', SHELL_VERSION);
+          } catch (err) {
+            console.warn('Cache clearance issue:', err);
           }
-          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
-            const regs = await navigator.serviceWorker.getRegistrations();
-            for (const r of regs) await r.unregister();
-          }
-          localStorage.setItem('mygym_shell_version', SHELL_VERSION);
-          window.location.reload(true);
+          window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
         })();
       }
       return;
