@@ -90,19 +90,20 @@ let S = {
   routines: [],
   logs: [],
   weights: [],
-  cfg: { rest: 90, flash: true },
+  cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5 },
   sched: {},
   act: null,
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '4.2.0';
-const SHELL_VERSION = 'mygym-v4.2.0-clean';
+const APP_VERSION = '5.0.0';
+const SHELL_VERSION = 'mygym-v5.0.0-gold';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
 let swapQuery = '', swapCategory = 'All', swapIdx = 0;
 let bodyMetricView = 'both'; // 'both', 'weight', 'waist'
+let histQuery = '', histRoutine = 'All';
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -117,6 +118,17 @@ const fmtDur = ms => {
 };
 
 const save = (...k) => Promise.all(k.map(x => put(x, S[x])));
+
+// Clean & sanitize exercise names (fix corrupted degree encodings and title-casing)
+const cleanExName = s => {
+  let str = String(s || '').trim();
+  str = str.replace(/45\s*[вbB]\s*°/gi, '45°')
+           .replace(/\b45\s*degrees?\b/gi, '45°');
+  if (str && (str === str.toLowerCase() || str === str.toUpperCase())) {
+    str = str.toLowerCase().replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
+  }
+  return str;
+};
 
 // ---- Air-Gapped Exercise Database ----
 let EXDB = [];
@@ -139,7 +151,7 @@ const normalizeExercise = e => {
   const isBodyweight = e.eq === 'body weight';
   return {
     id: String(e.id || '').replace(/[^a-zA-Z0-9_-]/g, ''),
-    name: String(e.n || e.name || e.id || ''),
+    name: cleanExName(e.n || e.name || e.id || ''),
     g: mapBodyPartToGroup(e.bp || e.g),
     bp: String(e.bp || 'waist'),
     eq: String(e.eq || 'body weight'),
@@ -158,7 +170,7 @@ const X = id => {
   if (EXIDX[sid]) return EXIDX[sid];
   return {
     id: sid,
-    name: sid,
+    name: cleanExName(sid),
     g: 'Core',
     bp: 'waist',
     eq: 'body weight',
@@ -177,12 +189,14 @@ const IC = {
   act: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   cal: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
-  weight: '<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+  weight: '<path d="m21.3 8.7-12.6 12.6a1 1 0 0 1-1.4 0l-5.6-5.6a1 1 0 0 1 0-1.4L14.3 1.7a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4z"/><path d="m7.5 10.5 2 2"/><path d="m10.5 7.5 2 2"/><path d="m13.5 4.5 2 2"/><path d="m4.5 13.5 2 2"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
   sl: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
   chk: '<polyline points="20 6 9 17 4 12"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
-  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
+  trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+  disc: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>'
 };
 const ic = (n, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[n] || ''}</svg>`;
 
@@ -279,12 +293,26 @@ function prog(rx, sets) {
   rx.cur = Number(rx.cur) || rx.reps;
 
   const need = rx.prog === 'double' ? rx.cur : rx.reps;
-  const d = sets.filter(s => s && s.done);
+  const d = sets.filter(s => s && (s.done || (s.sideL && s.sideR)));
   const R = n => Math.round(n / 2.5) * 2.5;
   const ok = d.length >= rx.sets && d.every(s => (Number(s.r) || 0) >= need);
 
+  // Check RIR signals across completed sets
+  const setsWithRir = d.filter(s => s.rir != null);
+  const allHighRir = setsWithRir.length >= rx.sets && setsWithRir.every(s => Number(s.rir) >= 2);
+  const hadFailure = d.some(s => Number(s.rir) === 0 || Number(s.rpe) >= 10);
+
   if (ok) {
     rx.stalls = 0;
+    if (allHighRir) {
+      if (rx.prog === 'double') {
+        rx.cur = Math.min(rx.reps2, rx.cur + 2);
+        return `Aggressive target up to ${rx.cur} reps (all sets RIR ≥ 2)`;
+      }
+      const aggInc = rd(rx.inc * 1.5);
+      rx.w = rd(rx.w + aggInc);
+      return `Aggressive jump to ${rx.w} kg (+${aggInc}kg: all sets RIR ≥ 2)`;
+    }
     if (rx.prog === 'double') {
       if (rx.cur >= rx.reps2) {
         rx.w = rd(rx.w + rx.inc);
@@ -302,6 +330,15 @@ function prog(rx, sets) {
 
   rx.stalls++;
   const stallLimit = rx.prog === 'gslp' ? 1 : 3;
+  if (hadFailure && rx.stalls >= 2) {
+    rx.w = Math.max(0, rd(R(rx.w * 0.9)));
+    rx.stalls = 0;
+    if (rx.prog === 'double') rx.cur = rx.reps;
+    return `Deload 10% to ${rx.w} kg (Stalled at RIR 0 Failure)`;
+  }
+  if (hadFailure) {
+    return `Maintain load at ${rx.w} kg (Stalled at RIR 0 Failure)`;
+  }
   if (rx.stalls >= stallLimit) {
     rx.w = Math.max(0, rd(R(rx.w * 0.9)));
     rx.stalls = 0;
@@ -311,8 +348,236 @@ function prog(rx, sets) {
   return `Stall ${rx.stalls}/${stallLimit}`;
 }
 
+// ---- Personal Record (PR) Engine ----
+const getExercisePRs = id => {
+  let maxWeight = 0;
+  let max1RM = 0;
+  let maxVolume = 0;
+  let count = 0;
+
+  for (const log of S.logs) {
+    for (const ex of (log.ex || [])) {
+      if (String(ex.id) === String(id)) {
+        let sessionVol = 0;
+        for (const s of (ex.sets || [])) {
+          const w = Number(s.w) || 0;
+          const r = Number(s.r) || 0;
+          const isDone = s.done || (ex.uni && s.sideL && s.sideR);
+          if (isDone && (w > 0 || r > 0)) {
+            count++;
+            if (w > maxWeight) maxWeight = w;
+            const oneRM = e1(w, r);
+            if (oneRM > max1RM) max1RM = oneRM;
+            sessionVol += setVolume(s, ex.uni);
+          }
+        }
+        if (sessionVol > maxVolume) maxVolume = sessionVol;
+      }
+    }
+  }
+
+  return { maxWeight, max1RM, maxVolume, count };
+};
+
+const checkSetPR = (id, s, uni = false) => {
+  const w = Number(s?.w) || 0;
+  const r = Number(s?.r) || 0;
+  const isDone = s?.done || (uni && s?.sideL && s?.sideR);
+  if (!isDone || (w <= 0 && r <= 0)) return null;
+
+  const prior = getExercisePRs(id);
+  const oneRM = e1(w, r);
+  const types = [];
+
+  if (w > 0 && ((prior.maxWeight > 0 && w > prior.maxWeight) || (prior.count === 0 && w > 0))) {
+    types.push('Weight');
+  }
+  if (oneRM > 0 && ((prior.max1RM > 0 && oneRM > prior.max1RM) || (prior.count === 0 && oneRM > 0))) {
+    types.push('1RM');
+  }
+
+  if (types.length) {
+    return { isPR: true, types, w, oneRM, desc: types.join(' & ') + ' PR' };
+  }
+  return null;
+};
+
+// ---- Barbell Plate Calculator ----
+const calcPlates = (totalWeight, barWeight = 20) => {
+  const targetPerSide = Math.max(0, (totalWeight - barWeight) / 2);
+  const plateTypes = [20, 15, 10, 5, 2.5, 1.25];
+  let rem = targetPerSide;
+  const plates = [];
+  for (const p of plateTypes) {
+    const count = Math.floor((rem + 0.0001) / p);
+    if (count > 0) {
+      plates.push({ weight: p, count });
+      rem = Math.round((rem - count * p) * 1000) / 1000;
+    }
+  }
+  const loadedWeight = barWeight + 2 * plates.reduce((sum, r) => sum + r.weight * r.count, 0);
+  return { barWeight, perSide: targetPerSide, weightPerSide: targetPerSide, plates, remainder: rem, rem, loadedWeight };
+};
+
+// ---- Per-Exercise Strength Progression Line Chart Generator ----
+const renderExerciseProgressionChart = exId => {
+  const e = X(exId);
+  const pts = [];
+
+  for (const log of S.logs) {
+    const exEntry = (log.ex || []).find(x => String(x.id) === String(exId));
+    if (exEntry && Array.isArray(exEntry.sets) && exEntry.sets.length) {
+      const validSets = exEntry.sets.filter(s => s && (s.done || (exEntry.uni && (s.sideL || s.sideR))));
+      if (validSets.length) {
+        let bestScore = 0;
+        let topW = 0;
+        for (const s of validSets) {
+          const w = Number(s.w) || 0;
+          const r = Number(s.r) || 0;
+          if (w > topW) topW = w;
+          const score = e.t === 't' ? r : e1(w, r);
+          if (score > bestScore) bestScore = score;
+        }
+        if (bestScore > 0 || topW > 0) {
+          pts.push({
+            date: log.date,
+            dateLabel: new Date(log.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+            val: rd(bestScore),
+            w: topW
+          });
+        }
+      }
+    }
+  }
+
+  if (pts.length < 2) {
+    if (pts.length === 1) {
+      return `
+        <div class="prog-chart-wrap">
+          <div class="prog-chart-header">
+            <span class="prog-chart-title">Strength Progression</span>
+            <span class="prog-chart-stat">${pts[0].val} ${e.t === 't' ? 'sec' : 'kg est. 1RM'}</span>
+          </div>
+          <p class="t2 sm" style="text-align:center;padding:12px 0">First milestone logged on ${pts[0].dateLabel} (${pts[0].val} ${e.t === 't' ? 'sec' : 'kg'}). Complete more workouts to plot your progression curve!</p>
+        </div>
+      `;
+    }
+    return `
+      <div class="prog-chart-wrap">
+        <div class="prog-chart-header">
+          <span class="prog-chart-title">Strength Progression</span>
+          <span class="prog-chart-stat">--</span>
+        </div>
+        <p class="t2 sm" style="text-align:center;padding:12px 0">No logged history yet for this exercise. Complete a session to start tracking strength progression!</p>
+      </div>
+    `;
+  }
+
+  const W = 320, H = 140, padL = 38, padR = 16, padT = 16, padB = 24;
+  const vals = pts.map(p => p.val);
+  const minV = Math.min(...vals), maxV = Math.max(...vals);
+  const range = (maxV - minV) || 1;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+
+  const coords = pts.map((p, i) => {
+    const x = padL + (i / (pts.length - 1)) * plotW;
+    const y = padT + (1 - (p.val - minV) / range) * plotH;
+    return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10, ...p };
+  });
+
+  const lineD = 'M ' + coords.map(c => `${c.x},${c.y}`).join(' L ');
+  const areaD = lineD + ` L ${coords.at(-1).x},${H - padB} L ${coords[0].x},${H - padB} Z`;
+
+  return `
+    <div class="prog-chart-wrap">
+      <div class="prog-chart-header">
+        <span class="prog-chart-title">Strength Progression (Est. 1RM)</span>
+        <span class="prog-chart-stat">${coords.at(-1).val} ${e.t === 't' ? 'sec' : 'kg'}</span>
+      </div>
+      <svg class="prog-chart-svg" viewBox="0 0 ${W} ${H}">
+        <defs>
+          <linearGradient id="chart-grad-${esc(exId)}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0A84FF" stop-opacity="0.45"/>
+            <stop offset="100%" stop-color="#0A84FF" stop-opacity="0.0"/>
+          </linearGradient>
+        </defs>
+        <line class="chart-grid" x1="${padL}" y1="${padT}" x2="${W - padR}" y2="${padT}"/>
+        <line class="chart-grid" x1="${padL}" y1="${H - padB}" x2="${W - padR}" y2="${H - padB}"/>
+        <path class="chart-area" d="${areaD}" fill="url(#chart-grad-${esc(exId)})"/>
+        <path class="chart-line" d="${lineD}"/>
+        ${coords.map(c => `<circle class="chart-dot" cx="${c.x}" cy="${c.y}" r="3.5"><title>${c.dateLabel}: ${c.val} kg</title></circle>`).join('')}
+        <text class="chart-label" x="${coords[0].x}" y="${H - 6}">${coords[0].dateLabel}</text>
+        <text class="chart-label" x="${coords.at(-1).x}" y="${H - 6}">${coords.at(-1).dateLabel}</text>
+        <text class="chart-label" x="${padL - 4}" y="${padT + 4}" style="text-anchor:end">${maxV}</text>
+        <text class="chart-label" x="${padL - 4}" y="${H - padB}" style="text-anchor:end">${minV}</text>
+      </svg>
+    </div>
+  `;
+};
+
+// ---- View Header with Persistent Frosted Settings Gear ----
+const viewHeader = title => `
+  <div class="view-header">
+    <h1>${esc(title)}</h1>
+    <button class="gear-btn frosted" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 20)}</button>
+  </div>
+`;
+
+// ---- Scannable Routine Summary Row Component ----
+const renderRoutineSummaryRow = x => {
+  const e = X(x.id);
+  const setsReps = Number(x.w) > 0
+    ? `${x.sets} × ${x.reps} @ ${x.w}kg`
+    : `${x.sets} × ${x.reps}`;
+  const media = e.img || e.gif;
+  return `
+    <div class="routine-summary-row">
+      <div class="routine-summary-left">
+        ${media
+          ? `<img class="routine-summary-thumb" src="./media/${esc(media)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+          : `<span class="routine-summary-pill">${esc(e.g || 'Core')}</span>`
+        }
+        <span class="routine-summary-name">${esc(e.name)}</span>
+      </div>
+      <div class="routine-summary-badge">${setsReps}</div>
+    </div>
+  `;
+};
+
+// ---- Unified Streak Badge Component ----
+const renderStreakBadge = (extra = '') => {
+  const s = streak();
+  if (s === 0) {
+    return `
+      <div class="card streak-badge-card empty-streak">
+        <div class="streak-badge-left">
+          <span class="streak-fire">🔥</span>
+          <div>
+            <div class="streak-title">Start your first streak today! 🚀</div>
+            <div class="t2 sm">${S.logs.length ? `${S.logs.length} workouts completed` : 'Log your first workout to build momentum'}</div>
+          </div>
+        </div>
+        ${extra || (!S.act ? `<button class="btn s sm-btn" data-a="start">Start Workout</button>` : '')}
+      </div>
+    `;
+  }
+  return `
+    <div class="card streak-badge-card">
+      <div class="streak-badge-left">
+        <span class="streak-fire">🔥</span>
+        <div>
+          <div class="streak-count"><b>${s}</b> Day Streak</div>
+          <div class="t2 sm">${S.logs.length} workouts completed</div>
+        </div>
+      </div>
+      ${extra}
+    </div>
+  `;
+};
+
 // ---- Rest Timer, Audio & Wake Lock ----
-const T = { end: 0, iv: 0 };
+const T = { end: 0, iv: 0, durMs: 90000 };
 
 const unlock = () => {
   try {
@@ -320,7 +585,6 @@ const unlock = () => {
     if (!AudioCtx) return;
     if (!ac) ac = new AudioCtx();
     if (ac.state === 'suspended') ac.resume();
-    // Warm up iOS audio pipeline with a silent 1-sample buffer
     const buf = ac.createBuffer(1, 1, 22050);
     const src = ac.createBufferSource();
     src.buffer = buf;
@@ -338,16 +602,17 @@ const beep = () => {
     o.connect(g);
     g.connect(ac.destination);
     o.frequency.value = 880;
-    g.gain.setValueAtTime(0.3, ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.7);
+    g.gain.setValueAtTime(0.35, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.8);
     o.start();
-    o.stop(ac.currentTime + 0.7);
+    o.stop(ac.currentTime + 0.8);
   } catch {}
 };
 
 function startRest(s) {
   unlock();
-  T.end = Date.now() + Math.max(1, s) * 1000;
+  T.durMs = Math.max(1, s) * 1000;
+  T.end = Date.now() + T.durMs;
   clearInterval(T.iv);
   T.iv = setInterval(tick, 250);
   $('#rest').hidden = false;
@@ -355,11 +620,12 @@ function startRest(s) {
 }
 
 function tick() {
-  const l = Math.ceil((T.end - Date.now()) / 1000);
+  const remaining = Math.max(0, T.end - Date.now());
+  const l = Math.ceil(remaining / 1000);
   if (l <= 0) {
     stopRest();
-    beep();
-    navigator.vibrate?.([200, 100, 200]);
+    if (S.cfg.sound !== false) beep();
+    if (S.cfg.vibrate !== false) navigator.vibrate?.([200, 100, 200]);
     if (S.cfg.flash) {
       document.body.classList.remove('flash');
       void document.body.offsetWidth;
@@ -367,7 +633,13 @@ function tick() {
     }
     return;
   }
-  $('#rest b').textContent = Math.floor(l / 60) + ':' + String(l % 60).padStart(2, '0');
+  const ringEl = $('#rest-ring-fill');
+  if (ringEl) {
+    const pct = Math.max(0, Math.min(1, remaining / (T.durMs || 90000)));
+    ringEl.style.strokeDashoffset = 94.25 * (1 - pct);
+  }
+  const textEl = $('#rest b');
+  if (textEl) textEl.textContent = Math.floor(l / 60) + ':' + String(l % 60).padStart(2, '0');
 }
 
 const stopRest = () => {
@@ -747,11 +1019,8 @@ const vTrain = () => {
   const deloadInfo = checkDeloadStatus(S.logs);
   const muscleVolumes = getWeeklyMuscleVolumes(S.logs);
 
-  return `<h1>Train</h1>` +
-    `<div class="card train-streak-row">
-      <div class="train-streak-val">🔥 <b>${streak()}</b> Day Streak</div>
-      <span class="t2 sm">${S.logs.length} workouts completed</span>
-    </div>` +
+  return viewHeader('Train') +
+    renderStreakBadge() +
     (S.act ? `<button class="btn" data-a="tab" data-k="work" style="margin-bottom:12px">⚡ Resume Workout: ${esc(S.act.name)}</button>` : '') +
 
     // Active Deload Banner at top (subtle & actionable if deload is ongoing)
@@ -781,7 +1050,9 @@ const vTrain = () => {
             : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start Workout</button>`
           }
         </div>
-        <div class="t2 sm" style="margin-top:8px">${todayRoutine.ex.map(x => `${esc(X(x.id).name)} (${x.sets}×${x.reps})`).join(' · ')}</div>
+        <div class="routine-summary-list">
+          ${todayRoutine.ex.map(renderRoutineSummaryRow).join('')}
+        </div>
       </div>
     ` : (!todayRoutine && !S.act ? `
       <div class="card row" style="margin-bottom:12px;padding:12px 14px">
@@ -802,17 +1073,31 @@ const vTrain = () => {
           <span class="t2 sm">${r.ex.length} exercises</span>
         </div>
         ${scheduledDays.length ? `<div style="margin:4px 0"><span class="today-chip" style="font-size:10px;padding:2px 6px">${scheduledDays.join(', ')}</span></div>` : ''}
-        <div class="t2 sm" style="margin-top:6px">${r.ex.map(x => `${esc(X(x.id).name)} ${x.sets}×${x.reps} @ ${x.w}kg`).join(' · ')}</div>
+        <div class="routine-summary-list">
+          ${r.ex.map(renderRoutineSummaryRow).join('')}
+        </div>
         <div class="row g" style="margin-top:10px">
           <button class="btn" data-a="start" data-id="${esc(r.id)}">Start</button>
           <button class="btn s" data-a="edit" data-id="${esc(r.id)}">Edit</button>
         </div>
       </div>`;
-    }).join('') : '<p class="t2">No routines saved yet.</p>') +
-    `<div class="row g" style="margin-top:8px;margin-bottom:8px">
-      <button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button>
-      <button class="btn s" data-a="start">Empty workout</button>
-    </div>` +
+    }).join('') : `
+      <div class="card empty-state-card">
+        <div class="empty-state-icon">🏋️‍♂️</div>
+        <div class="empty-state-title">No routines created yet</div>
+        <p class="t2 sm">Build custom routines to track progressive overload automatically.</p>
+        <div class="row g" style="margin-top:14px">
+          <button class="btn" data-a="edit">${ic('plus', 16)} Create Routine</button>
+          <button class="btn s" data-a="start">Quick Empty Workout</button>
+        </div>
+      </div>
+    `) +
+    (S.routines.length ? `
+      <div class="row g" style="margin-top:8px;margin-bottom:8px">
+        <button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button>
+        <button class="btn s" data-a="start">Empty workout</button>
+      </div>
+    ` : '') +
 
     // Bottom of Train Tab: Clean Collapsible Recovery & Muscle Fatigue Insights
     `<details class="card recovery-accordion" ${deloadInfo.recommended ? 'open' : ''}>
@@ -973,6 +1258,8 @@ function vWork() {
   const totalSets = allSets.length;
   const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
 
+  const isBarbell = (exInfo.eq || '').toLowerCase().includes('barbell');
+
   return `
     <div class="work-top-bar">
       <div class="work-title-group">
@@ -980,6 +1267,7 @@ function vWork() {
         <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
       </div>
       <div class="work-top-actions">
+        <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
         <button class="btn sm-btn" data-a="fin">Finish</button>
         <button class="btn s sm-btn red" data-a="cancel">✕</button>
       </div>
@@ -1043,12 +1331,20 @@ function vWork() {
           <span style="width:${currentEx.uni ? '84px' : '40px'};text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
         </div>
         ${currentEx.sets.map((s, j) => {
-          const r = (f, v, u) => `<div class="set-input-wrap"><input type="number" inputmode="decimal" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}"><span class="u">${u}</span></div>`;
+          const r = (f, v, u) => `<div class="set-input-wrap ${f === 'w' && isBarbell ? 'has-plate-btn' : ''}">
+            <input type="number" inputmode="decimal" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}">
+            <span class="u">${u}</span>
+            ${f === 'w' && isBarbell ? `<button class="plate-calc-btn" data-a="openplatecalc" data-w="${s.w || 20}" data-name="${esc(exInfo.name)}" title="Plate Calculator">${ic('disc', 14)}</button>` : ''}
+          </div>`;
           const isFail = s.rir === 0 || s.rpe >= 10;
           const isSet = s.rir != null || (s.rpe != null && s.rpe !== '');
           const rirText = s.rir != null ? (s.rir === 0 ? '0 💥' : (s.rir >= 3 ? '3+' : s.rir)) : (s.rpe != null && s.rpe !== '' ? (10 - +s.rpe) : 'RIR');
+          const isSetDone = s.done || (currentEx.uni && s.sideL && s.sideR);
+          const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
           return `<div class="set ${s.done ? 'd' : ''}" data-i="${curIdx}" data-j="${j}">
-            <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">${j + 1}</button>
+            <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">
+              ${j + 1}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆 PR!</span>` : ''}
+            </button>
             ${exInfo.t === 't' ? '' : r('w', s.w, exInfo.t === 'b' ? '+kg' : 'kg')}
             ${r('r', s.r, exInfo.t === 't' ? 'sec' : 'reps')}
             <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve / Intensity">${rirText}</button>
@@ -1151,7 +1447,7 @@ function vLib() {
   const filtered = filterExercises();
   const visible = filtered.slice(0, libPageSize);
 
-  return `<h1>Library</h1>` +
+  return viewHeader('Library') +
     `<input id="lib-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="libsearch" value="${esc(libQuery)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">` +
     `<div class="chips">${BP_CATEGORIES.map(c => `<button class="chip ${libCategory === c ? 'on' : ''}" data-a="libcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div>` +
     `<div class="row" style="margin-bottom:12px"><label class="t2 sm" style="flex:1">Equipment:<select data-f="libeq">${EQ_OPTIONS.map(eq => `<option value="${esc(eq)}" ${libEquipment === eq ? 'selected' : ''}>${esc(eq.toUpperCase())}</option>`).join('')}</select></label><span id="ex-count" class="t2 sm" style="align-self:flex-end;margin-bottom:10px">${filtered.length} exercises</span></div>` +
@@ -1193,8 +1489,8 @@ function vCal() {
   const todayDay = new Date().getDay();
   const SPLIT_DAYS = [1, 2, 3, 4, 5, 6, 0]; // Monday to Sunday grid
 
-  return `<h1>Calendar & Split</h1>` +
-    `<div class="card row"><span><b>${streak()}</b> Day Active Streak 🔥</span><span class="t2">${workoutDates.size} active days</span></div>` +
+  return viewHeader('Calendar & Split') +
+    renderStreakBadge() +
     `<div class="card">` +
       `<div class="cal-nav">` +
         `<button data-a="calprev">‹</button>` +
@@ -1232,9 +1528,18 @@ function vCal() {
     (selLogs.length ? selLogs.map(l => `
       <div class="card">
         <div class="row"><b>${esc(l.name)}</b><span class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume</span></div>
-        <div class="t2 sm" style="margin-top:6px">${l.ex.map(x => `${esc(X(x.id).name)} (${x.sets.length} sets)`).join(' · ')}</div>
+        <div class="routine-summary-list">
+          ${l.ex.map(x => renderRoutineSummaryRow(x)).join('')}
+        </div>
       </div>
-    `).join('') : '<p class="t2">No workouts logged on this date.</p>');
+    `).join('') : `
+      <div class="card empty-state-card sm">
+        <div class="empty-state-icon">🌿</div>
+        <div class="empty-state-title">Rest Day</div>
+        <p class="t2 sm">No workouts logged on this date.</p>
+        ${!S.act ? `<button class="btn s sm-btn" data-a="start" style="margin-top:10px">Log Workout on this Day</button>` : ''}
+      </div>
+    `);
 }
 
 // 5. Body Weight & Waist Measurements Tracker with Dual SVG Trend Chart
@@ -1362,7 +1667,7 @@ function vWeight() {
     }
   }
 
-  return `<h1>Body Measurements</h1>` +
+  return viewHeader('Body Measurements') +
     `<div class="stat-grid">` +
       `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
       `<div class="stat-box"><div class="stat-val">${latestWaist != null ? latestWaist.toFixed(1) + ' cm' : '--'}</div><div class="stat-lbl">Waist</div></div>` +
@@ -1433,16 +1738,68 @@ function vWeight() {
     `</div>`;
 }
 
-// 6. History & Settings View
-const vHist = () => `<h1>History & Settings</h1>` +
-  `<h2>Workout History</h2>` +
-  (S.logs.length ? [...S.logs].reverse().map(l => `<button class="card" data-a="hist" data-id="${esc(l.id)}"><div class="row"><b>${esc(l.name)}</b><span class="t2 sm">${new Date(l.date).toLocaleDateString()}</span></div><div class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume · ${l.ex.length} exercises</div></button>`).join('') : '<p class="t2">No workouts yet.</p>') +
-  `<h2>Preferences</h2>` +
-  `<div class="card"><label class="t2 sm">Rest timer (seconds)</label><input type="number" inputmode="numeric" data-c="rest" value="${Number(S.cfg.rest) || 90}"><label class="row g" style="cursor:pointer;min-height:44px"><span>Visual flash when rest ends</span><input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}></label></div>` +
-  `<h2>System & Cache Updates</h2>` +
-  `<button class="btn s" data-a="forceupdate" style="margin-bottom:8px">🔄 Force App Shell Reload (v4.2.0)</button>` +
-  `<h2>Data Management</h2>` +
-  `<button class="btn" data-a="exp">Export Backup (JSON)</button><label class="btn s">Restore Backup (JSON)<input type="file" id="f" accept="application/json,.json" hidden></label><button class="btn s red" data-a="wipe">Erase all data</button><p class="t2 sm">All data is 100% on-device & air-gapped.</p>`;
+// 6. History View (Strictly Dedicated to Past Workout Logs)
+const vHist = () => {
+  const q = (histQuery || '').trim().toLowerCase();
+  const uniqueRoutines = ['All', ...new Set(S.logs.map(l => l.name).filter(Boolean))];
+
+  const filteredLogs = [...S.logs].reverse().filter(l => {
+    if (histRoutine !== 'All' && l.name !== histRoutine) return false;
+    if (q) {
+      const matchName = (l.name || '').toLowerCase().includes(q);
+      const matchDate = new Date(l.date).toLocaleDateString().toLowerCase().includes(q);
+      const matchEx = (l.ex || []).some(x => X(x.id).name.toLowerCase().includes(q));
+      return matchName || matchDate || matchEx;
+    }
+    return true;
+  });
+
+  return viewHeader('History') +
+    (S.logs.length ? `
+      <input id="hist-search-input" class="txt" placeholder="Search past workouts or exercises..." data-f="histsearch" value="${esc(histQuery)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="margin-bottom:8px">
+      ${uniqueRoutines.length > 2 ? `
+        <div class="chips" style="margin:4px 0 12px">
+          ${uniqueRoutines.map(r => `<button class="chip ${histRoutine === r ? 'on' : ''}" data-a="histroutine" data-r="${esc(r)}">${esc(r)}</button>`).join('')}
+        </div>
+      ` : ''}
+      <div class="row" style="margin-bottom:8px">
+        <span class="t2 sm">${filteredLogs.length} ${filteredLogs.length === 1 ? 'workout' : 'workouts'} logged</span>
+        ${q || histRoutine !== 'All' ? `<button class="chip" data-a="clearhistfilter" style="font-size:11px;min-height:28px;padding:0 8px">Clear Filter</button>` : ''}
+      </div>
+      ${filteredLogs.length ? filteredLogs.map(l => {
+        const dateStr = new Date(l.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        const durMin = Math.round(l.dur / 60000);
+        const volume = vol(l);
+        return `
+          <button class="card" data-a="hist" data-id="${esc(l.id)}" style="margin-bottom:10px">
+            <div class="row">
+              <b>${esc(l.name)}</b>
+              <span class="t2 sm">${dateStr}</span>
+            </div>
+            <div class="t2 sm" style="margin-top:4px">
+              ⏱️ ${durMin} min · 📦 ${volume} kg volume · 🏋️ ${l.ex.length} exercises
+            </div>
+            <div class="routine-summary-list" style="margin-top:8px">
+              ${l.ex.slice(0, 3).map(x => `
+                <div class="routine-summary-row" style="pointer-events:none">
+                  <span class="routine-summary-name">${esc(X(x.id).name)}</span>
+                  <span class="routine-summary-badge">${x.sets.length} sets</span>
+                </div>
+              `).join('')}
+              ${l.ex.length > 3 ? `<span class="t2 sm" style="margin-top:2px;display:block">+${l.ex.length - 3} more exercises</span>` : ''}
+            </div>
+          </button>
+        `;
+      }).join('') : `<p class="t2 sm" style="text-align:center;padding:24px 0">No workouts match your search.</p>`}
+    ` : `
+      <div class="card empty-state-card">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">No workouts logged yet</div>
+        <p class="t2 sm">Every journey begins with a single rep. Complete your first workout to view your logs, PRs, and volume progression.</p>
+        <button class="btn" data-a="tab" data-k="train" style="margin-top:14px">Start Workout 🚀</button>
+      </div>
+    `);
+};
 
 function render() {
   const v = $('#v'), y = v.scrollTop;
@@ -1491,6 +1848,7 @@ function showExerciseModal(ex) {
     <img class="ex-modal-gif" src="${mediaSrc}" alt="${esc(ex.name)}" onerror="this.style.display='none'">
     ${ex.sec && ex.sec.length ? `<div class="t2 sm" style="margin-bottom:8px">Secondary: ${esc(ex.sec.join(', '))}</div>` : ''}
     ${bestHtml}
+    ${renderExerciseProgressionChart(ex.id)}
     ${ex.st && ex.st.length ? `<b>Instructions:</b><ol class="ex-steps">${ex.st.map(s => `<li>${esc(s)}</li>`).join('')}</ol>` : ''}
     ${S.act ? `<button class="btn" data-a="addextoworkout" data-id="${esc(ex.id)}">Add to Active Workout</button>` : ''}
   `);
@@ -1811,6 +2169,210 @@ async function imp(f) {
   }
 }
 
+// ---- Data Management & CSV Export ----
+function expCSV() {
+  const headers = ['Date', 'Workout', 'Exercise ID', 'Exercise Name', 'Target Muscle', 'Equipment', 'Set Number', 'Weight (kg)', 'Reps', 'RPE', 'RIR', 'Unilateral', 'Notes'];
+  const rows = [];
+  S.logs.forEach(l => {
+    const dateStr = new Date(l.date).toISOString().slice(0, 10);
+    const workoutName = l.name || 'Workout';
+    (l.ex || []).forEach(x => {
+      const exInfo = X(x.id);
+      (x.sets || []).forEach((s, idx) => {
+        rows.push([
+          dateStr,
+          `"${workoutName.replace(/"/g, '""')}"`,
+          x.id,
+          `"${exInfo.name.replace(/"/g, '""')}"`,
+          `"${(exInfo.tg || exInfo.g).replace(/"/g, '""')}"`,
+          `"${exInfo.eq.replace(/"/g, '""')}"`,
+          idx + 1,
+          s.w != null ? s.w : 0,
+          s.r != null ? s.r : 0,
+          s.rpe != null && s.rpe !== '' ? s.rpe : '',
+          s.rir != null ? s.rir : '',
+          x.uni ? 'Yes' : 'No',
+          `"${(x.note || '').replace(/"/g, '""')}"`
+        ]);
+      });
+    });
+  });
+
+  const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\r\n');
+  const b = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = `mygym-workouts-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 9e3);
+  toast('Exported workouts to CSV');
+}
+
+// ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
+function showSettingsModal() {
+  modal(`
+    <h2>Settings ⚙️</h2>
+    <div class="settings-modal-content">
+      <div class="settings-section">
+        <div class="settings-section-title">App Preferences</div>
+        <div class="card settings-card">
+          <label class="settings-row">
+            <span class="settings-label">Rest Timer Chime & Sound</span>
+            <input type="checkbox" data-c="sound" ${S.cfg.sound !== false ? 'checked' : ''}>
+          </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Haptic Vibration</span>
+            <input type="checkbox" data-c="vibrate" ${S.cfg.vibrate !== false ? 'checked' : ''}>
+          </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Default Rest Interval</span>
+            <select class="settings-select" data-c="rest">
+              <option value="30" ${S.cfg.rest === 30 ? 'selected' : ''}>30 sec</option>
+              <option value="45" ${S.cfg.rest === 45 ? 'selected' : ''}>45 sec</option>
+              <option value="60" ${S.cfg.rest === 60 ? 'selected' : ''}>60 sec</option>
+              <option value="90" ${S.cfg.rest === 90 ? 'selected' : ''}>90 sec (Default)</option>
+              <option value="120" ${S.cfg.rest === 120 ? 'selected' : ''}>2 min</option>
+              <option value="180" ${S.cfg.rest === 180 ? 'selected' : ''}>3 min</option>
+              <option value="240" ${S.cfg.rest === 240 ? 'selected' : ''}>4 min</option>
+              <option value="300" ${S.cfg.rest === 300 ? 'selected' : ''}>5 min</option>
+            </select>
+          </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Flash Screen on Rest End</span>
+            <input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}>
+          </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Default Weight Increment (kg)</span>
+            <input type="number" inputmode="decimal" step="0.5" class="settings-input-num" data-c="inc" value="${S.cfg.inc || 2.5}">
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Storage & Offline Cache</div>
+        <div class="card settings-card">
+          <div class="settings-row">
+            <span class="settings-label">App Shell Version</span>
+            <span class="chip on" style="font-family:monospace;font-size:11px">v5.0.0-gold</span>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-row">
+            <span class="settings-label">Air-Gapped PWA Status</span>
+            <span class="chip" style="font-size:11px;color:var(--gn)">100% Offline</span>
+          </div>
+          <div class="settings-divider"></div>
+          <div style="padding:10px 0">
+            <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} Force Cache Reload</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">Data Management</div>
+        <div class="card settings-card">
+          <div style="padding:12px 0 6px">
+            <div class="row g" style="margin-bottom:8px">
+              <button class="btn s" data-a="exp" style="flex:1">Export Backup (JSON)</button>
+              <button class="btn s" data-a="expcsv" style="flex:1">Export to CSV</button>
+            </div>
+            <label class="btn s" style="display:flex;align-items:center;justify-content:center;cursor:pointer;margin-bottom:4px">
+              Restore Backup (JSON)
+              <input type="file" id="f" accept=".json" style="display:none">
+            </label>
+          </div>
+        </div>
+
+        <div class="destructive-card">
+          <div class="destructive-title">⚠️ Danger Zone</div>
+          <p class="t2 sm" style="margin:6px 0 10px;color:rgba(255,255,255,0.75)">Permanently wipe all routines, logs, and measurements from this device.</p>
+          <button class="btn s red" data-a="wipe-step1" style="width:100%">Erase All Data...</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+// 2-Step Confirmation Modal for Erase All Data
+function showWipeConfirmModal() {
+  modal(`
+    <div class="destructive-confirm-modal">
+      <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+      <h2 style="color:var(--accent-destructive);margin-bottom:8px">Erase All Data?</h2>
+      <p class="t2 sm" style="margin-bottom:16px;line-height:1.5">
+        This action is permanent and IRREVERSIBLE. All workouts (${S.logs.length}), custom routines (${S.routines.length}), and body weight records (${S.weights.length}) will be permanently erased.
+      </p>
+      <div class="row g">
+        <button class="btn s" data-a="close" style="flex:1">Cancel</button>
+        <button class="btn s red" data-a="wipe-confirm" style="flex:1">Yes, Delete Everything</button>
+      </div>
+    </div>
+  `);
+}
+
+// Barbell Plate Calculator Modal
+function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
+  const res = calcPlates(targetWeight, 20);
+  const colorMap = {
+    20: '#0A84FF',
+    15: '#FFD60A',
+    10: '#30D158',
+    5: '#F2F2F7',
+    2.5: '#FF453A',
+    1.25: '#8E8E93'
+  };
+
+  const discsHtml = res.plates.flatMap(p => {
+    const classSuffix = String(p.weight).replace('.', '_');
+    return Array.from({ length: p.count }, () => `<div class="plate-disc plate-disc-${classSuffix}" title="${p.weight} kg"></div>`);
+  }).join('');
+
+  modal(`
+    <h2>Barbell Plate Calculator 🏋️</h2>
+    <div class="plate-calc-container">
+      <div class="plate-calc-hero">
+        <div class="plate-calc-wt">${targetWeight} <span style="font-size:20px;font-weight:600;color:var(--t2)">kg</span></div>
+        <div class="t2 sm" style="margin-top:2px">${esc(exName)} · 20kg Olympic Bar</div>
+        <div class="plate-calc-bar">
+          <div class="plate-sleeve-bar"></div>
+          <div class="plate-collar"></div>
+          ${discsHtml || '<span class="t2 sm" style="padding:0 8px">Empty Bar</span>'}
+          <div class="plate-sleeve-bar" style="width:24px"></div>
+        </div>
+        <div class="t2 sm" style="margin-top:4px"><b>${res.perSide} kg</b> per side</div>
+      </div>
+
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--t2);margin-bottom:6px">Plates Per Side:</div>
+      <div class="plate-pills-row">
+        ${res.plates.length ? res.plates.map(p => `
+          <div class="plate-pill">
+            <span style="width:10px;height:10px;border-radius:50%;background:${colorMap[p.weight] || '#fff'};display:inline-block"></span>
+            ${p.count} × ${p.weight} kg
+          </div>
+        `).join('') : '<span class="t2 sm">No plates required (20kg bar only)</span>'}
+        ${res.rem > 0 ? `<div class="plate-pill" style="color:var(--accent-achievement);border-color:var(--accent-achievement)">+ ${res.rem} kg micro-load</div>` : ''}
+      </div>
+
+      <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--t2);margin:16px 0 8px">Quick Adjust Weight:</div>
+      <div class="row g" style="margin-bottom:8px">
+        <button class="chip" data-a="adjplate" data-w="${Math.max(20, targetWeight - 10)}" data-name="${esc(exName)}">-10kg</button>
+        <button class="chip" data-a="adjplate" data-w="${Math.max(20, targetWeight - 5)}" data-name="${esc(exName)}">-5kg</button>
+        <button class="chip" data-a="adjplate" data-w="${Math.max(20, targetWeight - 2.5)}" data-name="${esc(exName)}">-2.5kg</button>
+        <button class="chip" data-a="adjplate" data-w="${targetWeight + 2.5}" data-name="${esc(exName)}">+2.5kg</button>
+        <button class="chip" data-a="adjplate" data-w="${targetWeight + 5}" data-name="${esc(exName)}">+5kg</button>
+        <button class="chip" data-a="adjplate" data-w="${targetWeight + 10}" data-name="${esc(exName)}">+10kg</button>
+      </div>
+
+      <button class="btn s" data-a="close" style="width:100%;margin-top:10px">Done</button>
+    </div>
+  `);
+}
+
 // ---- Finish Workout ----
 function finish() {
   const a = S.act;
@@ -1837,16 +2399,23 @@ function finish() {
 
   if (!ex.length) return toast('Complete at least one set first');
 
-  const prs = ex.flatMap(x => {
-    const o = best(x.id);
-    const bestNew = Math.max(...x.sets.map(s => scoreSet(x.id, s)));
-    if (o > 0 && bestNew > o) {
-      const e = X(x.id);
-      if (e.t === 't') return [`${e.name}: new record ${bestNew} sec`];
-      if (e.t === 'b' && !x.sets.some(s => s.w > 0)) return [`${e.name}: new record ${bestNew} reps`];
-      return [`${e.name}: est. 1RM ${rd(bestNew > 1000 ? bestNew - 1000 : bestNew)} kg`];
-    }
-    return [];
+  // Detect PRs achieved during active session
+  const sessionPRs = [];
+  ex.forEach(x => {
+    const e = X(x.id);
+    x.sets.forEach((s, idx) => {
+      const pr = checkSetPR(x.id, s, x.uni);
+      if (pr) {
+        sessionPRs.push({
+          exName: e.name,
+          setIdx: idx + 1,
+          type: pr.type,
+          desc: pr.desc,
+          w: s.w,
+          r: s.r
+        });
+      }
+    });
   });
 
   const r = S.routines.find(r => r.id === a.rid);
@@ -1890,6 +2459,41 @@ function finish() {
   const isDeload = !!a.isDeload;
   const deloadHtml = isDeload ? `<div class="row" style="margin-top:6px"><b>Protocol:</b> <span style="color:var(--gn)">Deload Recovery Session (-50% target sets)</span></div>` : '';
 
+  // Compare vs Last Session of same routine or previous log
+  const prevLog = S.logs.filter(l => l.name === a.name).at(-1) || S.logs.at(-1);
+  const curVol = ex.reduce((sum, x) => sum + x.sets.reduce((sSum, s) => sSum + (s.w * s.r * (x.uni ? 2 : 1)), 0), 0);
+  let volDeltaHtml = '';
+  if (prevLog) {
+    const prevVol = vol(prevLog);
+    if (prevVol > 0) {
+      const dVol = curVol - prevVol;
+      const pctVol = Math.round((dVol / prevVol) * 1000) / 10;
+      if (dVol > 0) {
+        volDeltaHtml = `<span class="delta-pos">+${dVol} kg (+${pctVol}%) vs last session</span>`;
+      } else if (dVol < 0) {
+        volDeltaHtml = `<span class="delta-neg">${dVol} kg (${pctVol}%) vs last session</span>`;
+      } else {
+        volDeltaHtml = `<span class="delta-flat">0 kg (0%) vs last session</span>`;
+      }
+    }
+  }
+
+  const curDurMin = Math.round((Date.now() - a.t0) / 60000);
+  let durDeltaHtml = '';
+  if (prevLog && prevLog.dur) {
+    const prevDurMin = Math.round(prevLog.dur / 60000);
+    const diffDur = curDurMin - prevDurMin;
+    durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
+  }
+
+  const totalSetsCount = ex.reduce((acc, x) => acc + x.sets.length, 0);
+  let setsDeltaHtml = '';
+  if (prevLog) {
+    const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + x.sets.length, 0);
+    const diffSets = totalSetsCount - prevSetsCount;
+    setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
+  }
+
   const log = { id: uid(), date: Date.now(), name: a.name, dur: Date.now() - a.t0, ex, isDeload };
   S.logs.push(log);
   S.act = null;
@@ -1897,22 +2501,54 @@ function finish() {
   stopRest();
   wl?.release?.();
 
-  const totalSetsCount = log.ex.reduce((acc, x) => acc + x.sets.length, 0);
-
   modal(`<h2>Workout Complete! 🏆</h2>
     ${mmLog(log)}
     <div class="card" style="margin:12px 0;padding:12px">
-      <div class="row"><b>Total Volume:</b> <span>${vol(log)} kg</span></div>
-      <div class="row" style="margin-top:6px"><b>Duration:</b> <span>${Math.round(log.dur / 60000)} min</span></div>
-      <div class="row" style="margin-top:6px"><b>Completed Exercises:</b> <span>${log.ex.length}</span></div>
-      <div class="row" style="margin-top:6px"><b>Completed Sets:</b> <span>${totalSetsCount}</span></div>
+      <div class="row">
+        <b>Total Volume:</b>
+        <div style="text-align:right">
+          <span>${curVol} kg</span>
+          ${volDeltaHtml ? `<br>${volDeltaHtml}` : ''}
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <b>Duration:</b>
+        <span>${curDurMin} min${durDeltaHtml}</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <b>Completed Exercises:</b>
+        <span>${log.ex.length}</span>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <b>Completed Sets:</b>
+        <span>${totalSetsCount}${setsDeltaHtml}</span>
+      </div>
       ${rirSummaryHtml}
       ${failureHtml}
       ${deloadHtml}
-      <div class="row" style="margin-top:6px"><b>Active Streak:</b> <span>${streak()} days 🔥</span></div>
-    </div>` +
-    (prs.length ? `<h2>New Records! 🎉</h2>${prs.map(p => `<div class="card" style="padding:10px"><b>${esc(p)}</b></div>`).join('')}` : '') +
-    (notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''));
+      <div class="row" style="margin-top:8px">
+        <b>Active Streak:</b>
+        <span>${streak()} days 🔥</span>
+      </div>
+    </div>
+    ${sessionPRs.length ? `
+      <h2 style="color:var(--accent-achievement);display:flex;align-items:center;gap:6px">
+        <span>🏆</span> New Personal Records!
+      </h2>
+      <div style="margin-bottom:12px">
+        ${sessionPRs.map(p => `
+          <div class="pr-trophy-card">
+            <div class="pr-trophy-icon">🏆</div>
+            <div class="pr-trophy-content">
+              <div class="pr-trophy-title">${esc(p.exName)} · Set ${p.setIdx}</div>
+              <div class="pr-trophy-desc">${esc(p.desc)} (${p.w > 0 ? p.w + ' kg × ' : ''}${p.r} reps)</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+    ${notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''}
+  `);
   view = 'train';
   render();
 }
@@ -2230,10 +2866,21 @@ document.addEventListener('click', e => {
           s.sideL = true;
           s.sideR = true;
           if (!x.ss) startRest(S.cfg.rest);
+          const pr = checkSetPR(x.id, s, true);
+          if (S.cfg.vibrate !== false && navigator.vibrate) {
+            navigator.vibrate(pr ? [40, 60, 120] : 40);
+          }
         }
       } else {
+        const wasDone = s.done;
         s.done = !s.done;
-        if (s.done && !x.ss) startRest(S.cfg.rest);
+        if (!wasDone && s.done) {
+          if (!x.ss) startRest(S.cfg.rest);
+          const pr = checkSetPR(x.id, s, false);
+          if (S.cfg.vibrate !== false && navigator.vibrate) {
+            navigator.vibrate(pr ? [40, 60, 120] : 40);
+          }
+        }
       }
       save('act');
       break;
@@ -2272,7 +2919,13 @@ document.addEventListener('click', e => {
       const wasDone = s.done;
       s.done = !!(s.sideL && s.sideR);
       save('act');
-      if (!wasDone && s.done && !x.ss) startRest(S.cfg.rest);
+      if (!wasDone && s.done) {
+        if (!x.ss) startRest(S.cfg.rest);
+        const pr = checkSetPR(x.id, s, true);
+        if (S.cfg.vibrate !== false && navigator.vibrate) {
+          navigator.vibrate(pr ? [40, 60, 120] : 40);
+        }
+      }
       break;
     }
     case 'doner': {
@@ -2282,7 +2935,13 @@ document.addEventListener('click', e => {
       const wasDone = s.done;
       s.done = !!(s.sideL && s.sideR);
       save('act');
-      if (!wasDone && s.done && !x.ss) startRest(S.cfg.rest);
+      if (!wasDone && s.done) {
+        if (!x.ss) startRest(S.cfg.rest);
+        const pr = checkSetPR(x.id, s, true);
+        if (S.cfg.vibrate !== false && navigator.vibrate) {
+          navigator.vibrate(pr ? [40, 60, 120] : 40);
+        }
+      }
       break;
     }
     case 'openrir': {
@@ -2455,7 +3114,43 @@ document.addEventListener('click', e => {
     }
     case 'delr': if (confirm('Delete this routine?')) { S.routines = S.routines.filter(r => r.id !== E.id); save('routines'); close(); break; } return;
     case 'exp': exp(); return;
-    case 'wipe': if (confirm('Erase ALL data on this device?') && confirm('This cannot be undone. Continue?')) { S.routines = []; S.logs = []; S.weights = []; S.act = null; S.sched = {}; save('routines', 'logs', 'weights', 'cfg', 'sched', 'act'); stopRest(); } break;
+    case 'expcsv': expCSV(); return;
+    case 'opensettings': showSettingsModal(); return;
+    case 'wipe-step1': showWipeConfirmModal(); return;
+    case 'wipe-confirm': {
+      S.routines = []; S.logs = []; S.weights = []; S.act = null; S.sched = {};
+      save('routines', 'logs', 'weights', 'cfg', 'sched', 'act');
+      stopRest();
+      close();
+      toast('All data erased');
+      view = 'train';
+      render();
+      return;
+    }
+    case 'openplatecalc': {
+      const targetW = parseFloat(t.dataset.w) || 20;
+      const name = t.dataset.name || 'Barbell';
+      showPlateCalcModal(targetW, name);
+      return;
+    }
+    case 'adjplate': {
+      const targetW = Math.max(20, Math.min(500, parseFloat(t.dataset.w) || 20));
+      const name = t.dataset.name || 'Barbell';
+      showPlateCalcModal(targetW, name);
+      return;
+    }
+    case 'histroutine': {
+      histRoutine = t.dataset.r;
+      render();
+      return;
+    }
+    case 'clearhistfilter': {
+      histRoutine = 'All';
+      histQuery = '';
+      render();
+      return;
+    }
+    case 'wipe': showWipeConfirmModal(); return;
   }
   render();
 });
@@ -2477,6 +3172,17 @@ const handleFieldUpdate = t => {
     save('sched');
     render();
     toast('Split schedule updated');
+    return;
+  }
+
+  if (f === 'histsearch') {
+    histQuery = t.value;
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+      render();
+      const input = $('#hist-search-input');
+      if (input && typeof input.focus === 'function') input.focus({ preventScroll: true });
+    }, 150);
     return;
   }
 
@@ -2563,7 +3269,11 @@ document.addEventListener('change', e => {
     t.value = '';
   }
   if (t.dataset.c) {
-    S.cfg[t.dataset.c] = t.type === 'checkbox' ? t.checked : Math.max(5, +t.value || 90);
+    if (t.dataset.c === 'inc') {
+      S.cfg.inc = Math.max(0.25, Math.min(50, parseFloat(t.value) || 2.5));
+    } else {
+      S.cfg[t.dataset.c] = t.type === 'checkbox' ? t.checked : Math.max(5, +t.value || 90);
+    }
     save('cfg');
   }
 });
@@ -2728,7 +3438,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=4.2.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.0.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

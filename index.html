@@ -13,12 +13,12 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css?v=4.2.0">
+  <link rel="stylesheet" href="./style.css?v=5.0.0">
   <title>MyGyM</title>
   <script>
     // Self-healing force cache clear & auto-reload for iOS Safari PWA
     (function() {
-      var SHELL_VERSION = 'mygym-v4.2.0-clean';
+      var SHELL_VERSION = 'mygym-v5.0.0-gold';
       var cachedVersion = localStorage.getItem('mygym_shell_version');
       if (cachedVersion !== SHELL_VERSION) {
         if ('caches' in window) {
@@ -45,14 +45,23 @@
 <body>
   <main id="v"></main>
   <div id="rest" hidden>
-    <span>Rest</span>
-    <b>0:00</b>
+    <div class="rest-ring-wrap">
+      <svg class="rest-ring-svg" width="38" height="38" viewBox="0 0 38 38">
+        <circle class="rest-ring-bg" cx="19" cy="19" r="15"/>
+        <circle class="rest-ring-fill" id="rest-ring-fill" cx="19" cy="19" r="15"/>
+      </svg>
+      <span class="rest-ring-icon">⏱️</span>
+    </div>
+    <div class="rest-text-col">
+      <span>Rest</span>
+      <b>0:00</b>
+    </div>
     <button data-a="r15">+15s</button>
     <button data-a="rskip">Skip</button>
   </div>
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script type="module" src="./app.js?v=4.2.0"></script>
+  <script type="module" src="./app.js?v=5.0.0"></script>
 </body>
 </html>

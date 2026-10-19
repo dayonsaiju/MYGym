@@ -1,12 +1,37 @@
 :root {
-  --c1: #1C1C1E;
-  --c2: #2C2C2E;
-  --bd: #38383A;
+  /* Standardized 3-Level Elevation Tokens */
+  --bg-base: #0A0A0B;      /* OLED True Black base */
+  --bg-surface: #16161A;   /* Card background */
+  --bg-raised: #1F2024;    /* Modals, popovers, active controls */
+  --surface-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+
+  /* Semantic Color Tokens */
+  --accent-primary: #0A84FF;      /* Apple iOS Action Blue */
+  --accent-achievement: #FF9F0A;  /* Warm Amber / Gold for Streaks, PRs, and Trophies */
+  --accent-success: #30D158;      /* Emerald Green for Finished Sets, Positive Volume Delta */
+  --accent-destructive: #FF453A;  /* Crimson Red for Delete/Erase */
+
+  /* Standardized Corner Radii */
+  --r-sm: 8px;   /* Chips, set pills, micro-inputs */
+  --r-md: 14px;  /* Cards, section containers */
+  --r-lg: 24px;  /* Modals, bottom sheets */
+
+  /* Standardized 5-Step Typography Scale */
+  --font-display: 700 28px/1.25 -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  --font-title: 600 20px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-body: 400 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-caption: 400 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  --font-micro: 600 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+
+  /* Backward Compatibility Mappings */
+  --c1: var(--bg-surface);
+  --c2: var(--bg-raised);
+  --bd: #2C2C32;
   --t2: #8E8E93;
-  --ac: #0A84FF;
-  --rd: #FF453A;
-  --gn: #30D158;
-  --am: #FFD60A;
+  --ac: var(--accent-primary);
+  --rd: var(--accent-destructive);
+  --gn: var(--accent-success);
+  --am: var(--accent-achievement);
   --bl: #64D2FF;
 }
 
@@ -18,9 +43,9 @@
 html, body {
   margin: 0;
   height: 100%;
-  background: #000000;
+  background: var(--bg-base);
   color: #FFFFFF;
-  font: 16px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif;
+  font: var(--font-body);
   overscroll-behavior-y: none;
   -webkit-text-size-adjust: 100%;
 }
@@ -47,16 +72,14 @@ main {
 }
 
 h1 {
-  font-size: 30px;
+  font: var(--font-display);
   margin: 4px 0 12px;
-  font-weight: 700;
   letter-spacing: -0.5px;
 }
 
 h2 {
-  font-size: 20px;
+  font: var(--font-title);
   margin: 18px 0 8px;
-  font-weight: 600;
 }
 
 .t2 { color: var(--t2); }
@@ -64,9 +87,10 @@ h2 {
 .up { text-transform: uppercase; margin: 12px 0 4px; letter-spacing: 0.5px; }
 
 .card {
-  background: var(--c1);
-  border: 0.5px solid var(--bd);
-  border-radius: 16px;
+  background: var(--bg-surface);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--surface-highlight);
+  border-radius: var(--r-md);
   padding: 14px;
   margin: 0 0 12px;
   display: block;
@@ -302,36 +326,85 @@ input[type="checkbox"] {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: #1C1C1E;
+  background: rgba(22, 22, 26, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-top: 0.5px solid var(--bd);
-  padding: 6px calc(env(safe-area-inset-right) + 16px) 6px calc(env(safe-area-inset-left) + 16px);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), 0 -4px 20px rgba(0, 0, 0, 0.5);
+  padding: 8px calc(env(safe-area-inset-right) + 16px) 8px calc(env(safe-area-inset-left) + 16px);
 }
 
 #rest[hidden] {
   display: none;
 }
 
-#rest span {
+.rest-ring-wrap {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rest-ring-svg {
+  width: 38px;
+  height: 38px;
+  transform: rotate(-90deg);
+}
+
+.rest-ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 3;
+}
+
+.rest-ring-fill {
+  fill: none;
+  stroke: var(--accent-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 94.25;
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset 0.25s linear;
+}
+
+.rest-ring-icon {
+  position: absolute;
   font-size: 13px;
+  pointer-events: none;
+}
+
+.rest-text-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.rest-text-col span {
+  font-size: 11px;
   color: var(--t2);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  font-weight: 600;
 }
 
 #rest b {
-  flex: 1;
-  font-size: 24px;
+  font-size: 20px;
   font-variant-numeric: tabular-nums;
   color: #FFFFFF;
+  line-height: 1.1;
 }
 
 #rest button {
-  background: var(--c2);
-  border-radius: 10px;
+  background: var(--bg-raised);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--r-sm);
   padding: 0 14px;
-  min-height: 44px;
+  min-height: 40px;
   font-weight: 600;
+  font-size: 14px;
 }
 
 /* Toast */
@@ -738,12 +811,15 @@ input[type="checkbox"] {
 }
 
 .work-routine-name {
-  font-size: 24px;
+  font-size: 22px;
+  line-height: 1.25;
   font-weight: 700;
-  letter-spacing: -0.5px;
-  white-space: nowrap;
+  letter-spacing: -0.4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .work-timer-badge {
@@ -1585,9 +1661,10 @@ textarea.note:focus {
   align-items: center;
   margin-bottom: 12px;
   padding: 10px 14px;
-  background: var(--c1);
-  border: 0.5px solid var(--bd);
-  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--surface-highlight);
+  border-radius: var(--r-md);
 }
 
 .train-streak-val {
@@ -1595,4 +1672,548 @@ textarea.note:focus {
   font-weight: 700;
   color: #FFFFFF;
 }
+
+/* ==========================================================================
+   UI/UX MASTER UPGRADE (v5.0.0): DESIGN SYSTEM COMPONENTS & ENHANCEMENTS
+   ========================================================================== */
+
+/* ---- View Header & Persistent Frosted Gear ---- */
+.view-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.view-header h1 {
+  margin: 0;
+}
+
+.gear-btn.frosted {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 50%;
+  background: rgba(31, 32, 36, 0.78);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14), 0 2px 8px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #FFFFFF;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275), background 0.15s ease;
+  flex: none;
+}
+
+.gear-btn.frosted:active {
+  transform: scale(0.92);
+  background: rgba(44, 44, 48, 0.9);
+}
+
+.gear-btn.frosted.sm {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+/* ---- Routine Exercise Summary Row Component ---- */
+.routine-summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+
+.routine-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--bg-raised);
+  border-radius: var(--r-sm);
+  border: 0.5px solid rgba(255, 255, 255, 0.06);
+}
+
+.routine-summary-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.routine-summary-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: #000000;
+  flex: none;
+}
+
+.routine-summary-pill {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(10, 132, 255, 0.15);
+  color: var(--accent-primary);
+  flex: none;
+}
+
+.routine-summary-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.routine-summary-badge {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t2);
+  background: rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Unified Streak Badge Component ---- */
+.streak-badge-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-surface);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--surface-highlight);
+  border-radius: var(--r-md);
+  margin-bottom: 12px;
+}
+
+.streak-badge-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.streak-fire {
+  font-size: 26px;
+  line-height: 1;
+  filter: drop-shadow(0 0 6px rgba(255, 159, 10, 0.5));
+}
+
+.streak-count {
+  font-size: 16px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.streak-badge-card.empty-streak {
+  border-left: 3px solid var(--accent-achievement);
+}
+
+.streak-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #FFFFFF;
+}
+
+/* ---- Empty States Overhaul ---- */
+.empty-state-card {
+  text-align: center;
+  padding: 32px 16px;
+  margin: 16px 0;
+  background: var(--bg-surface);
+  border-radius: var(--r-md);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  box-shadow: var(--surface-highlight);
+}
+
+.empty-state-card.sm {
+  padding: 20px 14px;
+  margin: 10px 0;
+}
+
+.empty-state-icon {
+  font-size: 38px;
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.empty-state-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-bottom: 4px;
+}
+
+/* ---- Personal Record (PR) Engine UI ---- */
+.set-pr-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 159, 10, 0.16);
+  color: var(--accent-achievement);
+  border: 1px solid rgba(255, 159, 10, 0.4);
+  border-radius: var(--r-sm);
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-left: 4px;
+  animation: prGlow 2s ease-in-out infinite alternate;
+}
+
+@keyframes prGlow {
+  0% { box-shadow: 0 0 4px rgba(255, 159, 10, 0.2); }
+  100% { box-shadow: 0 0 10px rgba(255, 159, 10, 0.5); }
+}
+
+.pr-trophy-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 159, 10, 0.1);
+  border: 1px solid rgba(255, 159, 10, 0.35);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+}
+
+.pr-trophy-icon {
+  font-size: 26px;
+  line-height: 1;
+  flex: none;
+}
+
+.pr-trophy-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pr-trophy-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.pr-trophy-detail {
+  font-size: 12px;
+  color: var(--accent-achievement);
+  margin-top: 2px;
+}
+
+.pr-trophy-badge {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  background: var(--accent-achievement);
+  color: #000000;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex: none;
+}
+
+/* Volume / Duration Deltas */
+.delta-pos {
+  color: var(--accent-success);
+  font-weight: 600;
+}
+
+.delta-neg {
+  color: var(--accent-destructive);
+  font-weight: 600;
+}
+
+.delta-flat {
+  color: var(--t2);
+  font-weight: 600;
+}
+
+/* ---- Per-Exercise Strength Progression Line Chart ---- */
+.prog-chart-wrap {
+  margin: 12px 0;
+  background: var(--bg-raised);
+  border-radius: var(--r-md);
+  padding: 14px 12px 10px;
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+
+.prog-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.prog-chart-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.prog-chart-stat {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-primary);
+}
+
+.prog-chart-svg {
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  display: block;
+}
+
+.chart-grid {
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-dasharray: 3 3;
+  stroke-width: 0.8;
+}
+
+.chart-line {
+  fill: none;
+  stroke: var(--accent-primary);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-area {
+  fill: url(#chart-grad);
+  opacity: 0.25;
+}
+
+.chart-dot {
+  fill: var(--bg-surface);
+  stroke: var(--accent-primary);
+  stroke-width: 2.2;
+}
+
+.chart-label {
+  font-size: 10px;
+  fill: var(--t2);
+  text-anchor: middle;
+  font-family: -apple-system, sans-serif;
+}
+
+/* ---- Barbell Plate Calculator ---- */
+.set-input-wrap.has-plate-btn input {
+  padding-right: 48px;
+}
+
+.plate-calc-btn {
+  position: absolute;
+  right: 22px;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--accent-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.1s ease;
+}
+
+.plate-calc-btn:active {
+  transform: scale(0.9);
+}
+
+.plate-calc-container {
+  padding: 4px 0 12px;
+}
+
+.plate-calc-hero {
+  text-align: center;
+  padding: 16px;
+  background: var(--bg-raised);
+  border-radius: var(--r-md);
+  margin-bottom: 14px;
+  border: 0.5px solid rgba(255, 255, 255, 0.06);
+}
+
+.plate-calc-wt {
+  font-size: 38px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: #FFFFFF;
+}
+
+.plate-calc-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  margin: 16px 0 12px;
+  min-height: 72px;
+}
+
+.plate-sleeve-bar {
+  height: 12px;
+  width: 36px;
+  background: #8E8E93;
+  border-radius: 2px;
+}
+
+.plate-collar {
+  height: 48px;
+  width: 8px;
+  background: #545458;
+  border-radius: 2px;
+}
+
+.plate-disc {
+  border-radius: 2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+.plate-disc-20 { height: 68px; width: 13px; background: #0A84FF; }
+.plate-disc-15 { height: 60px; width: 12px; background: #FFD60A; }
+.plate-disc-10 { height: 52px; width: 11px; background: #30D158; }
+.plate-disc-5  { height: 44px; width: 10px; background: #F2F2F7; }
+.plate-disc-2_5 { height: 36px; width: 9px; background: #FF453A; }
+.plate-disc-1_25 { height: 28px; width: 8px; background: #8E8E93; }
+
+.plate-pills-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.plate-pill {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-raised);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ---- Settings Destination Modal UI ---- */
+.settings-modal-content {
+  padding-bottom: 12px;
+}
+
+.settings-section {
+  margin-bottom: 20px;
+}
+
+.settings-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--t2);
+  margin-bottom: 8px;
+  padding-left: 4px;
+}
+
+.settings-card {
+  padding: 0 14px;
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 50px;
+  padding: 10px 0;
+  gap: 12px;
+}
+
+.settings-divider {
+  height: 0.5px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 0;
+}
+
+.settings-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: #FFFFFF;
+}
+
+.settings-input-num {
+  width: 72px;
+  height: 36px;
+  font-size: 15px;
+  text-align: center;
+  background: var(--bg-base);
+  border-radius: var(--r-sm);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+}
+
+.settings-select {
+  width: auto;
+  min-width: 90px;
+  height: 36px;
+  font-size: 14px;
+  background: var(--bg-base);
+  border-radius: var(--r-sm);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  padding: 0 8px;
+}
+
+.destructive-card {
+  margin-top: 20px;
+  border: 1px solid rgba(255, 69, 58, 0.35);
+  background: rgba(255, 69, 58, 0.08);
+  padding: 14px;
+  border-radius: var(--r-md);
+}
+
+.destructive-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent-destructive);
+}
+
+.destructive-confirm-modal {
+  text-align: center;
+  padding: 24px 16px;
+}
+
+/* ---- Spring Micro-Interactions ---- */
+@keyframes checkPop {
+  0% { transform: scale(0.8); }
+  50% { transform: scale(1.18); }
+  100% { transform: scale(1); }
+}
+
+.ck.d, .uni-ck.d {
+  animation: checkPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
 
