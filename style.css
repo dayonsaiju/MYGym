@@ -2498,4 +2498,162 @@ textarea.note:focus {
   gap: 8px;
 }
 
+/* ---- v5.2.0: Dynamic Superset Picker Modal Styling ---- */
+.ss-picker-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ss-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.ss-picker-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.ss-picker-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ss-picker-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--t2);
+  padding-left: 2px;
+}
+
+.ss-picker-list-card {
+  padding: 4px 14px;
+  max-height: 38vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ss-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+}
+
+.ss-picker-row:last-child {
+  border-bottom: none;
+}
+
+.ss-picker-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.ss-picker-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ss-picker-meta {
+  font-size: 12px;
+  color: var(--t2);
+  text-transform: capitalize;
+  margin-top: 2px;
+}
+
+.ss-link-action-btn {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-weight: 700;
+  background: rgba(255, 159, 10, 0.18);
+  border: 0.5px solid rgba(255, 159, 10, 0.45);
+  color: var(--am);
+  border-radius: 10px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.ss-link-action-btn:active {
+  transform: scale(0.96);
+  background: rgba(255, 159, 10, 0.3);
+}
+
+.ss-picker-empty {
+  padding: 18px 12px;
+  text-align: center;
+  color: var(--t2);
+  font-size: 13px;
+}
+
+.ss-library-action-card {
+  padding: 14px;
+  text-align: center;
+  background: rgba(10, 132, 255, 0.06);
+  border: 0.5px solid rgba(10, 132, 255, 0.2);
+  border-radius: 14px;
+}
+
+.ss-picker-browse-btn {
+  width: 100%;
+  min-height: 44px;
+  font-weight: 700;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--ac);
+  color: #FFFFFF;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(10, 132, 255, 0.3);
+  transition: all 0.15s ease;
+}
+
+.ss-picker-browse-btn:active {
+  transform: scale(0.98);
+}
+
+.ss-unlink-section {
+  margin-bottom: 2px;
+}
+
+.ss-current-pair-card {
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 159, 10, 0.1);
+  border: 1px solid rgba(255, 159, 10, 0.35);
+  border-radius: 14px;
+}
+
+.ss-current-pair-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.ss-current-pair-names {
+  font-size: 14px;
+  margin: 6px 0 2px;
+  color: #FFFFFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+
 

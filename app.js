@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.1.0';
-const SHELL_VERSION = 'mygym-v5.1.0-flow';
+const APP_VERSION = '5.2.0';
+const SHELL_VERSION = 'mygym-v5.2.0-superset';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1297,30 +1297,49 @@ function getSupersetInfo(act, exIdx) {
   let exBIndex = -1;
   let role = curEx.ssRole || null;
 
-  if (role === 'A' && act.ex[exIdx + 1]?.ss) {
-    exAIndex = exIdx;
-    exBIndex = exIdx + 1;
-  } else if (role === 'B' && act.ex[exIdx - 1]?.ss) {
-    exAIndex = exIdx - 1;
-    exBIndex = exIdx;
-  } else if (act.ex[exIdx + 1]?.ss) {
-    exAIndex = exIdx;
-    exBIndex = exIdx + 1;
-    role = 'A';
-  } else if (act.ex[exIdx - 1]?.ss) {
-    exAIndex = exIdx - 1;
-    exBIndex = exIdx;
-    role = 'B';
-  } else {
-    return {
-      isSuperset: true,
-      isPaired: false,
-      role: 'A',
-      exAIndex: exIdx,
-      exA: curEx,
-      round: 1,
-      totalRounds: curEx.sets ? curEx.sets.length : 1
-    };
+  // 1. If ssGroup or ssPair is set, search for matching paired exercise in act.ex
+  const pairKey = curEx.ssGroup || curEx.ssPair;
+  if (pairKey) {
+    const pairIndices = [];
+    act.ex.forEach((x, idx) => {
+      if (x && x.ss && (x.ssGroup === pairKey || x.ssPair === pairKey)) {
+        pairIndices.push(idx);
+      }
+    });
+    if (pairIndices.length >= 2) {
+      exAIndex = pairIndices[0];
+      exBIndex = pairIndices[1];
+      role = exIdx === exAIndex ? 'A' : 'B';
+    }
+  }
+
+  // 2. Fallback to adjacent if not found by pairKey
+  if (exAIndex === -1 || exBIndex === -1) {
+    if (role === 'A' && act.ex[exIdx + 1]?.ss) {
+      exAIndex = exIdx;
+      exBIndex = exIdx + 1;
+    } else if (role === 'B' && act.ex[exIdx - 1]?.ss) {
+      exAIndex = exIdx - 1;
+      exBIndex = exIdx;
+    } else if (act.ex[exIdx + 1]?.ss) {
+      exAIndex = exIdx;
+      exBIndex = exIdx + 1;
+      role = 'A';
+    } else if (act.ex[exIdx - 1]?.ss) {
+      exAIndex = exIdx - 1;
+      exBIndex = exIdx;
+      role = 'B';
+    } else {
+      return {
+        isSuperset: true,
+        isPaired: false,
+        role: 'A',
+        exAIndex: exIdx,
+        exA: curEx,
+        round: 1,
+        totalRounds: curEx.sets ? curEx.sets.length : 1
+      };
+    }
   }
 
   const exA = act.ex[exAIndex];
@@ -1344,7 +1363,8 @@ function getSupersetInfo(act, exIdx) {
   return {
     isSuperset: true,
     isPaired: true,
-    pairId: curEx.ssPair || `ss_${exAIndex}`,
+    pairId: curEx.ssGroup || curEx.ssPair || `ss_${exAIndex}`,
+    ssGroup: curEx.ssGroup || curEx.ssPair || `ss_${exAIndex}`,
     role,
     exAIndex,
     exBIndex,
@@ -1369,7 +1389,10 @@ function renderSupersetBanner(ssInfo) {
     <div class="card superset-block-card">
       <div class="superset-block-header">
         <div class="superset-badge-row">
-          <span class="ss-block-tag">⚡ SUPERSET [A1 + A2]</span>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span class="ss-block-tag">⚡ SUPERSET [A1 + A2]</span>
+            <button class="chip" data-a="opensspicker" data-i="${isA ? ssInfo.exAIndex : ssInfo.exBIndex}" style="font-size:11px;padding:2px 8px;min-height:24px">⚙️ Manage</button>
+          </div>
           <span class="ss-round-tag">Round ${ssInfo.round} of ${ssInfo.totalRounds}</span>
         </div>
         <div class="t2 sm superset-flow-hint">
@@ -1396,6 +1419,196 @@ function renderSupersetBanner(ssInfo) {
   `;
 }
 
+function showSupersetPicker(exIdx) {
+  if (!S.act || !Array.isArray(S.act.ex) || !S.act.ex[exIdx]) return;
+  const curEx = S.act.ex[exIdx];
+  const curInfo = X(curEx.id);
+  const ssInfo = getSupersetInfo(S.act, exIdx);
+
+  // Filter candidate exercises from current session:
+  // Exclude current exercise itself, and any already-paired exercises
+  const candidates = [];
+  S.act.ex.forEach((x, idx) => {
+    if (idx === exIdx) return;
+    const xInfo = getSupersetInfo(S.act, idx);
+    if (xInfo.isSuperset && xInfo.isPaired) {
+      return;
+    }
+    candidates.push({ ex: x, idx, info: X(x.id) });
+  });
+
+  const sessionListHtml = candidates.length
+    ? candidates.map(c => `
+        <div class="ss-picker-row">
+          <img class="ex-thumb" src="./media/${esc(c.info.img || c.info.gif)}" alt="${esc(c.info.name)}" onerror="this.style.display='none'">
+          <div class="ss-picker-details">
+            <div class="ss-picker-name">${esc(c.info.name)}</div>
+            <div class="ss-picker-meta">${esc(c.info.tg || c.info.g)} · ${esc(c.info.eq)}</div>
+          </div>
+          <button class="btn s sm-btn ss-link-action-btn" data-a="pairwithex" data-source="${exIdx}" data-target="${c.idx}">
+            🔗 Link
+          </button>
+        </div>
+      `).join('')
+    : `<div class="ss-picker-empty">No other unlinked exercises in this workout session.</div>`;
+
+  const unlinkHtml = ssInfo.isSuperset && ssInfo.isPaired ? `
+    <div class="ss-picker-section ss-unlink-section">
+      <div class="ss-picker-section-title">Current Superset Block</div>
+      <div class="card ss-current-pair-card">
+        <div class="ss-current-pair-info">
+          <span class="ss-block-tag">⚡ SUPERSET [A1 + A2]</span>
+          <div class="ss-current-pair-names">
+            <b>${esc(curInfo.name)}</b> + <b>${esc(X(ssInfo.role === 'A' ? ssInfo.exB.id : ssInfo.exA.id).name)}</b>
+          </div>
+          <div class="t2 sm">Round ${ssInfo.round} of ${ssInfo.totalRounds}</div>
+        </div>
+        <button class="btn s sm-btn red" data-a="unlinkss" data-i="${exIdx}">Unlink</button>
+      </div>
+    </div>
+  ` : '';
+
+  modal(`
+    <div class="ss-picker-sheet">
+      <div class="ss-picker-header">
+        <div>
+          <h2 class="ss-picker-title">Superset Pairing</h2>
+          <div class="t2 sm">Pair <b>${esc(curInfo.name)}</b> into a dual-exercise block</div>
+        </div>
+        <button class="btn s sm-btn" data-a="close">✕</button>
+      </div>
+
+      ${unlinkHtml}
+
+      <div class="ss-picker-section">
+        <div class="ss-picker-section-title">1. Choose from Current Session</div>
+        <div class="card ss-picker-list-card">
+          ${sessionListHtml}
+        </div>
+      </div>
+
+      <div class="ss-picker-section">
+        <div class="ss-picker-section-title">2. Add & Pair from Library</div>
+        <div class="card ss-library-action-card">
+          <p class="t2 sm" style="margin:0 0 10px">Select an exercise from the library to append and pair as an A1 + A2 block immediately.</p>
+          <button class="btn ss-picker-browse-btn" data-a="browseandpair" data-i="${exIdx}">
+            ${ic('plus', 16)} Browse Exercise Library
+          </button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function pairExercises(sourceIdx, targetIdx) {
+  if (!S.act || !Array.isArray(S.act.ex) || !S.act.ex[sourceIdx] || !S.act.ex[targetIdx] || sourceIdx === targetIdx) {
+    return;
+  }
+  const pairId = 'ss_' + Date.now();
+  const exA = S.act.ex[sourceIdx];
+  const targetEx = S.act.ex[targetIdx];
+
+  // Unlink previous partners if any
+  const oldSsA = getSupersetInfo(S.act, sourceIdx);
+  if (oldSsA.isSuperset && oldSsA.isPaired) {
+    if (oldSsA.exA) { delete oldSsA.exA.ss; delete oldSsA.exA.ssPair; delete oldSsA.exA.ssGroup; delete oldSsA.exA.ssRole; }
+    if (oldSsA.exB) { delete oldSsA.exB.ss; delete oldSsA.exB.ssPair; delete oldSsA.exB.ssGroup; delete oldSsA.exB.ssRole; }
+  }
+  const oldSsB = getSupersetInfo(S.act, targetIdx);
+  if (oldSsB.isSuperset && oldSsB.isPaired) {
+    if (oldSsB.exA) { delete oldSsB.exA.ss; delete oldSsB.exA.ssPair; delete oldSsB.exA.ssGroup; delete oldSsB.exA.ssRole; }
+    if (oldSsB.exB) { delete oldSsB.exB.ss; delete oldSsB.exB.ssPair; delete oldSsB.exB.ssGroup; delete oldSsB.exB.ssRole; }
+  }
+
+  // Extract Exercise B from its current position
+  S.act.ex.splice(targetIdx, 1);
+
+  // Find the new index of Exercise A after removal
+  const newSourceIdx = S.act.ex.indexOf(exA);
+
+  // Insert Exercise B directly next to Exercise A (creating an immediate A1 + A2 block)
+  S.act.ex.splice(newSourceIdx + 1, 0, targetEx);
+
+  // Mark both exercises with matching superset identifiers
+  exA.ss = true;
+  exA.ssRole = 'A';
+  exA.ssGroup = pairId;
+  exA.ssPair = pairId;
+
+  targetEx.ss = true;
+  targetEx.ssRole = 'B';
+  targetEx.ssGroup = pairId;
+  targetEx.ssPair = pairId;
+
+  S.act.curEx = newSourceIdx;
+  save('act');
+  close();
+  render();
+  toast(`⚡ Paired [${esc(X(exA.id).name)}] + [${esc(X(targetEx.id).name)}] as Superset [A1 + A2]`);
+}
+
+function addAndPairFromLibrary(sourceIdx, libExId) {
+  if (!S.act || !Array.isArray(S.act.ex) || !S.act.ex[sourceIdx]) return;
+  const exA = S.act.ex[sourceIdx];
+  const pairId = 'ss_' + Date.now();
+  const isUni = isUnilateralExercise(X(libExId).name);
+  const lastNote = getLastExerciseNote(libExId);
+  const newEx = {
+    id: libExId,
+    ss: true,
+    ssRole: 'B',
+    ssGroup: pairId,
+    ssPair: pairId,
+    uni: isUni,
+    note: lastNote,
+    sets: newSets(libExId)
+  };
+
+  // Unlink previous partner if any
+  const oldSsA = getSupersetInfo(S.act, sourceIdx);
+  if (oldSsA.isSuperset && oldSsA.isPaired) {
+    if (oldSsA.exA) { delete oldSsA.exA.ss; delete oldSsA.exA.ssPair; delete oldSsA.exA.ssGroup; delete oldSsA.exA.ssRole; }
+    if (oldSsA.exB) { delete oldSsA.exB.ss; delete oldSsA.exB.ssPair; delete oldSsA.exB.ssGroup; delete oldSsA.exB.ssRole; }
+  }
+
+  exA.ss = true;
+  exA.ssRole = 'A';
+  exA.ssGroup = pairId;
+  exA.ssPair = pairId;
+
+  // Insert right next to Exercise A
+  S.act.ex.splice(sourceIdx + 1, 0, newEx);
+  S.act.curEx = sourceIdx;
+  save('act');
+  close();
+  render();
+  toast(`⚡ Paired [${esc(X(exA.id).name)}] + [${esc(X(newEx.id).name)}] as Superset [A1 + A2]`);
+}
+
+function unlinkSuperset(exIdx) {
+  if (!S.act) return;
+  const curI = exIdx !== undefined && !isNaN(exIdx) ? exIdx : S.act.curEx;
+  const ssInfo = getSupersetInfo(S.act, curI);
+  if (ssInfo.isSuperset) {
+    if (ssInfo.exA) {
+      delete ssInfo.exA.ss;
+      delete ssInfo.exA.ssPair;
+      delete ssInfo.exA.ssGroup;
+      delete ssInfo.exA.ssRole;
+    }
+    if (ssInfo.exB) {
+      delete ssInfo.exB.ss;
+      delete ssInfo.exB.ssPair;
+      delete ssInfo.exB.ssGroup;
+      delete ssInfo.exB.ssRole;
+    }
+    save('act');
+    close();
+    render();
+    toast('Unlinked superset pair');
+  }
+}
+
 function renderWorkHeroCard(a, curIdx) {
   const currentEx = a.ex[curIdx];
   const exInfo = X(currentEx.id);
@@ -1415,8 +1628,8 @@ function renderWorkHeroCard(a, curIdx) {
         <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
         <button class="chip" data-a="zoomexgif" data-id="${esc(exInfo.id)}">ℹ️ Form Cues</button>
         ${ssInfo.isSuperset && ssInfo.isPaired
-          ? `<button class="chip on ss-chip" data-a="unlinkss" data-i="${curIdx}">🔗 Unlink Superset</button>`
-          : `<button class="chip ss-chip" data-a="linkss" data-i="${curIdx}" ${curIdx >= a.ex.length - 1 ? 'disabled style="opacity:0.4"' : ''}>🔗 Link with Next Exercise</button>`
+          ? `<button class="chip on ss-chip" data-a="opensspicker" data-i="${curIdx}">⚡ Superset [${ssInfo.role === 'A' ? 'A1' : 'A2'}]</button>`
+          : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">🔗 Link Superset</button>`
         }
         <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
       </div>
@@ -3429,78 +3642,49 @@ document.addEventListener('click', e => {
       }
       return;
     }
+    case 'opensspicker': {
+      if (S.act) {
+        const curI = +t.dataset.i;
+        showSupersetPicker(curI);
+      }
+      return;
+    }
     case 'linkss': {
       if (S.act) {
         const curI = +t.dataset.i;
-        if (curI < S.act.ex.length - 1) {
-          const pairId = 'ss_' + Date.now();
-          S.act.ex[curI].ss = true;
-          S.act.ex[curI].ssPair = pairId;
-          S.act.ex[curI].ssRole = 'A';
-          S.act.ex[curI + 1].ss = true;
-          S.act.ex[curI + 1].ssPair = pairId;
-          S.act.ex[curI + 1].ssRole = 'B';
-          save('act');
-          switchWorkExercise(curI, false);
-          toast(`🔗 Paired [${esc(X(S.act.ex[curI].id).name)}] + [${esc(X(S.act.ex[curI + 1].id).name)}] as Superset [A1 + A2]`);
-        } else {
-          toast('Add another exercise after this one to create a superset pair');
-        }
+        showSupersetPicker(curI);
+      }
+      return;
+    }
+    case 'pairwithex': {
+      if (S.act) {
+        const src = +t.dataset.source;
+        const tgt = +t.dataset.target;
+        pairExercises(src, tgt);
+      }
+      return;
+    }
+    case 'browseandpair': {
+      if (S.act) {
+        const src = +t.dataset.i;
+        P = (libExId) => {
+          addAndPairFromLibrary(src, libExId);
+        };
+        showExercisePicker('Select Exercise to Pair as A2');
       }
       return;
     }
     case 'unlinkss': {
       if (S.act) {
         const curI = +t.dataset.i;
-        const ssInfo = getSupersetInfo(S.act, curI);
-        if (ssInfo.isSuperset) {
-          if (ssInfo.exA) {
-            delete ssInfo.exA.ss;
-            delete ssInfo.exA.ssPair;
-            delete ssInfo.exA.ssRole;
-          }
-          if (ssInfo.exB) {
-            delete ssInfo.exB.ss;
-            delete ssInfo.exB.ssPair;
-            delete ssInfo.exB.ssRole;
-          }
-          save('act');
-          switchWorkExercise(curI, false);
-          toast('Unlinked superset pair');
-        }
+        unlinkSuperset(curI);
       }
       return;
     }
     case 'ss': {
       if (S.act) {
         const curI = i !== undefined && !isNaN(i) ? i : +t.dataset.i;
-        const ssInfo = getSupersetInfo(S.act, curI);
-        if (ssInfo.isSuperset) {
-          if (ssInfo.exA) {
-            delete ssInfo.exA.ss;
-            delete ssInfo.exA.ssPair;
-            delete ssInfo.exA.ssRole;
-          }
-          if (ssInfo.exB) {
-            delete ssInfo.exB.ss;
-            delete ssInfo.exB.ssPair;
-            delete ssInfo.exB.ssRole;
-          }
-          toast('Unlinked superset pair');
-        } else if (curI < S.act.ex.length - 1) {
-          const pairId = 'ss_' + Date.now();
-          S.act.ex[curI].ss = true;
-          S.act.ex[curI].ssPair = pairId;
-          S.act.ex[curI].ssRole = 'A';
-          S.act.ex[curI + 1].ss = true;
-          S.act.ex[curI + 1].ssPair = pairId;
-          S.act.ex[curI + 1].ssRole = 'B';
-          toast(`🔗 Paired as Superset [A1 + A2]`);
-        } else {
-          toast('Add another exercise after this one to create a superset pair');
-        }
-        save('act');
-        switchWorkExercise(curI, false);
+        showSupersetPicker(curI);
       }
       return;
     }
@@ -3932,7 +4116,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.1.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.2.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -3956,6 +4140,10 @@ if (typeof globalThis !== 'undefined') {
     renderSupersetBanner,
     renderWorkHeroCard,
     showExpandedGifModal,
+    showSupersetPicker,
+    pairExercises,
+    addAndPairFromLibrary,
+    unlinkSuperset,
     switchWorkExercise,
     handleSetCompleted,
     S,

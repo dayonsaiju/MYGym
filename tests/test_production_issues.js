@@ -274,7 +274,7 @@ function it(name, fn) {
 }
 
 console.log('\n======================================================');
-console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.1.0-flow)');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.2.0-superset)');
 console.log('======================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -409,6 +409,103 @@ it('getSupersetInfo pairs linked exercises correctly into A1/A2 block', () => {
   assert.equal(infoB.role, 'B');
   assert.equal(infoB.exAIndex, 0);
   assert.equal(infoB.exBIndex, 1);
+});
+
+it('showSupersetPicker renders dynamic modal sheet with current session and library options', () => {
+  api.S.act = {
+    name: 'Full Body',
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: false, sets: [{ done: false }] }, // Bench Press
+      { id: '0047', ss: false, sets: [{ done: false }] }, // Incline Bench
+      { id: '0027', ss: false, sets: [{ done: false }] }  // Row
+    ]
+  };
+
+  elementsMap['#m'].innerHTML = '';
+  elementsMap['#m'].hidden = true;
+
+  api.showSupersetPicker(0);
+
+  const html = elementsMap['#m'].innerHTML;
+  assert.equal(elementsMap['#m'].hidden, false, 'Modal must open');
+  assert(html.includes('ss-picker-sheet'), 'Must render ss-picker-sheet');
+  assert(html.includes('1. Choose from Current Session'), 'Must have Section 1');
+  assert(html.includes('2. Add & Pair from Library'), 'Must have Section 2');
+  assert(html.includes('data-a="browseandpair"'), 'Must have browse library button');
+  assert(html.includes('data-a="pairwithex"'), 'Must have pairwithex action');
+  assert(!html.includes('data-target="0"'), 'Section 1 must exclude current exercise itself');
+  assert(html.includes('data-target="1"'), 'Section 1 must include exercise 1');
+  assert(html.includes('data-target="2"'), 'Section 1 must include exercise 2');
+});
+
+it('pairExercises reorders non-adjacent exercises to create an immediate adjacent A1 + A2 block', () => {
+  // Initial workout order: [0025 (Bench), 0047 (Incline), 0043 (Squat), 0027 (Row)]
+  api.S.act = {
+    name: 'Workout',
+    curEx: 0,
+    ex: [
+      { id: '0025', sets: [{ done: false }, { done: false }] }, // Bench (idx 0)
+      { id: '0047', sets: [{ done: false }, { done: false }] }, // Incline (idx 1)
+      { id: '0043', sets: [{ done: false }, { done: false }] }, // Squat (idx 2)
+      { id: '0027', sets: [{ done: false }, { done: false }] }  // Row (idx 3)
+    ]
+  };
+
+  // Pair Bench (index 0) with non-adjacent Row (index 3)
+  api.pairExercises(0, 3);
+
+  // Assertions for reordering and cohesive blocking
+  assert.equal(api.S.act.ex.length, 4, 'Total exercises count remains 4');
+  assert.equal(api.S.act.ex[0].id, '0025', 'Exercise A1 remains Bench Press at index 0');
+  assert.equal(api.S.act.ex[1].id, '0027', 'Exercise A2 is now Row reordered adjacent to index 1');
+  assert.equal(api.S.act.ex[2].id, '0047', 'Incline shifted to index 2');
+  assert.equal(api.S.act.ex[3].id, '0043', 'Squat shifted to index 3');
+
+  // Verify superset attributes
+  assert.equal(api.S.act.ex[0].ss, true);
+  assert.equal(api.S.act.ex[0].ssRole, 'A');
+  assert.equal(api.S.act.ex[1].ss, true);
+  assert.equal(api.S.act.ex[1].ssRole, 'B');
+  assert.equal(api.S.act.ex[0].ssGroup, api.S.act.ex[1].ssGroup, 'Matching ssGroup');
+
+  // Verify getSupersetInfo recognizes adjacent pair
+  const ss = api.getSupersetInfo(api.S.act, 0);
+  assert.equal(ss.isSuperset, true);
+  assert.equal(ss.isPaired, true);
+  assert.equal(ss.exAIndex, 0);
+  assert.equal(ss.exBIndex, 1);
+});
+
+it('addAndPairFromLibrary dynamically appends from library directly next to current exercise', () => {
+  api.S.act = {
+    name: 'Workout',
+    curEx: 0,
+    ex: [
+      { id: '0025', sets: [{ done: false }] }, // Bench (idx 0)
+      { id: '0043', sets: [{ done: false }] }  // Squat (idx 1)
+    ]
+  };
+
+  // User on Bench Press (0) selects 0001 (Sit-up) from library
+  api.addAndPairFromLibrary(0, '0001');
+
+  assert.equal(api.S.act.ex.length, 3);
+  assert.equal(api.S.act.ex[0].id, '0025', 'A1 is Bench at idx 0');
+  assert.equal(api.S.act.ex[1].id, '0001', 'A2 is Sit-up inserted adjacent at idx 1');
+  assert.equal(api.S.act.ex[2].id, '0043', 'Squat shifted to idx 2');
+
+  assert.equal(api.S.act.ex[0].ssRole, 'A');
+  assert.equal(api.S.act.ex[1].ssRole, 'B');
+  assert.equal(api.S.act.ex[0].ssGroup, api.S.act.ex[1].ssGroup);
+});
+
+it('unlinkSuperset safely removes superset attributes from both paired exercises', () => {
+  api.unlinkSuperset(0);
+  assert.equal(api.S.act.ex[0].ss, undefined);
+  assert.equal(api.S.act.ex[1].ss, undefined);
+  const ss = api.getSupersetInfo(api.S.act, 0);
+  assert.equal(ss.isSuperset, false);
 });
 
 it('renderSupersetBanner renders unified SUPERSET [A1 + A2] badge and round indicator', () => {
@@ -555,14 +652,14 @@ it('renderWorkHeroCard declutters media frame and places actions in horizontal t
   // 2. Verify media frame contains NO overlay buttons
   const mediaSubstr = heroHtml.split('work-hero-toolbar')[0];
   assert(!mediaSubstr.includes('data-a="swapex"'), 'Swap button must not be inside GIF media frame');
-  assert(!mediaSubstr.includes('data-a="linkss"'), 'Superset button must not be inside GIF media frame');
+  assert(!mediaSubstr.includes('data-a="opensspicker"') && !mediaSubstr.includes('data-a="linkss"'), 'Superset button must not be inside GIF media frame');
   assert(!mediaSubstr.includes('data-a="toggleuni"'), 'Unilateral button must not be inside GIF media frame');
 
   // 3. Verify horizontal toolbar directly below media frame
   assert(heroHtml.includes('class="work-hero-toolbar"'), 'Toolbar must be present directly below media');
   assert(heroHtml.includes('data-a="swapex"'), 'Toolbar must include Swap');
   assert(heroHtml.includes('data-a="zoomexgif"'), 'Toolbar must include Form Cues chip');
-  assert(heroHtml.includes('data-a="linkss"'), 'Toolbar must include Link Superset');
+  assert(heroHtml.includes('data-a="opensspicker"') || heroHtml.includes('data-a="linkss"'), 'Toolbar must include Link Superset');
   assert(heroHtml.includes('data-a="toggleuni"'), 'Toolbar must include Unilateral toggle');
 });
 
@@ -595,24 +692,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.1.0-flow, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.1.0-flow';"), 'sw.js must use mygym-core-v5.1.0-flow cache name');
-  assert(swCode.includes("'./style.css?v=5.1.0'"), 'sw.js must precache style.css?v=5.1.0');
-  assert(swCode.includes("'./app.js?v=5.1.0'"), 'sw.js must precache app.js?v=5.1.0');
+it('sw.js cache key is bumped to mygym-core-v5.2.0-superset, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.2.0-superset';"), 'sw.js must use mygym-core-v5.2.0-superset cache name');
+  assert(swCode.includes("'./style.css?v=5.2.0'"), 'sw.js must precache style.css?v=5.2.0');
+  assert(swCode.includes("'./app.js?v=5.2.0'"), 'sw.js must precache app.js?v=5.2.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.1.0'), 'index.html must link style.css?v=5.1.0');
-  assert(htmlCode.includes('app.js?v=5.1.0'), 'index.html must load app.js?v=5.1.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.1.0-flow'"), 'index.html must use mygym-v5.1.0-flow');
+  assert(htmlCode.includes('style.css?v=5.2.0'), 'index.html must link style.css?v=5.2.0');
+  assert(htmlCode.includes('app.js?v=5.2.0'), 'index.html must load app.js?v=5.2.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.2.0-superset'"), 'index.html must use mygym-v5.2.0-superset');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.1.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.1.0-flow');
+  assert.equal(api.APP_VERSION, '5.2.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.2.0-superset');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
