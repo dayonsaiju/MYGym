@@ -1,0 +1,619 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+
+const rootDir = '/Users/dayonsaiju/Documents/MYGym';
+const appCode = fs.readFileSync(path.join(rootDir, 'app.js'), 'utf8');
+const swCode = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
+const htmlCode = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+const cssCode = fs.readFileSync(path.join(rootDir, 'style.css'), 'utf8');
+const exercisesJson = JSON.parse(fs.readFileSync(path.join(rootDir, 'exercises.json'), 'utf8'));
+
+// Mock DOM Environment
+class MockElement {
+  constructor(tag = 'div', className = '', id = '') {
+    this.tagName = tag.toUpperCase();
+    this.className = className;
+    this.id = id;
+    this._innerHTML = '';
+    this.style = {};
+    this.children = [];
+    this.parentElement = null;
+    this.dataset = {};
+    this.scrollLeft = 0;
+    this.scrollTop = 0;
+    this.hidden = false;
+    this._lastScrollIntoView = null;
+  }
+
+  get innerHTML() {
+    return this._innerHTML;
+  }
+
+  set innerHTML(val) {
+    this._innerHTML = String(val);
+    this._syncChildrenFromHtml();
+  }
+
+  get outerHTML() {
+    return `<${this.tagName.toLowerCase()} class="${this.className}" id="${this.id}">${this._innerHTML}</${this.tagName.toLowerCase()}>`;
+  }
+
+  set outerHTML(val) {
+    if (this.parentElement) {
+      const temp = new MockElement('div');
+      temp.innerHTML = val;
+      const newChild = temp.children[0] || temp;
+      const idx = this.parentElement.children.indexOf(this);
+      if (idx !== -1) {
+        newChild.parentElement = this.parentElement;
+        this.parentElement.children[idx] = newChild;
+      }
+    } else {
+      this.innerHTML = val;
+    }
+  }
+
+  _syncChildrenFromHtml() {
+    // Basic parser for nested mockup elements
+    if (this.className.includes('work-stepper-pills') || this._innerHTML.includes('work-step-pill')) {
+      const matches = this._innerHTML.match(/<button[^>]*class="([^"]*work-step-pill[^"]*)"[^>]*data-i="(\d+)"[^>]*>([\s\S]*?)<\/button>/g) || [];
+      this.children = matches.map((m, idx) => {
+        const p = new MockElement('button');
+        const cMatch = m.match(/class="([^"]*)"/);
+        p.className = cMatch ? cMatch[1] : 'work-step-pill';
+        p.dataset.i = String(idx);
+        p.parentElement = this;
+        return p;
+      });
+    }
+  }
+
+  querySelector(sel) {
+    if (sel.startsWith('#')) {
+      const id = sel.slice(1);
+      if (this.id === id) return this;
+      for (const c of this.children) {
+        const found = c.querySelector(sel);
+        if (found) return found;
+      }
+      return null;
+    }
+    if (sel.startsWith('.')) {
+      const cls = sel.slice(1).split('.')[0];
+      if (this.className.split(/\s+/).includes(cls)) {
+        if (sel === '.work-step-pill.active') {
+          return this.className.includes('active') ? this : null;
+        }
+        return this;
+      }
+      for (const c of this.children) {
+        const found = c.querySelector(sel);
+        if (found) return found;
+      }
+      return null;
+    }
+    return null;
+  }
+
+  querySelectorAll(sel) {
+    const results = [];
+    const check = (el) => {
+      if (sel.startsWith('.')) {
+        const cls = sel.slice(1).split('.')[0];
+        if (el.className.split(/\s+/).includes(cls)) {
+          results.push(el);
+        }
+      }
+      for (const c of el.children) check(c);
+    };
+    check(this);
+    return results;
+  }
+
+  scrollIntoView(opts) {
+    this._lastScrollIntoView = opts;
+  }
+
+  insertAdjacentHTML(pos, html) {
+    const temp = new MockElement('div');
+    temp.innerHTML = html;
+    if (pos === 'beforeend') {
+      temp.children.forEach(c => {
+        c.parentElement = this;
+        this.children.push(c);
+      });
+      this._innerHTML += html;
+    }
+  }
+
+  remove() {
+    if (this.parentElement) {
+      this.parentElement.children = this.parentElement.children.filter(c => c !== this);
+    }
+  }
+
+  addEventListener() {}
+  removeEventListener() {}
+}
+
+// Build Global Mock DOM
+const rootContainer = new MockElement('div', 'app-root');
+const elementsMap = {
+  '#v': new MockElement('div', '', 'v'),
+  '#tabs': new MockElement('nav', '', 'tabs'),
+  '#toast': new MockElement('div', '', 'toast'),
+  '#m': new MockElement('div', '', 'm'),
+  '#rest': new MockElement('div', '', 'rest'),
+  '#rest-ring-fill': new MockElement('circle', '', 'rest-ring-fill'),
+  '#rest b': new MockElement('b'),
+  'body': new MockElement('body'),
+  '.work-stepper-pills': new MockElement('div', 'work-stepper-pills'),
+  '#work-hero-card': new MockElement('div', 'card work-hero-card', 'work-hero-card'),
+  '.work-nav-stepper': new MockElement('div', 'work-nav-stepper'),
+  '.work-stepper-title': new MockElement('div', 'work-stepper-title'),
+  '.work-stepper-container': new MockElement('div', 'work-stepper-container')
+};
+
+// Wire container tree
+elementsMap['.work-stepper-container'].children.push(
+  elementsMap['.work-stepper-title'],
+  elementsMap['.work-stepper-pills']
+);
+elementsMap['.work-stepper-pills'].parentElement = elementsMap['.work-stepper-container'];
+elementsMap['#v'].children.push(
+  elementsMap['.work-stepper-container'],
+  elementsMap['#work-hero-card'],
+  elementsMap['.work-nav-stepper']
+);
+
+const mockWindow = {
+  get window() { return mockWindow; },
+  document: {
+    body: elementsMap['body'],
+    querySelector: (sel) => {
+      if (elementsMap[sel]) return elementsMap[sel];
+      return elementsMap['#v'].querySelector(sel);
+    },
+    querySelectorAll: (sel) => {
+      return elementsMap['#v'].querySelectorAll(sel);
+    },
+    createElement: (tag) => new MockElement(tag),
+    getElementById: (id) => elementsMap['#' + id] || null,
+    addEventListener: () => {}
+  },
+  localStorage: {
+    _data: {},
+    getItem(k) { return this._data[k] ?? null; },
+    setItem(k, v) { this._data[k] = String(v); }
+  },
+  navigator: {
+    vibrate: () => {},
+    storage: { persist: async () => true },
+    serviceWorker: {
+      register: async () => ({ update: () => {} }),
+      addEventListener: () => {}
+    }
+  },
+  indexedDB: {
+    open: () => ({
+      result: {
+        objectStoreNames: { contains: () => true },
+        transaction: () => ({ objectStore: () => ({ get: () => ({}), put: () => {} }) })
+      },
+      onsuccess: null,
+      onerror: null
+    })
+  },
+  fetch: async (url) => {
+    if (url.includes('exercises.json')) {
+      return { ok: true, json: async () => exercisesJson };
+    }
+    return { ok: true, json: async () => ({}) };
+  },
+  setTimeout,
+  clearTimeout,
+  setInterval,
+  clearInterval,
+  console,
+  Date,
+  Math,
+  JSON,
+  Number,
+  String,
+  Array,
+  Object,
+  Set,
+  Map,
+  Promise
+};
+mockWindow.global = mockWindow;
+mockWindow.globalThis = mockWindow;
+
+// Evaluate app.js in sandbox
+const script = new vm.Script(appCode);
+const context = vm.createContext(mockWindow);
+script.runInContext(context);
+
+// Extract exported API
+const api = mockWindow.__MYGYM__;
+assert(api, 'globalThis.__MYGYM__ must be exposed by app.js');
+
+// Initialize EXIDX with exercises for tests
+exercisesJson.forEach(e => {
+  api.EXIDX[e.id] = {
+    id: e.id,
+    name: e.n,
+    g: e.bp,
+    eq: e.eq,
+    tg: e.tg,
+    mg: e.mg,
+    sec: e.sm || [],
+    st: e.st || [],
+    gif: e.gif,
+    img: e.img,
+    t: 'w'
+  };
+});
+
+let passed = 0;
+let total = 0;
+
+function it(name, fn) {
+  total++;
+  try {
+    fn();
+    console.log(`  ✓ ${name}`);
+    passed++;
+  } catch (err) {
+    console.error(`  ✗ ${name}`);
+    console.error(err);
+    throw err;
+  }
+}
+
+console.log('\n======================================================');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.1.0-flow)');
+console.log('======================================================\n');
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 1: COLD-START BASELINE GATE (ACWR & Deload Protection)
+// -----------------------------------------------------------------------------
+console.log('Suite 1: ACWR Cold-Start Baseline Gate & Deload Protection');
+
+it('Cold-start (single workout today): ACWR 4.00 spike suppressed & status calibrated', () => {
+  const now = Date.now();
+  // 1 workout logged today: 3 sets of 100 kg x 10 reps = 3000 kg
+  const singleLog = [
+    {
+      id: 'log1',
+      date: now,
+      ex: [
+        {
+          id: '0025',
+          sets: [
+            { w: 100, r: 10, done: true },
+            { w: 100, r: 10, done: true },
+            { w: 100, r: 10, done: true }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const w = api.calcWorkload(singleLog);
+  assert.equal(w.isCalibrating, true, 'isCalibrating must be true for cold start');
+  assert.equal(w.acwr, 'Calibrating', 'acwr must be "Calibrating" instead of 4.00');
+  assert.equal(w.acwrDisplay, 'Calibrating', 'acwrDisplay must display "Calibrating"');
+  assert.equal(w.acwrNum, null, 'acwrNum must be null during calibration');
+  assert(w.status.includes('⚡ Calibrating Baseline (Day 1 of 14) 🔵'), `Status must display Day 1 of 14 badge: ${w.status}`);
+  assert.equal(w.tooltip, 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.');
+
+  // Hard block deload card
+  const deload = api.checkDeloadStatus(singleLog);
+  assert.equal(deload.recommended, false, 'checkDeloadStatus MUST return recommended: false during calibration');
+});
+
+it('Baseline gate: < 7 distinct workout days gates ACWR even after 10 days', () => {
+  const now = Date.now();
+  const dayMs = 86400000;
+  // 4 distinct workout days spread across trailing 10 days
+  const logs = [
+    { id: 'l1', date: now - 9 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l2', date: now - 6 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l3', date: now - 3 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l4', date: now, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] }
+  ];
+
+  const w = api.calcWorkload(logs);
+  assert.equal(w.distinctWorkoutDays, 4);
+  assert.equal(w.isCalibrating, true, 'isCalibrating must be true when distinctWorkoutDays < 7');
+  assert.equal(w.acwr, 'Calibrating');
+  assert(w.status.includes('⚡ Calibrating Baseline (Day 10 of 14) 🔵'));
+
+  const deload = api.checkDeloadStatus(logs);
+  assert.equal(deload.recommended, false, 'Deload card must remain hard-blocked');
+});
+
+it('Baseline gate: 7 distinct days but < 14 days history gates ACWR', () => {
+  const now = Date.now();
+  const dayMs = 86400000;
+  // 7 distinct days in 7 consecutive calendar days (totalHistoryDays = 7)
+  const logs = [];
+  for (let d = 0; d < 7; d++) {
+    logs.push({
+      id: `l_${d}`,
+      date: now - d * dayMs,
+      ex: [{ id: '0025', sets: [{ w: 50, r: 10, done: true }] }]
+    });
+  }
+
+  const w = api.calcWorkload(logs);
+  assert.equal(w.distinctWorkoutDays, 7);
+  assert.equal(w.isCalibrating, true, 'isCalibrating must be true when totalHistoryDays < 14');
+  assert.equal(w.acwr, 'Calibrating');
+
+  const deload = api.checkDeloadStatus(logs);
+  assert.equal(deload.recommended, false, 'Deload must remain hard-blocked during baseline calibration');
+});
+
+it('Calibrated user (>= 7 distinct days AND >= 14 days history): Normal ACWR calculated', () => {
+  const now = Date.now();
+  const dayMs = 86400000;
+  // 8 workouts spread across 21 days
+  const logs = [
+    { id: 'l1', date: now - 20 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l2', date: now - 17 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l3', date: now - 14 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l4', date: now - 11 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l5', date: now - 8 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l6', date: now - 5 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l7', date: now - 2 * dayMs, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] },
+    { id: 'l8', date: now, ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }] }
+  ];
+
+  const w = api.calcWorkload(logs);
+  assert.equal(w.isCalibrating, false, 'isCalibrating must be false once baseline is established');
+  assert.equal(typeof w.acwr, 'number', 'ACWR must be a numeric value');
+  assert(w.acwr > 0);
+  assert.notEqual(w.status, 'Calibrating');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 2: DUAL-EXERCISE SUPERSET PAIRING FLOW (A1 -> A2 Seamless Loop)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 2: Dual-Exercise Superset Pairing Flow');
+
+it('getSupersetInfo pairs linked exercises correctly into A1/A2 block', () => {
+  const act = {
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssRole: 'A', ssPair: 'ss_0', sets: [{ done: false }, { done: false }] },
+      { id: '0027', ss: true, ssRole: 'B', ssPair: 'ss_0', sets: [{ done: false }, { done: false }] }
+    ]
+  };
+
+  const infoA = api.getSupersetInfo(act, 0);
+  assert.equal(infoA.isSuperset, true);
+  assert.equal(infoA.isPaired, true);
+  assert.equal(infoA.role, 'A');
+  assert.equal(infoA.exAIndex, 0);
+  assert.equal(infoA.exBIndex, 1);
+  assert.equal(infoA.round, 1);
+  assert.equal(infoA.totalRounds, 2);
+
+  const infoB = api.getSupersetInfo(act, 1);
+  assert.equal(infoB.isSuperset, true);
+  assert.equal(infoB.isPaired, true);
+  assert.equal(infoB.role, 'B');
+  assert.equal(infoB.exAIndex, 0);
+  assert.equal(infoB.exBIndex, 1);
+});
+
+it('renderSupersetBanner renders unified SUPERSET [A1 + A2] badge and round indicator', () => {
+  const act = {
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssRole: 'A', ssPair: 'ss_0', sets: [{ done: false }, { done: false }, { done: false }] },
+      { id: '0027', ss: true, ssRole: 'B', ssPair: 'ss_0', sets: [{ done: false }, { done: false }, { done: false }] }
+    ]
+  };
+  const infoA = api.getSupersetInfo(act, 0);
+  const banner = api.renderSupersetBanner(infoA);
+
+  assert(banner.includes('⚡ SUPERSET [A1 + A2]'), 'Banner must include unified SUPERSET tag');
+  assert(banner.includes('Round 1 of 3'), 'Banner must indicate Round 1 of 3');
+  assert(banner.includes('Step 1: Finish A1 → Transitions to A2 instantly (No rest timer)'), 'Flow instructions for A1');
+});
+
+it('Step 1: User finishes Set 1 of Exercise A -> NO rest timer, focus auto-advances to Exercise B', () => {
+  api.S.act = {
+    name: 'Superset Workout',
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssRole: 'A', ssPair: 'ss_0', sets: [{ w: 60, r: 10, done: false }, { w: 60, r: 10, done: false }] },
+      { id: '0027', ss: true, ssRole: 'B', ssPair: 'ss_0', sets: [{ w: 50, r: 10, done: false }, { w: 50, r: 10, done: false }] }
+    ]
+  };
+
+  // Reset timer state
+  elementsMap['#rest'].hidden = true;
+  api.T.supersetLoop = null;
+
+  // Complete Set 1 of Exercise A
+  const curExA = api.S.act.ex[0];
+  const setA1 = curExA.sets[0];
+  setA1.done = true;
+
+  api.handleSetCompleted(0, 0, setA1, curExA);
+
+  // Assertions for Step 1
+  assert.equal(elementsMap['#rest'].hidden, true, 'Rest timer must NOT start when finishing Exercise A');
+  assert.equal(api.S.act.curEx, 1, 'Current exercise must seamlessly transition to Exercise B (index 1)');
+});
+
+it('Step 2: User finishes Set 1 of Exercise B -> REST TIMER BEGINS & loops back to A Set 2', () => {
+  api.S.act = {
+    name: 'Superset Workout',
+    curEx: 1,
+    ex: [
+      { id: '0025', ss: true, ssRole: 'A', ssPair: 'ss_0', sets: [{ w: 60, r: 10, done: true }, { w: 60, r: 10, done: false }] },
+      { id: '0027', ss: true, ssRole: 'B', ssPair: 'ss_0', sets: [{ w: 50, r: 10, done: false }, { w: 50, r: 10, done: false }] }
+    ]
+  };
+
+  const curExB = api.S.act.ex[1];
+  const setB1 = curExB.sets[0];
+  setB1.done = true;
+
+  api.handleSetCompleted(1, 0, setB1, curExB);
+
+  // Assertions for Step 2
+  assert.equal(elementsMap['#rest'].hidden, false, 'Rest timer MUST start when finishing Exercise B');
+  assert(api.T.supersetLoop != null, 'T.supersetLoop must be armed for the next round');
+  assert.equal(api.T.supersetLoop.targetEx, 0, 'Target exercise to loop back to must be Exercise A (index 0)');
+  assert.equal(api.T.supersetLoop.targetSet, 1, 'Target set must be Set 2 (index 1)');
+  assert.equal(api.T.supersetLoop.round, 2, 'Next round indicator must be 2');
+});
+
+it('Step 3: Rest timer skip (rskip) triggers auto-loop back to Exercise A Set 2', () => {
+  // Armed superset loop
+  assert(api.T.supersetLoop != null);
+  const loop = api.T.supersetLoop;
+
+  // Simulate rskip execution
+  api.T.supersetLoop = null;
+  api.switchWorkExercise(loop.targetEx);
+
+  assert.equal(api.S.act.curEx, 0, 'Workout view must auto-loop back to Exercise A');
+  assert.equal(api.T.supersetLoop, null, 'supersetLoop state must be consumed/cleared');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 3: TOP STEPPER HORIZONTAL PILL JUMP & SCROLL PRESERVATION
+// -----------------------------------------------------------------------------
+console.log('\nSuite 3: Top Stepper Horizontal Pill Navigation & Scroll Reset Fix');
+
+it('switchWorkExercise preserves stepper pills DOM element without destroying or resetting', () => {
+  api.S.act = {
+    name: 'Push Workout',
+    curEx: 0,
+    ex: [
+      { id: '0025', sets: [{ done: true }] },
+      { id: '0047', sets: [{ done: false }] },
+      { id: '0027', sets: [{ done: false }] }
+    ]
+  };
+
+  const pillsContainer = elementsMap['.work-stepper-pills'];
+  pillsContainer.innerHTML = `
+    <button class="work-step-pill active" data-i="0"><span>1. Bench</span></button>
+    <button class="work-step-pill" data-i="1"><span>2. Incline</span></button>
+    <button class="work-step-pill" data-i="2"><span>3. Row</span></button>
+  `;
+  pillsContainer.scrollLeft = 142; // Simulated horizontal user scroll offset
+
+  // Switch to exercise 1 in-place
+  api.switchWorkExercise(1, true);
+
+  // Verify container reference was preserved (not destroyed or replaced)
+  assert.equal(elementsMap['.work-stepper-pills'], pillsContainer, 'DOM container identity must be preserved');
+  assert.equal(pillsContainer.scrollLeft, 142, 'scrollLeft position must not be reset to 0');
+
+  // Verify active class updated in-place
+  const activePill = pillsContainer.children[1];
+  assert(activePill.className.includes('active'), 'Pill 1 must now have active class');
+  assert(!pillsContainer.children[0].className.includes('active'), 'Pill 0 must no longer have active class');
+
+  // Verify smooth centering was called on active pill
+  assert.equal(activePill._lastScrollIntoView?.behavior, 'smooth');
+  assert.equal(activePill._lastScrollIntoView?.inline, 'center');
+  assert.equal(activePill._lastScrollIntoView?.block, 'nearest');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 4: EXERCISE GIF VISIBILITY & FULLSCREEN EXPANSION MODAL
+// -----------------------------------------------------------------------------
+console.log('\nSuite 4: Exercise GIF Visibility & Fullscreen Expansion Modal');
+
+it('renderWorkHeroCard declutters media frame and places actions in horizontal toolbar', () => {
+  const act = {
+    curEx: 0,
+    ex: [
+      { id: '0025', uni: false, sets: [{ w: 60, r: 8, done: false }] },
+      { id: '0027', uni: false, sets: [{ w: 50, r: 8, done: false }] }
+    ]
+  };
+
+  const heroHtml = api.renderWorkHeroCard(act, 0);
+
+  // 1. Verify media frame has tap-to-expand data action
+  assert(heroHtml.includes('class="work-hero-media" data-a="zoomexgif"'), 'Media frame must trigger zoomexgif');
+  assert(heroHtml.includes('class="work-gif-tap-hint"'), 'Media frame must display tap hint');
+
+  // 2. Verify media frame contains NO overlay buttons
+  const mediaSubstr = heroHtml.split('work-hero-toolbar')[0];
+  assert(!mediaSubstr.includes('data-a="swapex"'), 'Swap button must not be inside GIF media frame');
+  assert(!mediaSubstr.includes('data-a="linkss"'), 'Superset button must not be inside GIF media frame');
+  assert(!mediaSubstr.includes('data-a="toggleuni"'), 'Unilateral button must not be inside GIF media frame');
+
+  // 3. Verify horizontal toolbar directly below media frame
+  assert(heroHtml.includes('class="work-hero-toolbar"'), 'Toolbar must be present directly below media');
+  assert(heroHtml.includes('data-a="swapex"'), 'Toolbar must include Swap');
+  assert(heroHtml.includes('data-a="zoomexgif"'), 'Toolbar must include Form Cues chip');
+  assert(heroHtml.includes('data-a="linkss"'), 'Toolbar must include Link Superset');
+  assert(heroHtml.includes('data-a="toggleuni"'), 'Toolbar must include Unilateral toggle');
+});
+
+it('style.css enforces 100% visible GIF letterboxing with object-fit: contain', () => {
+  assert(cssCode.includes('object-fit: contain'), 'style.css must specify object-fit: contain for GIFs');
+  assert(cssCode.includes('.zoom-modal-sheet'), 'style.css must style zoom-modal-sheet');
+  assert(cssCode.includes('.zoom-media-frame'), 'style.css must style zoom-media-frame');
+  assert(cssCode.includes('.zoom-expanded-gif'), 'style.css must style zoom-expanded-gif');
+  assert(cssCode.includes('.zoom-cues-card'), 'style.css must style zoom-cues-card');
+});
+
+it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, and Close button', () => {
+  elementsMap['#m'].innerHTML = '';
+  elementsMap['#m'].hidden = true;
+
+  api.showExpandedGifModal('0001');
+
+  const modalHtml = elementsMap['#m'].innerHTML;
+  assert.equal(elementsMap['#m'].hidden, false, 'Modal sheet container must be unhidden');
+  assert(modalHtml.includes('zoom-modal-sheet'), 'Must open zoom-modal-sheet');
+  assert(modalHtml.includes('zoom-expanded-gif'), 'Must render high-res zoom-expanded-gif');
+  assert(modalHtml.includes('data-a="close"'), 'Must have close button');
+  assert(modalHtml.includes('✕ Close'), 'Must have clean "✕ Close" label');
+  assert(modalHtml.includes('Form Execution Cues'), 'Must have form execution cues');
+  assert(modalHtml.includes('Target: abs'), 'Must display target muscle label');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 5: CACHE BUMP & AIR-GAPPED VERIFICATION
+// -----------------------------------------------------------------------------
+console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
+
+it('sw.js cache key is bumped to mygym-core-v5.1.0-flow', () => {
+  assert(swCode.includes("'mygym-core-v5.1.0-flow'"), 'sw.js must use mygym-core-v5.1.0-flow cache name');
+  assert(swCode.includes("'./style.css?v=5.1.0'"), 'sw.js must precache style.css?v=5.1.0');
+  assert(swCode.includes("'./app.js?v=5.1.0'"), 'sw.js must precache app.js?v=5.1.0');
+});
+
+it('index.html references versioned assets and updated shell version', () => {
+  assert(htmlCode.includes('style.css?v=5.1.0'), 'index.html must link style.css?v=5.1.0');
+  assert(htmlCode.includes('app.js?v=5.1.0'), 'index.html must load app.js?v=5.1.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.1.0-flow'"), 'index.html must use mygym-v5.1.0-flow');
+});
+
+it('app.js has consistent versions', () => {
+  assert.equal(api.APP_VERSION, '5.1.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.1.0-flow');
+});
+
+console.log(`\n======================================================`);
+console.log(`ALL ${passed}/${total} ASSERTION TESTS PASSED SUCCESSFULLY! (100%)`);
+console.log(`======================================================\n`);
+process.exit(0);
+

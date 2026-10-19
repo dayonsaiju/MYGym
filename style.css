@@ -930,6 +930,15 @@ input[type="checkbox"] {
   border-radius: 14px;
   overflow: hidden;
   border: 0.5px solid var(--bd);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s ease;
+}
+
+.work-hero-media:active {
+  transform: scale(0.99);
 }
 
 .work-hero-gif {
@@ -940,12 +949,37 @@ input[type="checkbox"] {
   background: #000000;
 }
 
-.work-hero-overlay {
+.work-gif-tap-hint {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 12px;
+  border: 0.5px solid rgba(255, 255, 255, 0.25);
+  pointer-events: none;
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 4px;
+}
+
+.work-hero-toolbar {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 0 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  align-items: center;
+}
+
+.work-hero-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .work-hero-info {
@@ -2244,6 +2278,224 @@ textarea.note:focus {
 
 .ck.d, .uni-ck.d {
   animation: checkPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* ---- v5.1.0 Flow: Fullscreen Tap-to-Zoom Demonstration Modal ---- */
+.zoom-modal-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.zoom-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.zoom-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  text-transform: capitalize;
+  letter-spacing: -0.3px;
+}
+
+.zoom-close-btn {
+  min-height: 34px;
+  padding: 6px 14px;
+  font-weight: 700;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.zoom-media-frame {
+  width: 100%;
+  max-height: 52vh;
+  background: #000000;
+  border-radius: 16px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0.5px solid var(--bd);
+}
+
+.zoom-expanded-gif {
+  width: 100%;
+  max-height: 52vh;
+  object-fit: contain;
+  background: #000000;
+  display: block;
+}
+
+.zoom-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.zoom-cues-card {
+  background: var(--c2);
+  border-radius: 14px;
+  padding: 14px;
+  border: 0.5px solid var(--bd);
+}
+
+.zoom-cues-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--t1);
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.zoom-cues-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--t2);
+}
+
+.zoom-cues-list li {
+  margin-bottom: 6px;
+}
+
+.zoom-best-card {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: 12px;
+  background: rgba(10, 132, 255, 0.1);
+  border: 0.5px solid rgba(10, 132, 255, 0.3);
+}
+
+/* ---- v5.1.0 Flow: Superset Block & Stepper Pill Styling ---- */
+.work-step-pill.ss-pill {
+  border-left: 3px solid var(--am);
+}
+
+.superset-block-card {
+  background: linear-gradient(135deg, rgba(255, 159, 10, 0.12) 0%, rgba(10, 132, 255, 0.08) 100%);
+  border: 1px solid rgba(255, 159, 10, 0.35);
+  border-radius: 16px;
+  padding: 12px 14px;
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+
+.superset-badge-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ss-block-tag {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--am);
+  background: rgba(255, 159, 10, 0.18);
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 0.5px solid rgba(255, 159, 10, 0.4);
+}
+
+.ss-round-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.superset-flow-hint {
+  font-size: 11px;
+  margin-top: 4px;
+  color: var(--t2);
+}
+
+.superset-pair-switcher {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ss-pair-tab {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  background: var(--c1);
+  border: 0.5px solid var(--bd);
+  color: var(--t2);
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.ss-pair-tab.active {
+  background: rgba(10, 132, 255, 0.2);
+  border-color: var(--ac);
+  color: #FFFFFF;
+}
+
+.ss-pill-role {
+  font-weight: 800;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.15);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.ss-pair-tab.active .ss-pill-role {
+  background: var(--ac);
+  color: #FFFFFF;
+}
+
+.ss-pill-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.ss-pill-ct {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.ss-pair-arrow {
+  color: var(--t2);
+  font-size: 14px;
+  user-select: none;
+}
+
+/* ---- v5.1.0 Flow: ACWR Cold-Start Calibration Hint ---- */
+.acwr-calib-hint {
+  background: rgba(10, 132, 255, 0.08);
+  border: 0.5px solid rgba(10, 132, 255, 0.25);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--t1);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 

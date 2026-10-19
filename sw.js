@@ -1,11 +1,11 @@
-const C = 'mygym-core-v5.0.0-gold';
+const C = 'mygym-core-v5.1.0-flow';
 const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=5.0.0',
+  './style.css?v=5.1.0',
   './app.js',
-  './app.js?v=5.0.0',
+  './app.js?v=5.1.0',
   './manifest.json',
   './icon.png',
   './exercises.json'

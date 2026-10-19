@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.0.0';
-const SHELL_VERSION = 'mygym-v5.0.0-gold';
+const APP_VERSION = '5.1.0';
+const SHELL_VERSION = 'mygym-v5.1.0-flow';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -571,7 +571,7 @@ const renderStreakBadge = () => {
 };
 
 // ---- Rest Timer, Audio & Wake Lock ----
-const T = { end: 0, iv: 0, durMs: 90000 };
+const T = { end: 0, iv: 0, durMs: 90000, supersetLoop: null };
 
 const unlock = () => {
   try {
@@ -625,6 +625,16 @@ function tick() {
       void document.body.offsetWidth;
       document.body.classList.add('flash');
     }
+    // Superset Auto-Loop: Automatically loop back to Set 2 (or next set) of Exercise A
+    if (T.supersetLoop && S.act) {
+      const loop = T.supersetLoop;
+      T.supersetLoop = null;
+      if (S.act.ex[loop.targetEx] && loop.targetSet < S.act.ex[loop.targetEx].sets.length) {
+        switchWorkExercise(loop.targetEx);
+        toast(`⚡ Superset Round ${loop.round} of ${loop.totalRounds}: ${esc(X(S.act.ex[loop.targetEx].id).name)}`);
+        focusSetInput(loop.targetEx, loop.targetSet);
+      }
+    }
     return;
   }
   const ringEl = $('#rest-ring-fill');
@@ -636,9 +646,10 @@ function tick() {
   if (textEl) textEl.textContent = Math.floor(l / 60) + ':' + String(l % 60).padStart(2, '0');
 }
 
-const stopRest = () => {
+const stopRest = (clearLoop = false) => {
   clearInterval(T.iv);
   $('#rest').hidden = true;
+  if (clearLoop) T.supersetLoop = null;
 };
 
 const wake = async () => {
@@ -733,11 +744,15 @@ const calcWorkload = (logs = S.logs) => {
   let chronicVolumeTotal = 0;
   let acuteWorkouts = 0;
   let chronicWorkouts = 0;
+  const distinctDaysSet = new Set();
+  const validLogDates = [];
 
   for (const l of logs) {
     if (!l.date || !Array.isArray(l.ex)) continue;
     const lDate = typeof l.date === 'number' ? l.date : new Date(l.date).getTime();
     if (isNaN(lDate)) continue;
+
+    validLogDates.push(lDate);
 
     let logVol = 0;
     for (const x of l.ex) {
@@ -755,7 +770,37 @@ const calcWorkload = (logs = S.logs) => {
     if (lDate >= chronicCutoff && lDate <= now + 3600000) {
       chronicVolumeTotal += logVol;
       chronicWorkouts++;
+      distinctDaysSet.add(dk(lDate));
     }
+  }
+
+  const distinctWorkoutDays = distinctDaysSet.size;
+  const earliestDate = validLogDates.length ? Math.min(...validLogDates) : null;
+  const totalHistoryDays = earliestDate ? Math.max(1, Math.floor((now - earliestDate) / dayMs) + 1) : 0;
+
+  // BASELINE GATE: If distinct workout days < 7 OR total logged history < 14 days
+  // Suppress misleading ACWR spikes (e.g. 4.00) and hard block deload alerts
+  const isCalibrating = distinctWorkoutDays < 7 || totalHistoryDays < 14;
+  const calibDay = Math.min(14, Math.max(validLogDates.length ? 1 : 0, totalHistoryDays));
+
+  if (isCalibrating) {
+    return {
+      acuteVolume: Math.round(acuteVolume),
+      chronicWeeklyAvg: Math.round(chronicVolumeTotal / 4),
+      acwr: 'Calibrating',
+      acwrNum: null,
+      acwrDisplay: 'Calibrating',
+      isCalibrating: true,
+      distinctWorkoutDays,
+      totalHistoryDays,
+      status: `⚡ Calibrating Baseline (Day ${calibDay} of 14) 🔵`,
+      zoneCode: 'calibrating',
+      color: 'var(--bl)',
+      desc: 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.',
+      tooltip: 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.',
+      acuteWorkouts,
+      chronicWorkouts
+    };
   }
 
   // Chronic Workload = Average weekly volume over the trailing 28 days (4 weeks)
@@ -800,10 +845,16 @@ const calcWorkload = (logs = S.logs) => {
     acuteVolume,
     chronicWeeklyAvg,
     acwr,
+    acwrNum: acwr,
+    acwrDisplay: acwr.toFixed(2),
+    isCalibrating: false,
+    distinctWorkoutDays,
+    totalHistoryDays,
     status,
     zoneCode,
     color,
     desc,
+    tooltip: 'Acute:Chronic Workload Ratio (Optimal: 0.8 - 1.3)',
     acuteWorkouts,
     chronicWorkouts
   };
@@ -811,11 +862,17 @@ const calcWorkload = (logs = S.logs) => {
 
 const checkDeloadStatus = (logs = S.logs) => {
   const workload = calcWorkload(logs);
+
+  // HARD BLOCK the Deload recommendation card during baseline calibration period
+  if (workload.isCalibrating) {
+    return { recommended: false, reason: '', detail: '' };
+  }
+
   const now = Date.now();
   const dayMs = 86400000;
 
   // Condition 1: ACWR > 1.5
-  if (workload.acwr > 1.5) {
+  if (typeof workload.acwr === 'number' && workload.acwr > 1.5) {
     return {
       recommended: true,
       reason: 'ACWR Fatigue Spike (>1.5)',
@@ -1100,7 +1157,7 @@ const vTrain = () => {
           <span class="recovery-icon">📊</span>
           <div>
             <div class="recovery-title">Recovery & Muscle Fatigue Insights</div>
-            <div class="t2 sm">ACWR: ${workload.acwr.toFixed(2)} · ${esc(workload.status)}</div>
+            <div class="t2 sm">ACWR: ${workload.isCalibrating ? (workload.acwrDisplay || 'Calibrating') : workload.acwr.toFixed(2)} · ${esc(workload.status)}</div>
           </div>
         </div>
         <span class="recovery-chevron">⌄</span>
@@ -1127,19 +1184,25 @@ const vTrain = () => {
           <div class="row" style="margin-bottom:8px">
             <div>
               <div class="acwr-badge-row">
-                <span class="acwr-tag" style="background:${workload.color}22;color:${workload.color};border:1px solid ${workload.color}66">
+                <span class="acwr-tag" title="${esc(workload.tooltip || workload.desc)}" style="background:${workload.color}22;color:${workload.color};border:1px solid ${workload.color}66">
                   ${esc(workload.status)}
                 </span>
               </div>
               <div class="acwr-title" style="margin-top:6px">
-                <b>ACWR: ${workload.acwr.toFixed(2)}</b>
-                <span class="t2 sm"> · ${esc(workload.desc)}</span>
+                <b>ACWR: ${workload.isCalibrating ? (workload.acwrDisplay || 'Calibrating') : workload.acwr.toFixed(2)}</b>
+                <span class="t2 sm" title="${esc(workload.tooltip || workload.desc)}"> · ${esc(workload.desc)}</span>
               </div>
             </div>
             ${!S.deload?.active && !deloadInfo.recommended ? `
               <button class="chip" data-a="startdeload" title="Manually initiate deload protocol" style="font-size:12px;padding:4px 8px;min-height:30px">⚡ Deload</button>
             ` : ''}
           </div>
+
+          ${workload.isCalibrating ? `
+            <div class="acwr-calib-hint" title="Log workouts over 2-3 weeks to build your chronic fatigue baseline.">
+              ℹ️ <b>Baseline Calibration Active:</b> Log workouts over 2-3 weeks to build your chronic fatigue baseline. (${workload.distinctWorkoutDays}/7 workout days, ${workload.totalHistoryDays}/14 days)
+            </div>
+          ` : ''}
 
           <div class="acwr-metrics-grid">
             <div class="acwr-metric">
@@ -1154,12 +1217,12 @@ const vTrain = () => {
             </div>
           </div>
 
-          <div class="acwr-meter-track">
+          <div class="acwr-meter-track" style="opacity:${workload.isCalibrating ? '0.5' : '1'}" title="${esc(workload.tooltip || workload.desc)}">
             <div class="acwr-zone-band under" style="width:33.3%" title="Underreaching (<0.8)"></div>
             <div class="acwr-zone-band optimal" style="width:25%" title="Optimal Zone (0.8 - 1.3)"></div>
             <div class="acwr-zone-band warning" style="width:12.5%" title="High Load (1.3 - 1.5)"></div>
             <div class="acwr-zone-band danger" style="width:29.2%" title="Overreaching (>1.5)"></div>
-            <div class="acwr-pointer" style="left:${Math.min(97, Math.max(3, (workload.acwr / 2.0) * 100))}%" title="ACWR: ${workload.acwr.toFixed(2)}"></div>
+            ${!workload.isCalibrating && typeof workload.acwr === 'number' ? `<div class="acwr-pointer" style="left:${Math.min(97, Math.max(3, (workload.acwr / 2.0) * 100))}%" title="ACWR: ${workload.acwr.toFixed(2)}"></div>` : ''}
           </div>
         </div>
 
@@ -1220,86 +1283,144 @@ const startWorkTimer = () => {
   }, 1000);
 };
 
-function vWork() {
-  const a = S.act;
-  if (!a) { view = 'train'; return vTrain(); }
-  startWorkTimer();
-
-  if (!a.ex || !a.ex.length) {
-    return `<div class="work-top-bar">
-      <div class="work-title-group">
-        <div class="work-routine-name">${esc(a.name)}</div>
-        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
-      </div>
-      <div class="work-top-actions">
-        <button class="btn s sm-btn red" data-a="cancel">Discard</button>
-      </div>
-    </div>
-    <div class="card" style="text-align:center;padding:32px 16px">
-      <p class="t2">No exercises added to this workout session yet.</p>
-      <button class="btn" data-a="addex" style="margin-top:12px">${ic('plus', 18)} Add First Exercise</button>
-    </div>`;
+// ---- Superset Engine & State Helpers ----
+function getSupersetInfo(act, exIdx) {
+  if (!act || !Array.isArray(act.ex) || !act.ex[exIdx]) {
+    return { isSuperset: false };
+  }
+  const curEx = act.ex[exIdx];
+  if (!curEx.ss) {
+    return { isSuperset: false };
   }
 
-  const curIdx = Math.min(Math.max(0, a.curEx || 0), a.ex.length - 1);
-  a.curEx = curIdx;
+  let exAIndex = -1;
+  let exBIndex = -1;
+  let role = curEx.ssRole || null;
 
-  const currentEx = a.ex[curIdx];
-  const exInfo = X(currentEx.id);
+  if (role === 'A' && act.ex[exIdx + 1]?.ss) {
+    exAIndex = exIdx;
+    exBIndex = exIdx + 1;
+  } else if (role === 'B' && act.ex[exIdx - 1]?.ss) {
+    exAIndex = exIdx - 1;
+    exBIndex = exIdx;
+  } else if (act.ex[exIdx + 1]?.ss) {
+    exAIndex = exIdx;
+    exBIndex = exIdx + 1;
+    role = 'A';
+  } else if (act.ex[exIdx - 1]?.ss) {
+    exAIndex = exIdx - 1;
+    exBIndex = exIdx;
+    role = 'B';
+  } else {
+    return {
+      isSuperset: true,
+      isPaired: false,
+      role: 'A',
+      exAIndex: exIdx,
+      exA: curEx,
+      round: 1,
+      totalRounds: curEx.sets ? curEx.sets.length : 1
+    };
+  }
 
-  const allSets = a.ex.flatMap(x => x.sets);
-  const doneSets = allSets.filter(s => s.done).length;
-  const totalSets = allSets.length;
-  const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+  const exA = act.ex[exAIndex];
+  const exB = act.ex[exBIndex];
+  const totalRounds = Math.max(exA?.sets?.length || 1, exB?.sets?.length || 1);
 
-  const isBarbell = (exInfo.eq || '').toLowerCase().includes('barbell');
+  // Compute active round based on uncompleted sets in pair
+  let currentRound = 1;
+  for (let k = 0; k < totalRounds; k++) {
+    const aDone = exA?.sets?.[k]?.done;
+    const bDone = exB?.sets?.[k]?.done;
+    if (!aDone || !bDone) {
+      currentRound = k + 1;
+      break;
+    }
+    if (k === totalRounds - 1) {
+      currentRound = totalRounds;
+    }
+  }
+
+  return {
+    isSuperset: true,
+    isPaired: true,
+    pairId: curEx.ssPair || `ss_${exAIndex}`,
+    role,
+    exAIndex,
+    exBIndex,
+    exA,
+    exB,
+    round: currentRound,
+    totalRounds
+  };
+}
+
+function renderSupersetBanner(ssInfo) {
+  if (!ssInfo || !ssInfo.isSuperset || !ssInfo.isPaired) return '';
+  const exA = ssInfo.exA;
+  const exB = ssInfo.exB;
+  const exAInfo = X(exA.id);
+  const exBInfo = X(exB.id);
+  const aDone = exA.sets.filter(s => s.done).length;
+  const bDone = exB.sets.filter(s => s.done).length;
+  const isA = ssInfo.role === 'A';
 
   return `
-    <div class="work-top-bar">
-      <div class="work-title-group">
-        <div class="work-routine-name">${esc(a.name)}</div>
-        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
-      </div>
-      <div class="work-top-actions">
-        <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
-        <button class="btn sm-btn" data-a="fin">Finish</button>
-        <button class="btn s sm-btn red" data-a="cancel">✕</button>
-      </div>
-    </div>
-
-    <!-- Overall Workout Progress Bar -->
-    <div class="work-progress-bar">
-      <div class="work-progress-fill" style="width: ${pct}%"></div>
-    </div>
-
-    <!-- Stepper Header & Breadcrumb Carousel -->
-    <div class="work-stepper-container">
-      ${a.isDeload ? `<div class="deload-work-banner">⚡ <b>Deload Protocol Active:</b> Volume halved (-50%) & Load -20% for CNS recovery.</div>` : ''}
-      <div class="work-stepper-title">Exercise ${curIdx + 1} of ${a.ex.length}: <b>${esc(exInfo.name)}</b></div>
-      <div class="work-stepper-pills">
-        ${a.ex.map((x, i) => {
-          const e = X(x.id);
-          const isDone = x.sets.length > 0 && x.sets.every(s => s.done);
-          const isCur = i === curIdx;
-          const hasFail = x.sets.some(s => s.rir === 0 || s.rpe >= 10);
-          return `<button class="work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''} ${hasFail ? 'has-fail' : ''}" data-a="setcurex" data-i="${i}">
-            <span>${isDone ? '✓ ' : ''}${hasFail ? '💥 ' : ''}${i + 1}. ${esc(e.name)}</span>
-          </button>`;
-        }).join('')}
-      </div>
-    </div>
-
-    <!-- Live Exercise Card with Animated Demonstration Preview -->
-    <div class="card work-hero-card" id="work-hero-card">
-      <div class="work-hero-media">
-        <img class="work-hero-gif" src="./media/${esc(exInfo.gif || exInfo.img)}" alt="${esc(exInfo.name)}" loading="eager" onerror="this.onerror=null;this.src='./media/${esc(exInfo.img || exInfo.gif)}';">
-        <div class="work-hero-overlay">
-          <button class="chip on" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
-          <button class="chip" data-a="libex" data-id="${esc(exInfo.id)}">ℹ️ Form</button>
-          <button class="chip ${currentEx.ss ? 'on' : ''}" data-a="ss" data-i="${curIdx}">Superset</button>
-          <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
+    <div class="card superset-block-card">
+      <div class="superset-block-header">
+        <div class="superset-badge-row">
+          <span class="ss-block-tag">⚡ SUPERSET [A1 + A2]</span>
+          <span class="ss-round-tag">Round ${ssInfo.round} of ${ssInfo.totalRounds}</span>
+        </div>
+        <div class="t2 sm superset-flow-hint">
+          ${isA
+            ? `Step 1: Finish A1 → Transitions to A2 instantly (No rest timer)`
+            : `Step 2: Finish A2 → Rest timer starts → Loops back to A1`
+          }
         </div>
       </div>
+      <div class="superset-pair-switcher">
+        <button class="ss-pair-tab ${isA ? 'active' : ''}" data-a="setcurex" data-i="${ssInfo.exAIndex}">
+          <span class="ss-pill-role">A1</span>
+          <span class="ss-pill-name">${esc(exAInfo.name)}</span>
+          <span class="ss-pill-ct">${aDone}/${exA.sets.length}</span>
+        </button>
+        <span class="ss-pair-arrow">⇄</span>
+        <button class="ss-pair-tab ${!isA ? 'active' : ''}" data-a="setcurex" data-i="${ssInfo.exBIndex}">
+          <span class="ss-pill-role">A2</span>
+          <span class="ss-pill-name">${esc(exBInfo.name)}</span>
+          <span class="ss-pill-ct">${bDone}/${exB.sets.length}</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderWorkHeroCard(a, curIdx) {
+  const currentEx = a.ex[curIdx];
+  const exInfo = X(currentEx.id);
+  const isBarbell = (exInfo.eq || '').toLowerCase().includes('barbell');
+  const ssInfo = getSupersetInfo(a, curIdx);
+
+  return `
+    <div class="card work-hero-card" id="work-hero-card">
+      <!-- Exercise Demonstration GIF - 100% visible with clean letterboxing, zero overlay buttons -->
+      <div class="work-hero-media" data-a="zoomexgif" data-id="${esc(exInfo.id)}" title="Tap to expand fullscreen demonstration">
+        <img class="work-hero-gif" src="./media/${esc(exInfo.gif || exInfo.img)}" alt="${esc(exInfo.name)}" loading="eager" onerror="this.onerror=null;this.src='./media/${esc(exInfo.img || exInfo.gif)}';">
+        <div class="work-gif-tap-hint">🔍 Tap to expand</div>
+      </div>
+
+      <!-- Neat Decluttered Horizontal Toolbar directly below the media frame -->
+      <div class="work-hero-toolbar">
+        <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
+        <button class="chip" data-a="zoomexgif" data-id="${esc(exInfo.id)}">ℹ️ Form Cues</button>
+        ${ssInfo.isSuperset && ssInfo.isPaired
+          ? `<button class="chip on ss-chip" data-a="unlinkss" data-i="${curIdx}">🔗 Unlink Superset</button>`
+          : `<button class="chip ss-chip" data-a="linkss" data-i="${curIdx}" ${curIdx >= a.ex.length - 1 ? 'disabled style="opacity:0.4"' : ''}>🔗 Link with Next Exercise</button>`
+        }
+        <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
+      </div>
+
       <div class="work-hero-info">
         <div class="row" style="margin-bottom:4px">
           <div class="work-hero-title">${esc(exInfo.name)}</div>
@@ -1311,6 +1432,7 @@ function vWork() {
           <span class="ex-badge">${esc(exInfo.eq)}</span>
           ${exInfo.t === 't' ? '<span class="ex-badge">Timed (s)</span>' : ''}
           ${currentEx.uni ? '<span class="ex-badge" style="background:rgba(100,210,255,0.2);color:var(--bl);border:1px solid var(--bl)">⚖️ Each Side (L/R)</span>' : ''}
+          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ Superset [${ssInfo.role === 'A' ? 'A1' : 'A2'}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
           ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
         </div>
       </div>
@@ -1360,8 +1482,11 @@ function vWork() {
       </div>
       <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
     </div>
+  `;
+}
 
-    <!-- Sticky Stepper Controls Navigation -->
+function renderWorkNavStepper(a, curIdx) {
+  return `
     <div class="work-nav-stepper">
       <button class="btn s work-nav-btn" data-a="workprev" ${curIdx === 0 ? 'disabled style="opacity:0.3"' : ''}>
         ‹ Prev Exercise
@@ -1374,6 +1499,278 @@ function vWork() {
         : `<button class="btn work-nav-btn" data-a="worknext">Next Exercise ›</button>`
       }
     </div>
+  `;
+}
+
+function updateWorkProgressHeader(a) {
+  if (!a || !a.ex) return;
+  const allSets = a.ex.flatMap(x => x.sets);
+  const doneSets = allSets.filter(s => s.done).length;
+  const totalSets = allSets.length;
+  const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+
+  const timerEl = document.getElementById('work-live-timer');
+  if (timerEl) {
+    timerEl.textContent = `⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)`;
+  }
+  const fillEl = document.querySelector('.work-progress-fill');
+  if (fillEl) {
+    fillEl.style.width = `${pct}%`;
+  }
+}
+
+function focusSetInput(exIdx, setIdx) {
+  setTimeout(() => {
+    const input = document.querySelector(`input[data-i="${exIdx}"][data-j="${setIdx}"][data-f="r"]`) ||
+                  document.querySelector(`input[data-i="${exIdx}"][data-j="${setIdx}"][data-f="w"]`);
+    if (input) {
+      input.focus();
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, 100);
+}
+
+function showExpandedGifModal(targetId) {
+  const ex = X(targetId);
+  if (!ex) return;
+  const mediaSrc = `./media/${esc(ex.gif || ex.img)}`;
+  const b = bestSet(ex.id);
+  let bestHtml = '';
+  if (b) {
+    if (ex.t === 't') {
+      bestHtml = `<div class="card zoom-best-card">🏆 Personal Best: <b>${Number(b.r) || 0} sec</b></div>`;
+    } else if (ex.t === 'b') {
+      bestHtml = `<div class="card zoom-best-card">🏆 Personal Best: <b>${b.w > 0 ? '+' + (Number(b.w) || 0) + ' kg × ' : ''}${Number(b.r) || 0} reps</b></div>`;
+    } else {
+      bestHtml = `<div class="card zoom-best-card">🏆 Personal Best: <b>${Number(b.w) || 0} kg × ${Number(b.r) || 0}</b> · 1RM: <b>${rd(e1(b.w, b.r))} kg</b></div>`;
+    }
+  }
+
+  modal(`
+    <div class="zoom-modal-sheet">
+      <div class="zoom-modal-header">
+        <div>
+          <h2 class="zoom-title">${esc(ex.name)}</h2>
+          <div class="t2 sm">${esc(ex.g)} · ${esc(ex.eq)}</div>
+        </div>
+        <button class="btn s sm-btn zoom-close-btn" data-a="close">✕ Close</button>
+      </div>
+
+      <div class="zoom-media-frame">
+        <img class="zoom-expanded-gif" src="${mediaSrc}" alt="${esc(ex.name)}" onerror="this.onerror=null;this.src='./media/${esc(ex.img || ex.gif)}';">
+      </div>
+
+      <div class="zoom-tags-row">
+        <span class="ex-badge ac">${esc(ex.g)}</span>
+        ${ex.tg ? `<span class="ex-badge" style="background:rgba(48,209,88,0.2);color:var(--gn);border:1px solid rgba(48,209,88,0.4)">Target: ${esc(ex.tg)}</span>` : ''}
+        <span class="ex-badge">${esc(ex.eq)}</span>
+        ${ex.sec && ex.sec.length ? `<span class="ex-badge">Secondary: ${esc(ex.sec.join(', '))}</span>` : ''}
+      </div>
+
+      ${bestHtml}
+
+      <div class="zoom-cues-card">
+        <div class="zoom-cues-title">📋 Form Execution Cues</div>
+        ${ex.st && ex.st.length
+          ? `<ol class="zoom-cues-list">${ex.st.map(s => `<li>${esc(s)}</li>`).join('')}</ol>`
+          : `<p class="t2 sm" style="margin:0">Maintain strict form, neutral spine, controlled concentric phase, and deliberate eccentric contraction.</p>`
+        }
+      </div>
+    </div>
+  `);
+}
+
+function switchWorkExercise(newIdx, smoothCenter = true) {
+  if (!S.act) return;
+  const clampedIdx = Math.max(0, Math.min(S.act.ex.length - 1, newIdx));
+  S.act.curEx = clampedIdx;
+  save('act');
+
+  const stepperPills = document.querySelector('.work-stepper-pills');
+  const heroCard = document.querySelector('#work-hero-card');
+  const navStepper = document.querySelector('.work-nav-stepper');
+  const stepperTitle = document.querySelector('.work-stepper-title');
+  const stepperContainer = document.querySelector('.work-stepper-container');
+
+  if (stepperPills && heroCard) {
+    // 1. Update pills in-place without destroying DOM or resetting scrollLeft
+    const pills = stepperPills.querySelectorAll('.work-step-pill');
+    pills.forEach((p, idx) => {
+      const isCur = idx === clampedIdx;
+      const x = S.act.ex[idx];
+      const isDone = x && x.sets && x.sets.length > 0 && x.sets.every(s => s.done);
+      const hasFail = x && x.sets && x.sets.some(s => s.rir === 0 || s.rpe >= 10);
+      const ss = getSupersetInfo(S.act, idx);
+      const ssTag = ss.isSuperset && ss.isPaired ? (ss.role === 'A' ? '[A1] ' : '[A2] ') : '';
+      const e = X(x.id);
+
+      p.className = `work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''} ${hasFail ? 'has-fail' : ''} ${ss.isSuperset && ss.isPaired ? 'ss-pill' : ''}`;
+      p.innerHTML = `<span>${isDone ? '✓ ' : ''}${hasFail ? '💥 ' : ''}${ssTag}${idx + 1}. ${esc(e.name)}</span>`;
+    });
+
+    // 2. Automatically and smoothly center the active exercise pill
+    const activePill = stepperPills.querySelector('.work-step-pill.active');
+    if (activePill && smoothCenter) {
+      activePill.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+
+    // 3. Update title
+    const curEx = S.act.ex[clampedIdx];
+    const exInfo = X(curEx.id);
+    if (stepperTitle) {
+      stepperTitle.innerHTML = `Exercise ${clampedIdx + 1} of ${S.act.ex.length}: <b>${esc(exInfo.name)}</b>`;
+    }
+
+    // 4. Update or render superset banner
+    const ssInfo = getSupersetInfo(S.act, clampedIdx);
+    if (stepperContainer) {
+      const existingSs = stepperContainer.querySelector('.superset-block-card');
+      const newSsHtml = ssInfo.isSuperset && ssInfo.isPaired ? renderSupersetBanner(ssInfo) : '';
+      if (existingSs && newSsHtml) {
+        existingSs.outerHTML = newSsHtml;
+      } else if (existingSs && !newSsHtml) {
+        existingSs.remove();
+      } else if (!existingSs && newSsHtml) {
+        stepperContainer.insertAdjacentHTML('beforeend', newSsHtml);
+      }
+    }
+
+    // 5. Update hero card and nav stepper in-place
+    heroCard.outerHTML = renderWorkHeroCard(S.act, clampedIdx);
+    if (navStepper) {
+      navStepper.outerHTML = renderWorkNavStepper(S.act, clampedIdx);
+    }
+
+    // 6. Update progress bar
+    updateWorkProgressHeader(S.act);
+    return;
+  }
+
+  // Fallback if not already in DOM
+  render();
+}
+
+function handleSetCompleted(i, j, s, x) {
+  const pr = checkSetPR(x.id, s, !!x.uni);
+  if (S.cfg.vibrate !== false && navigator.vibrate) {
+    navigator.vibrate(pr ? [40, 60, 120] : 40);
+  }
+
+  const ssInfo = getSupersetInfo(S.act, i);
+  if (ssInfo.isSuperset && ssInfo.isPaired) {
+    if (ssInfo.role === 'A') {
+      // Step 1: User finishes Set 1 of Exercise A -> Press Done -> NO rest timer begins -> Screen immediately transitions focus to Set 1 of Exercise B.
+      stopRest(true);
+      switchWorkExercise(ssInfo.exBIndex);
+      toast(`⚡ Switched to A2: ${esc(X(ssInfo.exB.id).name)} (Round ${j + 1})`);
+      focusSetInput(ssInfo.exBIndex, j);
+      return;
+    } else if (ssInfo.role === 'B') {
+      // Step 2: User finishes Set 1 of Exercise B -> Press Done -> REST TIMER BEGINS.
+      // Step 3: When rest timer finishes, automatically loop back to Set 2 of Exercise A.
+      switchWorkExercise(ssInfo.exBIndex);
+      const nextRoundSetIdx = j + 1;
+      if (nextRoundSetIdx < ssInfo.exA.sets.length) {
+        T.supersetLoop = {
+          targetEx: ssInfo.exAIndex,
+          targetSet: nextRoundSetIdx,
+          round: nextRoundSetIdx + 1,
+          totalRounds: ssInfo.totalRounds
+        };
+        startRest(S.cfg.rest);
+        toast(`⏱️ Superset Rest: Up Next Round ${nextRoundSetIdx + 1} (${esc(X(ssInfo.exA.id).name)})`);
+      } else {
+        T.supersetLoop = null;
+        startRest(S.cfg.rest);
+        toast(`🎉 Superset [A1 + A2] All ${ssInfo.totalRounds} Rounds Complete!`);
+      }
+      return;
+    }
+  }
+
+  // Regular non-superset exercise
+  if (!x.ss) {
+    startRest(S.cfg.rest);
+  }
+  switchWorkExercise(i, false);
+}
+
+function vWork() {
+  const a = S.act;
+  if (!a) { view = 'train'; return vTrain(); }
+  startWorkTimer();
+
+  if (!a.ex || !a.ex.length) {
+    return `<div class="work-top-bar">
+      <div class="work-title-group">
+        <div class="work-routine-name">${esc(a.name)}</div>
+        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
+      </div>
+      <div class="work-top-actions">
+        <button class="btn s sm-btn red" data-a="cancel">Discard</button>
+      </div>
+    </div>
+    <div class="card" style="text-align:center;padding:32px 16px">
+      <p class="t2">No exercises added to this workout session yet.</p>
+      <button class="btn" data-a="addex" style="margin-top:12px">${ic('plus', 18)} Add First Exercise</button>
+    </div>`;
+  }
+
+  const curIdx = Math.min(Math.max(0, a.curEx || 0), a.ex.length - 1);
+  a.curEx = curIdx;
+
+  const currentEx = a.ex[curIdx];
+  const exInfo = X(currentEx.id);
+
+  const allSets = a.ex.flatMap(x => x.sets);
+  const doneSets = allSets.filter(s => s.done).length;
+  const totalSets = allSets.length;
+  const pct = totalSets ? Math.round((doneSets / totalSets) * 100) : 0;
+  const ssInfo = getSupersetInfo(a, curIdx);
+
+  return `
+    <div class="work-top-bar">
+      <div class="work-title-group">
+        <div class="work-routine-name">${esc(a.name)}</div>
+        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
+      </div>
+      <div class="work-top-actions">
+        <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
+        <button class="btn sm-btn" data-a="fin">Finish</button>
+        <button class="btn s sm-btn red" data-a="cancel">✕</button>
+      </div>
+    </div>
+
+    <!-- Overall Workout Progress Bar -->
+    <div class="work-progress-bar">
+      <div class="work-progress-fill" style="width: ${pct}%"></div>
+    </div>
+
+    <!-- Stepper Header & Breadcrumb Carousel -->
+    <div class="work-stepper-container" id="work-stepper-container">
+      ${a.isDeload ? `<div class="deload-work-banner">⚡ <b>Deload Protocol Active:</b> Volume halved (-50%) & Load -20% for CNS recovery.</div>` : ''}
+      <div class="work-stepper-title" id="work-stepper-title">Exercise ${curIdx + 1} of ${a.ex.length}: <b>${esc(exInfo.name)}</b></div>
+      <div class="work-stepper-pills" id="work-stepper-pills">
+        ${a.ex.map((x, i) => {
+          const e = X(x.id);
+          const isDone = x.sets.length > 0 && x.sets.every(s => s.done);
+          const isCur = i === curIdx;
+          const hasFail = x.sets.some(s => s.rir === 0 || s.rpe >= 10);
+          const ss = getSupersetInfo(a, i);
+          const ssTag = ss.isSuperset && ss.isPaired ? (ss.role === 'A' ? '[A1] ' : '[A2] ') : '';
+          return `<button class="work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''} ${hasFail ? 'has-fail' : ''} ${ss.isSuperset && ss.isPaired ? 'ss-pill' : ''}" data-a="setcurex" data-i="${i}">
+            <span>${isDone ? '✓ ' : ''}${hasFail ? '💥 ' : ''}${ssTag}${i + 1}. ${esc(e.name)}</span>
+          </button>`;
+        }).join('')}
+      </div>
+      ${renderSupersetBanner(ssInfo)}
+    </div>
+
+    <!-- Live Exercise Card with Decluttered Media and Horizontal Toolbar -->
+    ${renderWorkHeroCard(a, curIdx)}
+
+    <!-- Sticky Stepper Controls Navigation -->
+    ${renderWorkNavStepper(a, curIdx)}
 
     <div class="row g" style="margin-top:14px">
       <button class="btn s" data-a="addex">${ic('plus', 16)} Add Exercise</button>
@@ -1797,6 +2194,9 @@ const vHist = () => {
 
 function render() {
   const v = $('#v'), y = v.scrollTop;
+  const oldStepper = document.querySelector('.work-stepper-pills');
+  const savedStepperScroll = oldStepper ? oldStepper.scrollLeft : null;
+
   v.innerHTML = ({
     train: vTrain,
     work: vWork,
@@ -1806,6 +2206,17 @@ function render() {
     hist: vHist
   })[view]();
   v.scrollTop = y;
+
+  const newStepper = document.querySelector('.work-stepper-pills');
+  if (newStepper) {
+    if (savedStepperScroll != null && savedStepperScroll > 0) {
+      newStepper.scrollLeft = savedStepperScroll;
+    }
+    const activePill = newStepper.querySelector('.work-step-pill.active');
+    if (activePill) {
+      activePill.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
 
   $('#tabs').innerHTML = [
     ['train', 'act', 'Train'],
@@ -2253,7 +2664,7 @@ function showSettingsModal() {
         <div class="card settings-card">
           <div class="settings-row">
             <span class="settings-label">App Shell Version</span>
-            <span class="chip on" style="font-family:monospace;font-size:11px">v5.0.0-gold</span>
+            <span class="chip on" style="font-family:monospace;font-size:11px">v5.1.0-flow</span>
           </div>
           <div class="settings-divider"></div>
           <div class="settings-row">
@@ -2560,7 +2971,23 @@ document.addEventListener('click', e => {
     case 'close': close(); return;
     case 'undo': U?.(); $('#toast').className = ''; return;
     case 'r15': T.end += 15000; tick(); return;
-    case 'rskip': stopRest(); return;
+    case 'rskip': {
+      const loop = T.supersetLoop;
+      stopRest(true);
+      if (loop && S.act && S.act.ex[loop.targetEx] && loop.targetSet < S.act.ex[loop.targetEx].sets.length) {
+        switchWorkExercise(loop.targetEx);
+        toast(`⚡ Superset Round ${loop.round} of ${loop.totalRounds}: ${esc(X(S.act.ex[loop.targetEx].id).name)}`);
+        focusSetInput(loop.targetEx, loop.targetSet);
+      }
+      return;
+    }
+    case 'zoomexgif': {
+      const targetId = id || t.dataset.id || (S.act?.ex[S.act.curEx]?.id);
+      if (targetId) {
+        showExpandedGifModal(targetId);
+      }
+      return;
+    }
 
     // Library category and pagination
     case 'libcat': {
@@ -2742,15 +3169,32 @@ document.addEventListener('click', e => {
         isDeload: isDeloadActive,
         t0: Date.now(),
         curEx: 0,
-        ex: r ? r.ex.map(x => {
+        ex: r ? r.ex.map((x, idx, arr) => {
           const baseSets = Math.max(1, x.sets || 1);
           const targetSets = isDeloadActive ? Math.max(1, Math.round(baseSets * 0.5)) : baseSets;
           const targetWeight = isDeloadActive ? Math.max(0, rd((x.w || 0) * 0.8)) : (x.w || 0);
           const targetReps = x.prog === 'double' ? (x.cur || x.reps) : x.reps;
           const isUni = x.uni !== undefined ? !!x.uni : isUnilateralExercise(X(x.id).name);
+          const isSs = !!x.ss;
+          let ssRole = null;
+          let ssPair = null;
+          if (isSs) {
+            if (arr[idx - 1] && arr[idx - 1].ss) {
+              ssRole = 'B';
+              ssPair = 'ss_' + (idx - 1);
+            } else if (arr[idx + 1] && arr[idx + 1].ss) {
+              ssRole = 'A';
+              ssPair = 'ss_' + idx;
+            } else {
+              ssRole = 'A';
+              ssPair = 'ss_' + idx;
+            }
+          }
           return {
             id: x.id,
-            ss: !!x.ss,
+            ss: isSs,
+            ssRole,
+            ssPair,
             uni: isUni,
             note: x.note || getLastExerciseNote(x.id),
             sets: Array.from({ length: targetSets }, () => ({
@@ -2772,31 +3216,19 @@ document.addEventListener('click', e => {
     }
     case 'workprev': {
       if (S.act && S.act.curEx > 0) {
-        S.act.curEx--;
-        save('act');
-        render();
-        const v = $('#v');
-        if (v) v.scrollTop = 0;
+        switchWorkExercise(S.act.curEx - 1);
       }
       return;
     }
     case 'worknext': {
       if (S.act && S.act.curEx < S.act.ex.length - 1) {
-        S.act.curEx++;
-        save('act');
-        render();
-        const v = $('#v');
-        if (v) v.scrollTop = 0;
+        switchWorkExercise(S.act.curEx + 1);
       }
       return;
     }
     case 'setcurex': {
       if (S.act) {
-        S.act.curEx = Math.max(0, Math.min(S.act.ex.length - 1, +t.dataset.i));
-        save('act');
-        render();
-        const v = $('#v');
-        if (v) v.scrollTop = 0;
+        switchWorkExercise(+t.dataset.i);
       }
       return;
     }
@@ -2829,9 +3261,7 @@ document.addEventListener('click', e => {
     case 'jumpworkex': {
       close();
       if (S.act) {
-        S.act.curEx = +t.dataset.i;
-        save('act');
-        render();
+        switchWorkExercise(+t.dataset.i);
       }
       return;
     }
@@ -2855,29 +3285,29 @@ document.addEventListener('click', e => {
           s.done = false;
           s.sideL = false;
           s.sideR = false;
+          save('act');
+          switchWorkExercise(i, false);
+          return;
         } else {
           s.done = true;
           s.sideL = true;
           s.sideR = true;
-          if (!x.ss) startRest(S.cfg.rest);
-          const pr = checkSetPR(x.id, s, true);
-          if (S.cfg.vibrate !== false && navigator.vibrate) {
-            navigator.vibrate(pr ? [40, 60, 120] : 40);
-          }
+          save('act');
+          handleSetCompleted(i, j, s, x);
+          return;
         }
       } else {
         const wasDone = s.done;
         s.done = !s.done;
+        save('act');
         if (!wasDone && s.done) {
-          if (!x.ss) startRest(S.cfg.rest);
-          const pr = checkSetPR(x.id, s, false);
-          if (S.cfg.vibrate !== false && navigator.vibrate) {
-            navigator.vibrate(pr ? [40, 60, 120] : 40);
-          }
+          handleSetCompleted(i, j, s, x);
+          return;
+        } else {
+          switchWorkExercise(i, false);
+          return;
         }
       }
-      save('act');
-      break;
     }
     case 'toggleuni': {
       const x = S.act?.ex[i];
@@ -2914,13 +3344,12 @@ document.addEventListener('click', e => {
       s.done = !!(s.sideL && s.sideR);
       save('act');
       if (!wasDone && s.done) {
-        if (!x.ss) startRest(S.cfg.rest);
-        const pr = checkSetPR(x.id, s, true);
-        if (S.cfg.vibrate !== false && navigator.vibrate) {
-          navigator.vibrate(pr ? [40, 60, 120] : 40);
-        }
+        handleSetCompleted(i, j, s, x);
+        return;
+      } else {
+        switchWorkExercise(i, false);
+        return;
       }
-      break;
     }
     case 'doner': {
       const x = S.act?.ex[i], s = x?.sets[j];
@@ -2930,13 +3359,12 @@ document.addEventListener('click', e => {
       s.done = !!(s.sideL && s.sideR);
       save('act');
       if (!wasDone && s.done) {
-        if (!x.ss) startRest(S.cfg.rest);
-        const pr = checkSetPR(x.id, s, true);
-        if (S.cfg.vibrate !== false && navigator.vibrate) {
-          navigator.vibrate(pr ? [40, 60, 120] : 40);
-        }
+        handleSetCompleted(i, j, s, x);
+        return;
+      } else {
+        switchWorkExercise(i, false);
+        return;
       }
-      break;
     }
     case 'openrir': {
       showRirPicker(i, j);
@@ -2997,12 +3425,80 @@ document.addEventListener('click', e => {
       }
       return;
     }
-    case 'ss': {
-      if (S.act?.ex[i]) {
-        S.act.ex[i].ss = !S.act.ex[i].ss;
-        save('act');
+    case 'linkss': {
+      if (S.act) {
+        const curI = +t.dataset.i;
+        if (curI < S.act.ex.length - 1) {
+          const pairId = 'ss_' + Date.now();
+          S.act.ex[curI].ss = true;
+          S.act.ex[curI].ssPair = pairId;
+          S.act.ex[curI].ssRole = 'A';
+          S.act.ex[curI + 1].ss = true;
+          S.act.ex[curI + 1].ssPair = pairId;
+          S.act.ex[curI + 1].ssRole = 'B';
+          save('act');
+          switchWorkExercise(curI, false);
+          toast(`🔗 Paired [${esc(X(S.act.ex[curI].id).name)}] + [${esc(X(S.act.ex[curI + 1].id).name)}] as Superset [A1 + A2]`);
+        } else {
+          toast('Add another exercise after this one to create a superset pair');
+        }
       }
-      break;
+      return;
+    }
+    case 'unlinkss': {
+      if (S.act) {
+        const curI = +t.dataset.i;
+        const ssInfo = getSupersetInfo(S.act, curI);
+        if (ssInfo.isSuperset) {
+          if (ssInfo.exA) {
+            delete ssInfo.exA.ss;
+            delete ssInfo.exA.ssPair;
+            delete ssInfo.exA.ssRole;
+          }
+          if (ssInfo.exB) {
+            delete ssInfo.exB.ss;
+            delete ssInfo.exB.ssPair;
+            delete ssInfo.exB.ssRole;
+          }
+          save('act');
+          switchWorkExercise(curI, false);
+          toast('Unlinked superset pair');
+        }
+      }
+      return;
+    }
+    case 'ss': {
+      if (S.act) {
+        const curI = i !== undefined && !isNaN(i) ? i : +t.dataset.i;
+        const ssInfo = getSupersetInfo(S.act, curI);
+        if (ssInfo.isSuperset) {
+          if (ssInfo.exA) {
+            delete ssInfo.exA.ss;
+            delete ssInfo.exA.ssPair;
+            delete ssInfo.exA.ssRole;
+          }
+          if (ssInfo.exB) {
+            delete ssInfo.exB.ss;
+            delete ssInfo.exB.ssPair;
+            delete ssInfo.exB.ssRole;
+          }
+          toast('Unlinked superset pair');
+        } else if (curI < S.act.ex.length - 1) {
+          const pairId = 'ss_' + Date.now();
+          S.act.ex[curI].ss = true;
+          S.act.ex[curI].ssPair = pairId;
+          S.act.ex[curI].ssRole = 'A';
+          S.act.ex[curI + 1].ss = true;
+          S.act.ex[curI + 1].ssPair = pairId;
+          S.act.ex[curI + 1].ssRole = 'B';
+          toast(`🔗 Paired as Superset [A1 + A2]`);
+        } else {
+          toast('Add another exercise after this one to create a superset pair');
+        }
+        save('act');
+        switchWorkExercise(curI, false);
+      }
+      return;
     }
     case 'addex': {
       P = null;
@@ -3432,7 +3928,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.1.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -3444,3 +3940,24 @@ document.addEventListener('touchcancel', () => {
     });
   }
 })();
+
+// Expose test & inspection handle
+if (typeof globalThis !== 'undefined') {
+  globalThis.__MYGYM__ = {
+    APP_VERSION,
+    SHELL_VERSION,
+    calcWorkload,
+    checkDeloadStatus,
+    getSupersetInfo,
+    renderSupersetBanner,
+    renderWorkHeroCard,
+    showExpandedGifModal,
+    switchWorkExercise,
+    handleSetCompleted,
+    S,
+    T,
+    setVolume,
+    EXIDX
+  };
+}
+
