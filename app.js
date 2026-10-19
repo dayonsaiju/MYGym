@@ -545,33 +545,27 @@ const renderRoutineSummaryRow = x => {
   `;
 };
 
-// ---- Unified Streak Badge Component ----
-const renderStreakBadge = (extra = '') => {
+// ---- Unified Streak Badge Component (Apple-Style Status Pill) ----
+const renderStreakBadge = () => {
   const s = streak();
-  if (s === 0) {
-    return `
-      <div class="card streak-badge-card empty-streak">
-        <div class="streak-badge-left">
-          <span class="streak-fire">🔥</span>
-          <div>
-            <div class="streak-title">Start your first streak today! 🚀</div>
-            <div class="t2 sm">${S.logs.length ? `${S.logs.length} workouts completed` : 'Log your first workout to build momentum'}</div>
-          </div>
-        </div>
-        ${extra || (!S.act ? `<button class="btn s sm-btn" data-a="start">Start Workout</button>` : '')}
-      </div>
-    `;
+  let encouragingText = 'Ready for your first session? 💪';
+  if (s === 1) {
+    encouragingText = 'Great start! Keep it up 💪';
+  } else if (s > 1) {
+    encouragingText = `${s} days strong! Keep going 🔥`;
+  } else if (S.logs && S.logs.length > 0) {
+    encouragingText = 'Ready for your next session? 💪';
   }
+
   return `
-    <div class="card streak-badge-card">
+    <div class="streak-badge-card">
       <div class="streak-badge-left">
         <span class="streak-fire">🔥</span>
-        <div>
-          <div class="streak-count"><b>${s}</b> Day Streak</div>
-          <div class="t2 sm">${S.logs.length} workouts completed</div>
-        </div>
+        <span class="streak-count"><b>${s}</b> Day Streak</span>
       </div>
-      ${extra}
+      <div class="streak-encouragement-badge">
+        <span>${encouragingText}</span>
+      </div>
     </div>
   `;
 };
