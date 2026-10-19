@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.3.0';
-const SHELL_VERSION = 'mygym-v5.3.0-giantset';
+const APP_VERSION = '5.3.1';
+const SHELL_VERSION = 'mygym-v5.3.1-ui';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -664,9 +664,9 @@ document.addEventListener('visibilitychange', () => {
   if (S.act && document.visibilityState === 'visible') wake();
 });
 
-// ---- UI Helpers ----
-const modal = h => {
-  $('#m').innerHTML = `<div class="sheet"><button class="x" data-a="close">Close</button>${h}</div>`;
+const modal = (h, opts = {}) => {
+  const showX = opts?.hideClose ? '' : '<button class="x" data-a="close">Close</button>';
+  $('#m').innerHTML = `<div class="sheet">${showX}${h}</div>`;
   $('#m').hidden = false;
 };
 const close = () => {
@@ -1482,23 +1482,29 @@ function showSupersetPicker(exIdx) {
   });
 
   const nextPosLabel = isAlreadyPaired ? `A${ssInfo.groupLength + 1}` : 'A2';
-  const actionBtnText = isAlreadyPaired ? `+ Add ${nextPosLabel}` : '🔗 Link';
+  const actionBtnText = isAlreadyPaired ? `+ Link ${nextPosLabel}` : '+ Link';
   const actionDataA = isAlreadyPaired ? 'addtosupergroup' : 'pairwithex';
 
   const sessionListHtml = candidates.length
     ? candidates.map(c => `
-        <div class="ss-picker-row">
-          <img class="ex-thumb" src="./media/${esc(c.info.img || c.info.gif)}" alt="${esc(c.info.name)}" onerror="this.style.display='none'">
-          <div class="ss-picker-details">
-            <div class="ss-picker-name">${esc(c.info.name)}</div>
-            <div class="ss-picker-meta">${esc(c.info.tg || c.info.g)} · ${esc(c.info.eq)}</div>
+        <div class="ss-pick-item ss-picker-row">
+          <div class="ss-item-left">
+            <img class="ss-item-thumb ex-thumb" src="./media/${esc(c.info.img || c.info.gif)}" alt="${esc(c.info.name)}" onerror="this.style.display='none'">
+            <div class="ss-item-meta ss-picker-details">
+              <div class="ss-item-name ss-picker-name">${esc(c.info.name)}</div>
+              <div class="ss-item-tags ss-picker-meta">
+                <span class="ss-item-tag">${esc(c.info.tg || c.info.g)}</span>
+                <span class="ss-item-dot">•</span>
+                <span class="ss-item-tag">${esc(c.info.eq)}</span>
+              </div>
+            </div>
           </div>
-          <button class="btn s sm-btn ss-link-action-btn" data-a="${actionDataA}" data-source="${exIdx}" data-target="${c.idx}">
+          <button class="ss-link-pill-btn ss-link-action-btn" data-a="${actionDataA}" data-source="${exIdx}" data-target="${c.idx}">
             ${actionBtnText}
           </button>
         </div>
       `).join('')
-    : `<div class="ss-picker-empty">No other unlinked exercises in this workout session.</div>`;
+    : `<div class="ss-picker-empty">All session exercises are currently paired.</div>`;
 
   const currentBlockHtml = isAlreadyPaired ? `
     <div class="ss-picker-section ss-unlink-section">
@@ -1511,53 +1517,44 @@ function showSupersetPicker(exIdx) {
           </div>
           <div class="t2 sm">Round ${ssInfo.round} of ${ssInfo.totalRounds} · ${ssInfo.groupLength} Exercises</div>
         </div>
-        <button class="btn s sm-btn red" data-a="unlinkss" data-i="${exIdx}">Unlink Block</button>
+        <button class="btn s sm-btn red ss-unlink-btn" data-a="unlinkss" data-i="${exIdx}">Unlink Block</button>
       </div>
     </div>
   ` : '';
 
-  const modalTitle = isAlreadyPaired ? `${ssInfo.typeLabel} Block Manager` : 'Superset Pairing';
-  const modalSubtitle = isAlreadyPaired
-    ? `Add more exercises to expand into a Tri-Set or Giant Set`
-    : `Pair <b>${esc(curInfo.name)}</b> into a multi-exercise block`;
-
+  const modalTitle = isAlreadyPaired ? 'Build Superset Block' : 'Pair Superset';
   const sessionSectionTitle = isAlreadyPaired
-    ? `+ Add Another Exercise to this Block (Tri-Set / Giant Set)`
-    : `1. Choose from Current Session`;
+    ? '+ Add Another Exercise to this Block (Tri-Set / Giant Set)'
+    : '1. Choose from Current Session';
 
   const sessionSectionSub = isAlreadyPaired
     ? `<div style="font-size:12px;color:var(--t2);margin-bottom:8px">Select an exercise from current workout to append as <b>${nextPosLabel}</b>:</div>`
     : '';
 
   const librarySectionTitle = isAlreadyPaired
-    ? `Or Append from Library`
-    : `2. Add & Pair from Library`;
-
-  const libraryPrompt = isAlreadyPaired
-    ? `Select an exercise from the library to append directly into this block as <b>${nextPosLabel}</b>.`
-    : `Select an exercise from the library to append and pair as an A1 + A2 block immediately.`;
-
-  const libraryBtnLabel = isAlreadyPaired
-    ? `+ Browse & Add from Library`
-    : `Browse Exercise Library`;
+    ? 'Or Append from Library'
+    : '2. Add & Pair from Library';
 
   const libraryDataA = isAlreadyPaired ? 'browseandaddtosupergroup' : 'browseandpair';
 
   modal(`
     <div class="ss-picker-sheet">
       <div class="ss-picker-header">
-        <div>
+        <div class="ss-picker-header-text">
           <h2 class="ss-picker-title">${modalTitle}</h2>
-          <div class="t2 sm">${modalSubtitle}</div>
+          <div class="ss-picker-subtitle">
+            <span>Pairing with</span>
+            <span class="ss-source-badge">${esc(curInfo.name)}</span>
+          </div>
         </div>
-        <button class="btn s sm-btn" data-a="close">✕</button>
+        <button class="ss-modal-close-btn" data-a="close" aria-label="Close" title="Close">✕</button>
       </div>
 
       ${currentBlockHtml}
 
       <div class="ss-picker-section">
         <div class="ss-picker-section-title">${sessionSectionTitle}</div>
-        <div class="card ss-picker-list-card">
+        <div class="ss-picker-list-container ss-picker-list-card">
           ${sessionSectionSub}
           ${sessionListHtml}
         </div>
@@ -1565,15 +1562,15 @@ function showSupersetPicker(exIdx) {
 
       <div class="ss-picker-section">
         <div class="ss-picker-section-title">${librarySectionTitle}</div>
-        <div class="card ss-library-action-card">
-          <p class="t2 sm" style="margin:0 0 10px">${libraryPrompt}</p>
-          <button class="btn ss-picker-browse-btn" data-a="${libraryDataA}" data-i="${exIdx}">
-            ${ic('plus', 16)} ${libraryBtnLabel}
+        <div class="ss-library-card ss-library-action-card">
+          <div class="ss-library-hint">Need an exercise not in today's split?</div>
+          <button class="ss-library-browse-btn ss-picker-browse-btn" data-a="${libraryDataA}" data-i="${exIdx}">
+            + Browse Exercise Library
           </button>
         </div>
       </div>
     </div>
-  `);
+  `, { hideClose: true });
 }
 
 function addToSupergroup(sourceIdx, targetIdx) {
@@ -4274,7 +4271,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.3.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.3.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

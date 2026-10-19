@@ -2514,11 +2514,15 @@ textarea.note:focus {
   gap: 8px;
 }
 
-/* ---- v5.2.0: Dynamic Superset Picker Modal Styling ---- */
+/* ---- v5.3.1: Redesigned iOS Superset Picker Modal Styling ---- */
 .ss-picker-sheet {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
+}
+
+.sheet:has(.ss-picker-sheet) > .x {
+  display: none !important;
 }
 
 .ss-picker-header {
@@ -2526,6 +2530,12 @@ textarea.note:focus {
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
+  padding-bottom: 2px;
+}
+
+.ss-picker-header-text {
+  min-width: 0;
+  flex: 1;
 }
 
 .ss-picker-title {
@@ -2533,6 +2543,60 @@ textarea.note:focus {
   font-size: 20px;
   font-weight: 700;
   letter-spacing: -0.3px;
+  color: #FFFFFF;
+}
+
+.ss-picker-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--t2);
+  margin-top: 4px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.ss-source-badge {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.1);
+  color: #FFFFFF;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ss-modal-close-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 0.5px solid rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+  transition: all 0.15s ease;
+}
+
+.ss-modal-close-btn:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .ss-picker-section {
@@ -2550,96 +2614,168 @@ textarea.note:focus {
   padding-left: 2px;
 }
 
-.ss-picker-list-card {
-  padding: 4px 14px;
-  max-height: 38vh;
+.ss-picker-list-container {
+  max-height: 42vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  padding-right: 2px;
 }
 
-.ss-picker-row {
+.ss-pick-item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 0;
-  border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  margin-bottom: 8px;
+  transition: background 0.15s ease;
 }
 
-.ss-picker-row:last-child {
-  border-bottom: none;
+.ss-pick-item:last-child {
+  margin-bottom: 0;
 }
 
-.ss-picker-details {
-  flex: 1;
+.ss-pick-item:active {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ss-item-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
+  flex: 1;
 }
 
-.ss-picker-name {
-  font-size: 14px;
+.ss-item-thumb {
+  width: 48px;
+  height: 48px;
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  object-fit: contain;
+  flex-shrink: 0;
+  padding: 2px;
+}
+
+.ss-item-meta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ss-item-name {
+  font-size: 15px;
   font-weight: 600;
   color: #FFFFFF;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.25;
 }
 
-.ss-picker-meta {
+.ss-item-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 12px;
   color: var(--t2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ss-item-tag {
+  color: var(--t2);
+  font-size: 12px;
   text-transform: capitalize;
-  margin-top: 2px;
 }
 
-.ss-link-action-btn {
-  min-height: 32px;
-  padding: 4px 12px;
-  font-weight: 700;
-  background: rgba(255, 159, 10, 0.18);
-  border: 0.5px solid rgba(255, 159, 10, 0.45);
-  color: var(--am);
-  border-radius: 10px;
+.ss-item-dot {
+  color: var(--t2);
+  opacity: 0.6;
+  font-size: 10px;
+}
+
+.ss-link-pill-btn {
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 20px;
+  background: #0A84FF;
+  color: #FFFFFF;
+  border: none;
+  white-space: nowrap;
   flex-shrink: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto !important;
+  min-height: 34px;
+  margin: 0;
   transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(10, 132, 255, 0.25);
 }
 
-.ss-link-action-btn:active {
+.ss-link-pill-btn:active {
   transform: scale(0.96);
-  background: rgba(255, 159, 10, 0.3);
+  background: #0071E3;
 }
 
 .ss-picker-empty {
-  padding: 18px 12px;
+  padding: 24px 16px;
   text-align: center;
   color: var(--t2);
   font-size: 13px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
 }
 
-.ss-library-action-card {
+.ss-library-card {
   padding: 14px;
-  text-align: center;
-  background: rgba(10, 132, 255, 0.06);
-  border: 0.5px solid rgba(10, 132, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.ss-picker-browse-btn {
+.ss-library-hint {
+  font-size: 13px;
+  color: var(--t2);
+  line-height: 1.3;
+}
+
+.ss-library-browse-btn {
   width: 100%;
-  min-height: 44px;
-  font-weight: 700;
+  padding: 14px;
+  background: rgba(10, 132, 255, 0.15);
+  border: 1px solid rgba(10, 132, 255, 0.4);
+  color: #0A84FF;
+  border-radius: 12px;
+  font-weight: 600;
   font-size: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--ac);
-  color: #FFFFFF;
-  border-radius: 12px;
-  box-shadow: 0 4px 14px rgba(10, 132, 255, 0.3);
+  cursor: pointer;
   transition: all 0.15s ease;
+  min-height: 44px;
 }
 
-.ss-picker-browse-btn:active {
+.ss-library-browse-btn:active {
   transform: scale(0.98);
+  background: rgba(10, 132, 255, 0.25);
 }
 
 .ss-unlink-section {
@@ -2652,8 +2788,8 @@ textarea.note:focus {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  background: rgba(255, 159, 10, 0.1);
-  border: 1px solid rgba(255, 159, 10, 0.35);
+  background: rgba(255, 159, 10, 0.08);
+  border: 1px solid rgba(255, 159, 10, 0.3);
   border-radius: 14px;
 }
 
@@ -2669,6 +2805,17 @@ textarea.note:focus {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ss-unlink-btn {
+  width: auto !important;
+  flex-shrink: 0;
+  margin: 0;
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
 }
 
 

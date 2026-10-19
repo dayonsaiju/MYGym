@@ -274,7 +274,7 @@ function it(name, fn) {
 }
 
 console.log('\n======================================================');
-console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.3.0-giantset)');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.3.1-ui)');
 console.log('======================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -432,11 +432,26 @@ it('showSupersetPicker renders dynamic modal sheet with current session and libr
   assert(html.includes('ss-picker-sheet'), 'Must render ss-picker-sheet');
   assert(html.includes('1. Choose from Current Session'), 'Must have Section 1');
   assert(html.includes('2. Add & Pair from Library'), 'Must have Section 2');
+  assert(html.includes('ss-modal-close-btn'), 'Must have circular frosted close button');
+  assert(html.includes('ss-pick-item'), 'Must have ss-pick-item flex row');
+  assert(html.includes('ss-link-pill-btn'), 'Must have ss-link-pill-btn');
+  assert(html.includes('ss-source-badge'), 'Must have source exercise badge');
+  assert(html.includes('Need an exercise not in today\'s split?'), 'Must have library helper text');
+  assert(html.includes('+ Browse Exercise Library'), 'Must have browse library button text');
   assert(html.includes('data-a="browseandpair"'), 'Must have browse library button');
   assert(html.includes('data-a="pairwithex"'), 'Must have pairwithex action');
   assert(!html.includes('data-target="0"'), 'Section 1 must exclude current exercise itself');
   assert(html.includes('data-target="1"'), 'Section 1 must include exercise 1');
   assert(html.includes('data-target="2"'), 'Section 1 must include exercise 2');
+
+  // Verify empty state when all exercises in session are paired
+  api.S.act.ex[1].ss = true;
+  api.S.act.ex[1].ssGroup = 'ss_other';
+  api.S.act.ex[2].ss = true;
+  api.S.act.ex[2].ssGroup = 'ss_other';
+  api.showSupersetPicker(0);
+  const emptyHtml = elementsMap['#m'].innerHTML;
+  assert(emptyHtml.includes('All session exercises are currently paired.'), 'Must show clean empty state message');
 });
 
 it('pairExercises reorders non-adjacent exercises to create an immediate adjacent A1 + A2 block', () => {
@@ -858,24 +873,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.3.0-giantset, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.3.0-giantset';"), 'sw.js must use mygym-core-v5.3.0-giantset cache name');
-  assert(swCode.includes("'./style.css?v=5.3.0'"), 'sw.js must precache style.css?v=5.3.0');
-  assert(swCode.includes("'./app.js?v=5.3.0'"), 'sw.js must precache app.js?v=5.3.0');
+it('sw.js cache key is bumped to mygym-core-v5.3.1-ui, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.3.1-ui';"), 'sw.js must use mygym-core-v5.3.1-ui cache name');
+  assert(swCode.includes("'./style.css?v=5.3.1'"), 'sw.js must precache style.css?v=5.3.1');
+  assert(swCode.includes("'./app.js?v=5.3.1'"), 'sw.js must precache app.js?v=5.3.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.3.0'), 'index.html must link style.css?v=5.3.0');
-  assert(htmlCode.includes('app.js?v=5.3.0'), 'index.html must load app.js?v=5.3.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.3.0-giantset'"), 'index.html must use mygym-v5.3.0-giantset');
+  assert(htmlCode.includes('style.css?v=5.3.1'), 'index.html must link style.css?v=5.3.1');
+  assert(htmlCode.includes('app.js?v=5.3.1'), 'index.html must load app.js?v=5.3.1');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.3.1-ui'"), 'index.html must use mygym-v5.3.1-ui');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.3.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.3.0-giantset');
+  assert.equal(api.APP_VERSION, '5.3.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.3.1-ui');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
