@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.2.0';
-const SHELL_VERSION = 'mygym-v5.2.0-superset';
+const APP_VERSION = '5.3.0';
+const SHELL_VERSION = 'mygym-v5.3.0-giantset';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1293,65 +1293,87 @@ function getSupersetInfo(act, exIdx) {
     return { isSuperset: false };
   }
 
-  let exAIndex = -1;
-  let exBIndex = -1;
-  let role = curEx.ssRole || null;
+  // 1. Identify group by ssGroup or legacy ssPair
+  let groupKey = curEx.ssGroup || curEx.ssPair;
+  let groupIndices = [];
 
-  // 1. If ssGroup or ssPair is set, search for matching paired exercise in act.ex
-  const pairKey = curEx.ssGroup || curEx.ssPair;
-  if (pairKey) {
-    const pairIndices = [];
+  if (groupKey) {
     act.ex.forEach((x, idx) => {
-      if (x && x.ss && (x.ssGroup === pairKey || x.ssPair === pairKey)) {
-        pairIndices.push(idx);
+      if (x && x.ss && (x.ssGroup === groupKey || x.ssPair === groupKey)) {
+        groupIndices.push(idx);
       }
     });
-    if (pairIndices.length >= 2) {
-      exAIndex = pairIndices[0];
-      exBIndex = pairIndices[1];
-      role = exIdx === exAIndex ? 'A' : 'B';
+  }
+
+  // 2. Fallback to contiguous block of .ss if groupKey not shared by at least 2
+  if (groupIndices.length < 2) {
+    let start = exIdx;
+    while (start > 0 && act.ex[start - 1]?.ss) start--;
+    let end = exIdx;
+    while (end < act.ex.length - 1 && act.ex[end + 1]?.ss) end++;
+    if (end > start) {
+      groupIndices = [];
+      for (let k = start; k <= end; k++) groupIndices.push(k);
+      groupKey = act.ex[start].ssGroup || act.ex[start].ssPair || `ss_${start}`;
     }
   }
 
-  // 2. Fallback to adjacent if not found by pairKey
-  if (exAIndex === -1 || exBIndex === -1) {
-    if (role === 'A' && act.ex[exIdx + 1]?.ss) {
-      exAIndex = exIdx;
-      exBIndex = exIdx + 1;
-    } else if (role === 'B' && act.ex[exIdx - 1]?.ss) {
-      exAIndex = exIdx - 1;
-      exBIndex = exIdx;
-    } else if (act.ex[exIdx + 1]?.ss) {
-      exAIndex = exIdx;
-      exBIndex = exIdx + 1;
-      role = 'A';
-    } else if (act.ex[exIdx - 1]?.ss) {
-      exAIndex = exIdx - 1;
-      exBIndex = exIdx;
-      role = 'B';
-    } else {
-      return {
-        isSuperset: true,
-        isPaired: false,
-        role: 'A',
-        exAIndex: exIdx,
-        exA: curEx,
-        round: 1,
-        totalRounds: curEx.sets ? curEx.sets.length : 1
-      };
-    }
+  if (groupIndices.length < 2) {
+    return {
+      isSuperset: true,
+      isPaired: false,
+      role: 'A',
+      pos: 0,
+      label: 'A1',
+      exAIndex: exIdx,
+      exBIndex: -1,
+      exA: curEx,
+      exB: null,
+      exercises: [{ idx: exIdx, pos: 0, label: 'A1', ex: curEx, info: X(curEx.id) }],
+      groupIndices: [exIdx],
+      groupLength: 1,
+      tag: 'SUPERSET [A1]',
+      typeLabel: 'SUPERSET',
+      round: 1,
+      totalRounds: curEx.sets ? curEx.sets.length : 1
+    };
   }
 
-  const exA = act.ex[exAIndex];
-  const exB = act.ex[exBIndex];
-  const totalRounds = Math.max(exA?.sets?.length || 1, exB?.sets?.length || 1);
+  groupIndices.sort((a, b) => a - b);
+  const pos = groupIndices.indexOf(exIdx);
+  const groupLength = groupIndices.length;
+  const label = `A${pos + 1}`;
+  const role = pos === 0 ? 'A' : (pos === 1 ? 'B' : String.fromCharCode(65 + pos));
 
-  // Compute active round based on uncompleted sets in pair
+  let typeLabel = 'SUPERSET';
+  if (groupLength === 2) {
+    typeLabel = 'SUPERSET';
+  } else if (groupLength === 3) {
+    typeLabel = 'TRI-SET';
+  } else {
+    typeLabel = 'GIANT SET';
+  }
+
+  const tagList = groupIndices.map((_, p) => `A${p + 1}`).join(' + ');
+  const tag = `${typeLabel} [${tagList}]`;
+
+  const groupExercises = groupIndices.map((idx, p) => ({
+    idx,
+    pos: p,
+    label: `A${p + 1}`,
+    ex: act.ex[idx],
+    info: X(act.ex[idx].id)
+  }));
+
+  const totalRounds = Math.max(...groupExercises.map(item => item.ex?.sets?.length || 1), 1);
+
   let currentRound = 1;
   for (let k = 0; k < totalRounds; k++) {
-    const aDone = exA?.sets?.[k]?.done;
-    const bDone = exB?.sets?.[k]?.done;
-    if (!aDone || !bDone) {
+    const allInRoundDone = groupExercises.every(item => {
+      const set = item.ex?.sets?.[k];
+      return !set || set.done;
+    });
+    if (!allInRoundDone) {
       currentRound = k + 1;
       break;
     }
@@ -1360,16 +1382,36 @@ function getSupersetInfo(act, exIdx) {
     }
   }
 
+  const isFirstInGroup = pos === 0;
+  const isLastInGroup = pos === groupLength - 1;
+  const nextInGroup = !isLastInGroup ? groupExercises[pos + 1] : null;
+  const prevInGroup = !isFirstInGroup ? groupExercises[pos - 1] : null;
+  const firstInGroup = groupExercises[0];
+  const lastInGroup = groupExercises[groupLength - 1];
+
   return {
     isSuperset: true,
     isPaired: true,
-    pairId: curEx.ssGroup || curEx.ssPair || `ss_${exAIndex}`,
-    ssGroup: curEx.ssGroup || curEx.ssPair || `ss_${exAIndex}`,
+    pairId: groupKey,
+    ssGroup: groupKey,
+    pos,
+    label,
     role,
-    exAIndex,
-    exBIndex,
-    exA,
-    exB,
+    exAIndex: groupIndices[0],
+    exBIndex: groupIndices[1] ?? -1,
+    exA: groupExercises[0].ex,
+    exB: groupExercises[1]?.ex ?? null,
+    exercises: groupExercises,
+    groupIndices,
+    groupLength,
+    isFirstInGroup,
+    isLastInGroup,
+    nextInGroup,
+    prevInGroup,
+    firstInGroup,
+    lastInGroup,
+    tag,
+    typeLabel,
     round: currentRound,
     totalRounds
   };
@@ -1377,43 +1419,45 @@ function getSupersetInfo(act, exIdx) {
 
 function renderSupersetBanner(ssInfo) {
   if (!ssInfo || !ssInfo.isSuperset || !ssInfo.isPaired) return '';
-  const exA = ssInfo.exA;
-  const exB = ssInfo.exB;
-  const exAInfo = X(exA.id);
-  const exBInfo = X(exB.id);
-  const aDone = exA.sets.filter(s => s.done).length;
-  const bDone = exB.sets.filter(s => s.done).length;
-  const isA = ssInfo.role === 'A';
+  const curIdx = S.act ? (S.act.curEx || 0) : 0;
+  const activeItem = ssInfo.exercises.find(item => item.idx === curIdx) || ssInfo.exercises[0];
+  const activePos = activeItem.pos;
+  const activeLabel = activeItem.label;
+
+  const flowHint = !ssInfo.isLastInGroup && ssInfo.nextInGroup
+    ? `Step ${activePos + 1}: Finish ${activeLabel} → Transitions to ${ssInfo.nextInGroup.label} instantly (No rest timer)`
+    : `Step ${activePos + 1}: Finish ${activeLabel} → Rest timer starts → Loops back to A1`;
 
   return `
     <div class="card superset-block-card">
       <div class="superset-block-header">
         <div class="superset-badge-row">
           <div style="display:flex;align-items:center;gap:6px">
-            <span class="ss-block-tag">⚡ SUPERSET [A1 + A2]</span>
-            <button class="chip" data-a="opensspicker" data-i="${isA ? ssInfo.exAIndex : ssInfo.exBIndex}" style="font-size:11px;padding:2px 8px;min-height:24px">⚙️ Manage</button>
+            <span class="ss-block-tag">⚡ ${ssInfo.tag}</span>
+            <button class="chip" data-a="opensspicker" data-i="${curIdx}" style="font-size:11px;padding:2px 8px;min-height:24px">⚙️ Manage</button>
           </div>
           <span class="ss-round-tag">Round ${ssInfo.round} of ${ssInfo.totalRounds}</span>
         </div>
+        <div class="ss-position-indicator">
+          Round ${ssInfo.round} of ${ssInfo.totalRounds} · Exercise ${activePos + 1} of ${ssInfo.groupLength} (${activeLabel})
+        </div>
         <div class="t2 sm superset-flow-hint">
-          ${isA
-            ? `Step 1: Finish A1 → Transitions to A2 instantly (No rest timer)`
-            : `Step 2: Finish A2 → Rest timer starts → Loops back to A1`
-          }
+          ${flowHint}
         </div>
       </div>
       <div class="superset-pair-switcher">
-        <button class="ss-pair-tab ${isA ? 'active' : ''}" data-a="setcurex" data-i="${ssInfo.exAIndex}">
-          <span class="ss-pill-role">A1</span>
-          <span class="ss-pill-name">${esc(exAInfo.name)}</span>
-          <span class="ss-pill-ct">${aDone}/${exA.sets.length}</span>
-        </button>
-        <span class="ss-pair-arrow">⇄</span>
-        <button class="ss-pair-tab ${!isA ? 'active' : ''}" data-a="setcurex" data-i="${ssInfo.exBIndex}">
-          <span class="ss-pill-role">A2</span>
-          <span class="ss-pill-name">${esc(exBInfo.name)}</span>
-          <span class="ss-pill-ct">${bDone}/${exB.sets.length}</span>
-        </button>
+        ${ssInfo.exercises.map((item, idx) => {
+          const isCur = item.idx === curIdx;
+          const doneSets = item.ex.sets.filter(s => s.done).length;
+          return `
+            ${idx > 0 ? '<span class="ss-pair-arrow">→</span>' : ''}
+            <button class="ss-pair-tab ${isCur ? 'active' : ''}" data-a="setcurex" data-i="${item.idx}">
+              <span class="ss-pill-role">${item.label}</span>
+              <span class="ss-pill-name">${esc(item.info.name)}</span>
+              <span class="ss-pill-ct">${doneSets}/${item.ex.sets.length}</span>
+            </button>
+          `;
+        }).join('')}
       </div>
     </div>
   `;
@@ -1424,18 +1468,22 @@ function showSupersetPicker(exIdx) {
   const curEx = S.act.ex[exIdx];
   const curInfo = X(curEx.id);
   const ssInfo = getSupersetInfo(S.act, exIdx);
+  const isAlreadyPaired = ssInfo.isSuperset && ssInfo.isPaired;
 
   // Filter candidate exercises from current session:
-  // Exclude current exercise itself, and any already-paired exercises
+  // Exclude current exercise, all exercises already in this group, and exercises in any other paired superset
   const candidates = [];
   S.act.ex.forEach((x, idx) => {
     if (idx === exIdx) return;
+    if (isAlreadyPaired && ssInfo.groupIndices.includes(idx)) return;
     const xInfo = getSupersetInfo(S.act, idx);
-    if (xInfo.isSuperset && xInfo.isPaired) {
-      return;
-    }
+    if (xInfo.isSuperset && xInfo.isPaired) return;
     candidates.push({ ex: x, idx, info: X(x.id) });
   });
+
+  const nextPosLabel = isAlreadyPaired ? `A${ssInfo.groupLength + 1}` : 'A2';
+  const actionBtnText = isAlreadyPaired ? `+ Add ${nextPosLabel}` : '🔗 Link';
+  const actionDataA = isAlreadyPaired ? 'addtosupergroup' : 'pairwithex';
 
   const sessionListHtml = candidates.length
     ? candidates.map(c => `
@@ -1445,54 +1493,82 @@ function showSupersetPicker(exIdx) {
             <div class="ss-picker-name">${esc(c.info.name)}</div>
             <div class="ss-picker-meta">${esc(c.info.tg || c.info.g)} · ${esc(c.info.eq)}</div>
           </div>
-          <button class="btn s sm-btn ss-link-action-btn" data-a="pairwithex" data-source="${exIdx}" data-target="${c.idx}">
-            🔗 Link
+          <button class="btn s sm-btn ss-link-action-btn" data-a="${actionDataA}" data-source="${exIdx}" data-target="${c.idx}">
+            ${actionBtnText}
           </button>
         </div>
       `).join('')
     : `<div class="ss-picker-empty">No other unlinked exercises in this workout session.</div>`;
 
-  const unlinkHtml = ssInfo.isSuperset && ssInfo.isPaired ? `
+  const currentBlockHtml = isAlreadyPaired ? `
     <div class="ss-picker-section ss-unlink-section">
-      <div class="ss-picker-section-title">Current Superset Block</div>
+      <div class="ss-picker-section-title">Current Block: ${ssInfo.tag}</div>
       <div class="card ss-current-pair-card">
         <div class="ss-current-pair-info">
-          <span class="ss-block-tag">⚡ SUPERSET [A1 + A2]</span>
+          <span class="ss-block-tag">⚡ ${ssInfo.tag}</span>
           <div class="ss-current-pair-names">
-            <b>${esc(curInfo.name)}</b> + <b>${esc(X(ssInfo.role === 'A' ? ssInfo.exB.id : ssInfo.exA.id).name)}</b>
+            ${ssInfo.exercises.map(item => `<b>[${item.label}] ${esc(item.info.name)}</b>`).join(' + ')}
           </div>
-          <div class="t2 sm">Round ${ssInfo.round} of ${ssInfo.totalRounds}</div>
+          <div class="t2 sm">Round ${ssInfo.round} of ${ssInfo.totalRounds} · ${ssInfo.groupLength} Exercises</div>
         </div>
-        <button class="btn s sm-btn red" data-a="unlinkss" data-i="${exIdx}">Unlink</button>
+        <button class="btn s sm-btn red" data-a="unlinkss" data-i="${exIdx}">Unlink Block</button>
       </div>
     </div>
   ` : '';
+
+  const modalTitle = isAlreadyPaired ? `${ssInfo.typeLabel} Block Manager` : 'Superset Pairing';
+  const modalSubtitle = isAlreadyPaired
+    ? `Add more exercises to expand into a Tri-Set or Giant Set`
+    : `Pair <b>${esc(curInfo.name)}</b> into a multi-exercise block`;
+
+  const sessionSectionTitle = isAlreadyPaired
+    ? `+ Add Another Exercise to this Block (Tri-Set / Giant Set)`
+    : `1. Choose from Current Session`;
+
+  const sessionSectionSub = isAlreadyPaired
+    ? `<div style="font-size:12px;color:var(--t2);margin-bottom:8px">Select an exercise from current workout to append as <b>${nextPosLabel}</b>:</div>`
+    : '';
+
+  const librarySectionTitle = isAlreadyPaired
+    ? `Or Append from Library`
+    : `2. Add & Pair from Library`;
+
+  const libraryPrompt = isAlreadyPaired
+    ? `Select an exercise from the library to append directly into this block as <b>${nextPosLabel}</b>.`
+    : `Select an exercise from the library to append and pair as an A1 + A2 block immediately.`;
+
+  const libraryBtnLabel = isAlreadyPaired
+    ? `+ Browse & Add from Library`
+    : `Browse Exercise Library`;
+
+  const libraryDataA = isAlreadyPaired ? 'browseandaddtosupergroup' : 'browseandpair';
 
   modal(`
     <div class="ss-picker-sheet">
       <div class="ss-picker-header">
         <div>
-          <h2 class="ss-picker-title">Superset Pairing</h2>
-          <div class="t2 sm">Pair <b>${esc(curInfo.name)}</b> into a dual-exercise block</div>
+          <h2 class="ss-picker-title">${modalTitle}</h2>
+          <div class="t2 sm">${modalSubtitle}</div>
         </div>
         <button class="btn s sm-btn" data-a="close">✕</button>
       </div>
 
-      ${unlinkHtml}
+      ${currentBlockHtml}
 
       <div class="ss-picker-section">
-        <div class="ss-picker-section-title">1. Choose from Current Session</div>
+        <div class="ss-picker-section-title">${sessionSectionTitle}</div>
         <div class="card ss-picker-list-card">
+          ${sessionSectionSub}
           ${sessionListHtml}
         </div>
       </div>
 
       <div class="ss-picker-section">
-        <div class="ss-picker-section-title">2. Add & Pair from Library</div>
+        <div class="ss-picker-section-title">${librarySectionTitle}</div>
         <div class="card ss-library-action-card">
-          <p class="t2 sm" style="margin:0 0 10px">Select an exercise from the library to append and pair as an A1 + A2 block immediately.</p>
-          <button class="btn ss-picker-browse-btn" data-a="browseandpair" data-i="${exIdx}">
-            ${ic('plus', 16)} Browse Exercise Library
+          <p class="t2 sm" style="margin:0 0 10px">${libraryPrompt}</p>
+          <button class="btn ss-picker-browse-btn" data-a="${libraryDataA}" data-i="${exIdx}">
+            ${ic('plus', 16)} ${libraryBtnLabel}
           </button>
         </div>
       </div>
@@ -1500,89 +1576,159 @@ function showSupersetPicker(exIdx) {
   `);
 }
 
-function pairExercises(sourceIdx, targetIdx) {
+function addToSupergroup(sourceIdx, targetIdx) {
   if (!S.act || !Array.isArray(S.act.ex) || !S.act.ex[sourceIdx] || !S.act.ex[targetIdx] || sourceIdx === targetIdx) {
     return;
   }
-  const pairId = 'ss_' + Date.now();
-  const exA = S.act.ex[sourceIdx];
+  const sourceEx = S.act.ex[sourceIdx];
   const targetEx = S.act.ex[targetIdx];
+  const ssInfo = getSupersetInfo(S.act, sourceIdx);
 
-  // Unlink previous partners if any
-  const oldSsA = getSupersetInfo(S.act, sourceIdx);
-  if (oldSsA.isSuperset && oldSsA.isPaired) {
-    if (oldSsA.exA) { delete oldSsA.exA.ss; delete oldSsA.exA.ssPair; delete oldSsA.exA.ssGroup; delete oldSsA.exA.ssRole; }
-    if (oldSsA.exB) { delete oldSsA.exB.ss; delete oldSsA.exB.ssPair; delete oldSsA.exB.ssGroup; delete oldSsA.exB.ssRole; }
-  }
-  const oldSsB = getSupersetInfo(S.act, targetIdx);
-  if (oldSsB.isSuperset && oldSsB.isPaired) {
-    if (oldSsB.exA) { delete oldSsB.exA.ss; delete oldSsB.exA.ssPair; delete oldSsB.exA.ssGroup; delete oldSsB.exA.ssRole; }
-    if (oldSsB.exB) { delete oldSsB.exB.ss; delete oldSsB.exB.ssPair; delete oldSsB.exB.ssGroup; delete oldSsB.exB.ssRole; }
+  // If target exercise is already in another superset, unlink it first
+  const oldTargetSs = getSupersetInfo(S.act, targetIdx);
+  if (oldTargetSs.isSuperset && oldTargetSs.isPaired) {
+    unlinkSuperset(targetIdx);
   }
 
-  // Extract Exercise B from its current position
-  S.act.ex.splice(targetIdx, 1);
+  if (ssInfo.isSuperset && ssInfo.isPaired) {
+    // Extending an existing group (Tri-Set / Giant Set)
+    const groupKey = ssInfo.ssGroup || ssInfo.pairId;
+    const lastMemberEx = ssInfo.exercises[ssInfo.exercises.length - 1].ex;
 
-  // Find the new index of Exercise A after removal
-  const newSourceIdx = S.act.ex.indexOf(exA);
+    // Remove targetEx from current position
+    const tIdx = S.act.ex.indexOf(targetEx);
+    if (tIdx !== -1) {
+      S.act.ex.splice(tIdx, 1);
+    }
 
-  // Insert Exercise B directly next to Exercise A (creating an immediate A1 + A2 block)
-  S.act.ex.splice(newSourceIdx + 1, 0, targetEx);
+    // Find the new index of the last member after removal
+    const newLastIdx = S.act.ex.indexOf(lastMemberEx);
+    // Insert targetEx immediately after the last member so all group exercises remain strictly contiguous
+    S.act.ex.splice(newLastIdx + 1, 0, targetEx);
 
-  // Mark both exercises with matching superset identifiers
-  exA.ss = true;
-  exA.ssRole = 'A';
-  exA.ssGroup = pairId;
-  exA.ssPair = pairId;
+    targetEx.ss = true;
+    targetEx.ssGroup = groupKey;
+    targetEx.ssPair = groupKey;
 
-  targetEx.ss = true;
-  targetEx.ssRole = 'B';
-  targetEx.ssGroup = pairId;
-  targetEx.ssPair = pairId;
+    // Update all members in group
+    const newSsInfo = getSupersetInfo(S.act, sourceIdx);
+    newSsInfo.exercises.forEach((item, p) => {
+      item.ex.ss = true;
+      item.ex.ssGroup = groupKey;
+      item.ex.ssPair = groupKey;
+      item.ex.ssRole = String.fromCharCode(65 + p);
+    });
 
-  S.act.curEx = newSourceIdx;
-  save('act');
-  close();
-  render();
-  toast(`⚡ Paired [${esc(X(exA.id).name)}] + [${esc(X(targetEx.id).name)}] as Superset [A1 + A2]`);
+    save('act');
+    close();
+    render();
+    toast(`⚡ Added [${esc(X(targetEx.id).name)}] to Block → ${newSsInfo.tag}`);
+  } else {
+    // Creating a new pair
+    const pairId = 'ss_' + Date.now();
+
+    // If sourceEx had an unpaired or orphan ss tag, clear it
+    delete sourceEx.ssRole;
+
+    // Extract targetEx
+    const tIdx = S.act.ex.indexOf(targetEx);
+    if (tIdx !== -1) {
+      S.act.ex.splice(tIdx, 1);
+    }
+
+    const newSourceIdx = S.act.ex.indexOf(sourceEx);
+    S.act.ex.splice(newSourceIdx + 1, 0, targetEx);
+
+    sourceEx.ss = true;
+    sourceEx.ssRole = 'A';
+    sourceEx.ssGroup = pairId;
+    sourceEx.ssPair = pairId;
+
+    targetEx.ss = true;
+    targetEx.ssRole = 'B';
+    targetEx.ssGroup = pairId;
+    targetEx.ssPair = pairId;
+
+    S.act.curEx = newSourceIdx;
+    save('act');
+    close();
+    render();
+    toast(`⚡ Paired [${esc(X(sourceEx.id).name)}] + [${esc(X(targetEx.id).name)}] as Superset [A1 + A2]`);
+  }
+}
+
+function pairExercises(sourceIdx, targetIdx) {
+  return addToSupergroup(sourceIdx, targetIdx);
+}
+
+function browseAndAddToSupergroup(sourceIdx, libExId) {
+  if (!S.act || !Array.isArray(S.act.ex) || !S.act.ex[sourceIdx]) return;
+  const sourceEx = S.act.ex[sourceIdx];
+  const isUni = isUnilateralExercise(X(libExId).name);
+  const lastNote = getLastExerciseNote(libExId);
+  const ssInfo = getSupersetInfo(S.act, sourceIdx);
+
+  if (ssInfo.isSuperset && ssInfo.isPaired) {
+    const groupKey = ssInfo.ssGroup || ssInfo.pairId;
+    const lastMemberEx = ssInfo.exercises[ssInfo.exercises.length - 1].ex;
+    const lastIdx = S.act.ex.indexOf(lastMemberEx);
+
+    const newEx = {
+      id: libExId,
+      ss: true,
+      ssRole: String.fromCharCode(65 + ssInfo.groupLength),
+      ssGroup: groupKey,
+      ssPair: groupKey,
+      uni: isUni,
+      note: lastNote,
+      sets: newSets(libExId)
+    };
+
+    // Insert immediately after last member of group
+    S.act.ex.splice(lastIdx + 1, 0, newEx);
+
+    // Refresh all members
+    const newSsInfo = getSupersetInfo(S.act, sourceIdx);
+    newSsInfo.exercises.forEach((item, p) => {
+      item.ex.ss = true;
+      item.ex.ssGroup = groupKey;
+      item.ex.ssPair = groupKey;
+      item.ex.ssRole = String.fromCharCode(65 + p);
+    });
+
+    save('act');
+    close();
+    render();
+    toast(`⚡ Added [${esc(X(libExId).name)}] to Block → ${newSsInfo.tag}`);
+  } else {
+    const pairId = 'ss_' + Date.now();
+    const newEx = {
+      id: libExId,
+      ss: true,
+      ssRole: 'B',
+      ssGroup: pairId,
+      ssPair: pairId,
+      uni: isUni,
+      note: lastNote,
+      sets: newSets(libExId)
+    };
+
+    sourceEx.ss = true;
+    sourceEx.ssRole = 'A';
+    sourceEx.ssGroup = pairId;
+    sourceEx.ssPair = pairId;
+
+    S.act.ex.splice(sourceIdx + 1, 0, newEx);
+    S.act.curEx = sourceIdx;
+    save('act');
+    close();
+    render();
+    toast(`⚡ Paired [${esc(X(sourceEx.id).name)}] + [${esc(X(newEx.id).name)}] as Superset [A1 + A2]`);
+  }
 }
 
 function addAndPairFromLibrary(sourceIdx, libExId) {
-  if (!S.act || !Array.isArray(S.act.ex) || !S.act.ex[sourceIdx]) return;
-  const exA = S.act.ex[sourceIdx];
-  const pairId = 'ss_' + Date.now();
-  const isUni = isUnilateralExercise(X(libExId).name);
-  const lastNote = getLastExerciseNote(libExId);
-  const newEx = {
-    id: libExId,
-    ss: true,
-    ssRole: 'B',
-    ssGroup: pairId,
-    ssPair: pairId,
-    uni: isUni,
-    note: lastNote,
-    sets: newSets(libExId)
-  };
-
-  // Unlink previous partner if any
-  const oldSsA = getSupersetInfo(S.act, sourceIdx);
-  if (oldSsA.isSuperset && oldSsA.isPaired) {
-    if (oldSsA.exA) { delete oldSsA.exA.ss; delete oldSsA.exA.ssPair; delete oldSsA.exA.ssGroup; delete oldSsA.exA.ssRole; }
-    if (oldSsA.exB) { delete oldSsA.exB.ss; delete oldSsA.exB.ssPair; delete oldSsA.exB.ssGroup; delete oldSsA.exB.ssRole; }
-  }
-
-  exA.ss = true;
-  exA.ssRole = 'A';
-  exA.ssGroup = pairId;
-  exA.ssPair = pairId;
-
-  // Insert right next to Exercise A
-  S.act.ex.splice(sourceIdx + 1, 0, newEx);
-  S.act.curEx = sourceIdx;
-  save('act');
-  close();
-  render();
-  toast(`⚡ Paired [${esc(X(exA.id).name)}] + [${esc(X(newEx.id).name)}] as Superset [A1 + A2]`);
+  return browseAndAddToSupergroup(sourceIdx, libExId);
 }
 
 function unlinkSuperset(exIdx) {
@@ -1590,6 +1736,16 @@ function unlinkSuperset(exIdx) {
   const curI = exIdx !== undefined && !isNaN(exIdx) ? exIdx : S.act.curEx;
   const ssInfo = getSupersetInfo(S.act, curI);
   if (ssInfo.isSuperset) {
+    if (Array.isArray(ssInfo.exercises)) {
+      ssInfo.exercises.forEach(item => {
+        if (item.ex) {
+          delete item.ex.ss;
+          delete item.ex.ssPair;
+          delete item.ex.ssGroup;
+          delete item.ex.ssRole;
+        }
+      });
+    }
     if (ssInfo.exA) {
       delete ssInfo.exA.ss;
       delete ssInfo.exA.ssPair;
@@ -1605,7 +1761,7 @@ function unlinkSuperset(exIdx) {
     save('act');
     close();
     render();
-    toast('Unlinked superset pair');
+    toast(`Unlinked ${ssInfo.typeLabel || 'superset'} block`);
   }
 }
 
@@ -1628,7 +1784,7 @@ function renderWorkHeroCard(a, curIdx) {
         <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
         <button class="chip" data-a="zoomexgif" data-id="${esc(exInfo.id)}">ℹ️ Form Cues</button>
         ${ssInfo.isSuperset && ssInfo.isPaired
-          ? `<button class="chip on ss-chip" data-a="opensspicker" data-i="${curIdx}">⚡ Superset [${ssInfo.role === 'A' ? 'A1' : 'A2'}]</button>`
+          ? `<button class="chip on ss-chip" data-a="opensspicker" data-i="${curIdx}">⚡ ${ssInfo.typeLabel} [${ssInfo.label}]</button>`
           : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">🔗 Link Superset</button>`
         }
         <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
@@ -1645,7 +1801,7 @@ function renderWorkHeroCard(a, curIdx) {
           <span class="ex-badge">${esc(exInfo.eq)}</span>
           ${exInfo.t === 't' ? '<span class="ex-badge">Timed (s)</span>' : ''}
           ${currentEx.uni ? '<span class="ex-badge" style="background:rgba(100,210,255,0.2);color:var(--bl);border:1px solid var(--bl)">⚖️ Each Side (L/R)</span>' : ''}
-          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ Superset [${ssInfo.role === 'A' ? 'A1' : 'A2'}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
+          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
           ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
         </div>
       </div>
@@ -1814,7 +1970,7 @@ function switchWorkExercise(newIdx, smoothCenter = true) {
       const isDone = x && x.sets && x.sets.length > 0 && x.sets.every(s => s.done);
       const hasFail = x && x.sets && x.sets.some(s => s.rir === 0 || s.rpe >= 10);
       const ss = getSupersetInfo(S.act, idx);
-      const ssTag = ss.isSuperset && ss.isPaired ? (ss.role === 'A' ? '[A1] ' : '[A2] ') : '';
+      const ssTag = ss.isSuperset && ss.isPaired ? `[${ss.label}] ` : '';
       const e = X(x.id);
 
       p.className = `work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''} ${hasFail ? 'has-fail' : ''} ${ss.isSuperset && ss.isPaired ? 'ss-pill' : ''}`;
@@ -1871,31 +2027,32 @@ function handleSetCompleted(i, j, s, x) {
 
   const ssInfo = getSupersetInfo(S.act, i);
   if (ssInfo.isSuperset && ssInfo.isPaired) {
-    if (ssInfo.role === 'A') {
-      // Step 1: User finishes Set 1 of Exercise A -> Press Done -> NO rest timer begins -> Screen immediately transitions focus to Set 1 of Exercise B.
+    if (!ssInfo.isLastInGroup && ssInfo.nextInGroup) {
+      // Step: User finishes Set N of Exercise Ak (not last in group) -> Press Done -> NO rest timer begins -> Screen immediately transitions focus to Set N of Exercise Ak+1.
       stopRest(true);
-      switchWorkExercise(ssInfo.exBIndex);
-      toast(`⚡ Switched to A2: ${esc(X(ssInfo.exB.id).name)} (Round ${j + 1})`);
-      focusSetInput(ssInfo.exBIndex, j);
+      switchWorkExercise(ssInfo.nextInGroup.idx);
+      toast(`⚡ Switched to ${ssInfo.nextInGroup.label}: ${esc(X(ssInfo.nextInGroup.ex.id).name)} (Round ${j + 1})`);
+      focusSetInput(ssInfo.nextInGroup.idx, j);
       return;
-    } else if (ssInfo.role === 'B') {
-      // Step 2: User finishes Set 1 of Exercise B -> Press Done -> REST TIMER BEGINS.
-      // Step 3: When rest timer finishes, automatically loop back to Set 2 of Exercise A.
-      switchWorkExercise(ssInfo.exBIndex);
+    } else if (ssInfo.isLastInGroup) {
+      // Step: User finishes Set N of last Exercise in group (e.g. A2 in Superset, A3 in Tri-Set, An in Giant-Set) -> REST TIMER BEGINS.
+      // Automatically loop back to Set N+1 of Exercise A1 when timer finishes / is skipped.
+      switchWorkExercise(i);
       const nextRoundSetIdx = j + 1;
-      if (nextRoundSetIdx < ssInfo.exA.sets.length) {
+      const firstEx = ssInfo.firstInGroup.ex;
+      if (nextRoundSetIdx < (firstEx?.sets?.length || 0)) {
         T.supersetLoop = {
-          targetEx: ssInfo.exAIndex,
+          targetEx: ssInfo.firstInGroup.idx,
           targetSet: nextRoundSetIdx,
           round: nextRoundSetIdx + 1,
           totalRounds: ssInfo.totalRounds
         };
         startRest(S.cfg.rest);
-        toast(`⏱️ Superset Rest: Up Next Round ${nextRoundSetIdx + 1} (${esc(X(ssInfo.exA.id).name)})`);
+        toast(`⏱️ ${ssInfo.typeLabel} Rest: Up Next Round ${nextRoundSetIdx + 1} (${esc(X(firstEx.id).name)})`);
       } else {
         T.supersetLoop = null;
         startRest(S.cfg.rest);
-        toast(`🎉 Superset [A1 + A2] All ${ssInfo.totalRounds} Rounds Complete!`);
+        toast(`🎉 ${ssInfo.tag} All ${ssInfo.totalRounds} Rounds Complete!`);
       }
       return;
     }
@@ -1970,7 +2127,7 @@ function vWork() {
           const isCur = i === curIdx;
           const hasFail = x.sets.some(s => s.rir === 0 || s.rpe >= 10);
           const ss = getSupersetInfo(a, i);
-          const ssTag = ss.isSuperset && ss.isPaired ? (ss.role === 'A' ? '[A1] ' : '[A2] ') : '';
+          const ssTag = ss.isSuperset && ss.isPaired ? `[${ss.label}] ` : '';
           return `<button class="work-step-pill ${isCur ? 'active' : ''} ${isDone ? 'done' : ''} ${hasFail ? 'has-fail' : ''} ${ss.isSuperset && ss.isPaired ? 'ss-pill' : ''}" data-a="setcurex" data-i="${i}">
             <span>${isDone ? '✓ ' : ''}${hasFail ? '💥 ' : ''}${ssTag}${i + 1}. ${esc(e.name)}</span>
           </button>`;
@@ -3394,24 +3551,21 @@ document.addEventListener('click', e => {
           const isUni = x.uni !== undefined ? !!x.uni : isUnilateralExercise(X(x.id).name);
           const isSs = !!x.ss;
           let ssRole = null;
-          let ssPair = null;
+          let ssGroup = x.ssGroup || null;
           if (isSs) {
-            if (arr[idx - 1] && arr[idx - 1].ss) {
-              ssRole = 'B';
-              ssPair = 'ss_' + (idx - 1);
-            } else if (arr[idx + 1] && arr[idx + 1].ss) {
-              ssRole = 'A';
-              ssPair = 'ss_' + idx;
-            } else {
-              ssRole = 'A';
-              ssPair = 'ss_' + idx;
+            let start = idx;
+            while (start > 0 && arr[start - 1] && arr[start - 1].ss) {
+              start--;
             }
+            if (!ssGroup) ssGroup = 'ss_' + start;
+            ssRole = String.fromCharCode(65 + (idx - start));
           }
           return {
             id: x.id,
             ss: isSs,
             ssRole,
-            ssPair,
+            ssGroup,
+            ssPair: ssGroup,
             uni: isUni,
             note: x.note || getLastExerciseNote(x.id),
             sets: Array.from({ length: targetSets }, () => ({
@@ -3656,21 +3810,25 @@ document.addEventListener('click', e => {
       }
       return;
     }
-    case 'pairwithex': {
+    case 'pairwithex':
+    case 'addtosupergroup': {
       if (S.act) {
         const src = +t.dataset.source;
         const tgt = +t.dataset.target;
-        pairExercises(src, tgt);
+        addToSupergroup(src, tgt);
       }
       return;
     }
-    case 'browseandpair': {
+    case 'browseandpair':
+    case 'browseandaddtosupergroup': {
       if (S.act) {
         const src = +t.dataset.i;
+        const ssInfo = getSupersetInfo(S.act, src);
+        const nextPosLabel = ssInfo.isSuperset && ssInfo.isPaired ? `A${ssInfo.groupLength + 1}` : 'A2';
         P = (libExId) => {
-          addAndPairFromLibrary(src, libExId);
+          browseAndAddToSupergroup(src, libExId);
         };
-        showExercisePicker('Select Exercise to Pair as A2');
+        showExercisePicker(`Select Exercise to Add as ${nextPosLabel}`);
       }
       return;
     }
@@ -4116,7 +4274,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.2.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.3.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -4142,7 +4300,9 @@ if (typeof globalThis !== 'undefined') {
     showExpandedGifModal,
     showSupersetPicker,
     pairExercises,
+    addToSupergroup,
     addAndPairFromLibrary,
+    browseAndAddToSupergroup,
     unlinkSuperset,
     switchWorkExercise,
     handleSetCompleted,

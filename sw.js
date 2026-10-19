@@ -1,11 +1,11 @@
-const C = 'mygym-core-v5.2.0-superset';
+const C = 'mygym-core-v5.3.0-giantset';
 const CORE_ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=5.2.0',
+  './style.css?v=5.3.0',
   './app.js',
-  './app.js?v=5.2.0',
+  './app.js?v=5.3.0',
   './manifest.json',
   './icon.png',
   './exercises.json'

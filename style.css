@@ -2422,16 +2422,32 @@ textarea.note:focus {
   color: var(--t2);
 }
 
+.ss-position-indicator {
+  font-size: 12px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 6px;
+  letter-spacing: -0.2px;
+}
+
 .superset-pair-switcher {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.superset-pair-switcher::-webkit-scrollbar {
+  display: none;
 }
 
 .ss-pair-tab {
-  flex: 1;
-  min-width: 0;
+  flex: 1 0 auto;
+  min-width: 100px;
+  max-width: 220px;
   display: flex;
   align-items: center;
   gap: 6px;

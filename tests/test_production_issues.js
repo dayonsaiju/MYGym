@@ -274,7 +274,7 @@ function it(name, fn) {
 }
 
 console.log('\n======================================================');
-console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.2.0-superset)');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.3.0-giantset)');
 console.log('======================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -587,6 +587,172 @@ it('Step 3: Rest timer skip (rskip) triggers auto-loop back to Exercise A Set 2'
   assert.equal(api.T.supersetLoop, null, 'supersetLoop state must be consumed/cleared');
 });
 
+it('Tri-Set: getSupersetInfo dynamically identifies 3-exercise block [A1 + A2 + A3]', () => {
+  const act = {
+    name: 'Tri-Set Test',
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssGroup: 'ss_tri_1', sets: [{ done: false }, { done: false }] },
+      { id: '0047', ss: true, ssGroup: 'ss_tri_1', sets: [{ done: false }, { done: false }] },
+      { id: '0027', ss: true, ssGroup: 'ss_tri_1', sets: [{ done: false }, { done: false }] }
+    ]
+  };
+
+  const infoA1 = api.getSupersetInfo(act, 0);
+  assert.equal(infoA1.isSuperset, true);
+  assert.equal(infoA1.isPaired, true);
+  assert.equal(infoA1.groupLength, 3);
+  assert.equal(infoA1.pos, 0);
+  assert.equal(infoA1.label, 'A1');
+  assert.equal(infoA1.typeLabel, 'TRI-SET');
+  assert.equal(infoA1.tag, 'TRI-SET [A1 + A2 + A3]');
+  assert.equal(infoA1.isFirstInGroup, true);
+  assert.equal(infoA1.isLastInGroup, false);
+  assert.equal(infoA1.nextInGroup.idx, 1);
+  assert.equal(infoA1.nextInGroup.label, 'A2');
+
+  const infoA2 = api.getSupersetInfo(act, 1);
+  assert.equal(infoA2.pos, 1);
+  assert.equal(infoA2.label, 'A2');
+  assert.equal(infoA2.isFirstInGroup, false);
+  assert.equal(infoA2.isLastInGroup, false);
+  assert.equal(infoA2.nextInGroup.idx, 2);
+  assert.equal(infoA2.nextInGroup.label, 'A3');
+
+  const infoA3 = api.getSupersetInfo(act, 2);
+  assert.equal(infoA3.pos, 2);
+  assert.equal(infoA3.label, 'A3');
+  assert.equal(infoA3.isFirstInGroup, false);
+  assert.equal(infoA3.isLastInGroup, true);
+  assert.equal(infoA3.nextInGroup, null);
+  assert.equal(infoA3.firstInGroup.idx, 0);
+});
+
+it('Tri-Set: addToSupergroup extends existing 2-exercise superset into adjacent Tri-Set', () => {
+  api.S.act = {
+    name: 'Block Extension Test',
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssGroup: 'ss_block_1', ssPair: 'ss_block_1', ssRole: 'A', sets: [{ done: false }] },
+      { id: '0047', ss: true, ssGroup: 'ss_block_1', ssPair: 'ss_block_1', ssRole: 'B', sets: [{ done: false }] },
+      { id: '0027', sets: [{ done: false }] }, // Candidate in session
+      { id: '0042', sets: [{ done: false }] }
+    ]
+  };
+
+  // Add exercise at index 2 ('0027') to the superset block containing exercise 0
+  api.addToSupergroup(0, 2);
+
+  // Verify group is now 3 exercises and strictly adjacent
+  assert.equal(api.S.act.ex.length, 4);
+  assert.equal(api.S.act.ex[0].id, '0025');
+  assert.equal(api.S.act.ex[1].id, '0047');
+  assert.equal(api.S.act.ex[2].id, '0027');
+  assert.equal(api.S.act.ex[3].id, '0042');
+
+  const info = api.getSupersetInfo(api.S.act, 0);
+  assert.equal(info.groupLength, 3);
+  assert.equal(info.typeLabel, 'TRI-SET');
+  assert.equal(info.tag, 'TRI-SET [A1 + A2 + A3]');
+});
+
+it('Giant Set: 4+ exercises dynamically tagged as GIANT SET with A1..A4', () => {
+  const act = {
+    name: 'Giant Set Test',
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssGroup: 'ss_giant', sets: [{ done: false }, { done: false }] },
+      { id: '0047', ss: true, ssGroup: 'ss_giant', sets: [{ done: false }, { done: false }] },
+      { id: '0027', ss: true, ssGroup: 'ss_giant', sets: [{ done: false }, { done: false }] },
+      { id: '0042', ss: true, ssGroup: 'ss_giant', sets: [{ done: false }, { done: false }] }
+    ]
+  };
+
+  const infoA1 = api.getSupersetInfo(act, 0);
+  assert.equal(infoA1.groupLength, 4);
+  assert.equal(infoA1.typeLabel, 'GIANT SET');
+  assert.equal(infoA1.tag, 'GIANT SET [A1 + A2 + A3 + A4]');
+
+  const infoA4 = api.getSupersetInfo(act, 3);
+  assert.equal(infoA4.pos, 3);
+  assert.equal(infoA4.label, 'A4');
+  assert.equal(infoA4.isLastInGroup, true);
+});
+
+it('Tri-Set Execution Loop: A1 -> A2 -> A3 (no rest) -> Rest Timer -> Loops to A1 Set 2', () => {
+  api.S.act = {
+    name: 'Tri-Set Flow Test',
+    curEx: 0,
+    ex: [
+      { id: '0025', ss: true, ssGroup: 'ss_tri_loop', ssRole: 'A', sets: [{ done: false }, { done: false }] },
+      { id: '0047', ss: true, ssGroup: 'ss_tri_loop', ssRole: 'B', sets: [{ done: false }, { done: false }] },
+      { id: '0027', ss: true, ssGroup: 'ss_tri_loop', ssRole: 'C', sets: [{ done: false }, { done: false }] }
+    ]
+  };
+
+  api.T.supersetLoop = null;
+  elementsMap['#rest'].hidden = true;
+
+  // 1. Complete Set 1 of A1 (Exercise 0)
+  const set0A = api.S.act.ex[0].sets[0];
+  set0A.done = true;
+  api.handleSetCompleted(0, 0, set0A, api.S.act.ex[0]);
+
+  assert.equal(api.S.act.curEx, 1, 'Completing A1 must immediately switch active exercise to A2');
+  assert.equal(elementsMap['#rest'].hidden, true, 'Rest timer must NOT start when finishing A1');
+  assert.equal(api.T.supersetLoop, null, 'supersetLoop must not be armed yet');
+
+  // 2. Complete Set 1 of A2 (Exercise 1)
+  const set0B = api.S.act.ex[1].sets[0];
+  set0B.done = true;
+  api.handleSetCompleted(1, 0, set0B, api.S.act.ex[1]);
+
+  assert.equal(api.S.act.curEx, 2, 'Completing A2 must immediately switch active exercise to A3');
+  assert.equal(elementsMap['#rest'].hidden, true, 'Rest timer must NOT start when finishing A2');
+  assert.equal(api.T.supersetLoop, null, 'supersetLoop must not be armed yet');
+
+  // 3. Complete Set 1 of A3 (Exercise 2 - Last in Tri-Set group)
+  const set0C = api.S.act.ex[2].sets[0];
+  set0C.done = true;
+  api.handleSetCompleted(2, 0, set0C, api.S.act.ex[2]);
+
+  assert.equal(elementsMap['#rest'].hidden, false, 'Rest timer MUST start when finishing last exercise A3');
+  assert(api.T.supersetLoop != null, 'T.supersetLoop must be armed for the next round');
+  assert.equal(api.T.supersetLoop.targetEx, 0, 'Target exercise to loop back to must be A1 (index 0)');
+  assert.equal(api.T.supersetLoop.targetSet, 1, 'Target set must be Set 2 (index 1)');
+  assert.equal(api.T.supersetLoop.round, 2, 'Next round indicator must be 2');
+
+  // 4. Simulate timer completion or rskip -> Loops back to A1 Set 2
+  const loop = api.T.supersetLoop;
+  api.T.supersetLoop = null;
+  api.switchWorkExercise(loop.targetEx);
+
+  assert.equal(api.S.act.curEx, 0, 'Auto-loop must switch back to A1 (index 0)');
+  assert.equal(api.T.supersetLoop, null, 'supersetLoop state must be cleared after looping');
+});
+
+it('renderSupersetBanner displays dynamic relative position indicator and tabs for Tri-Sets', () => {
+  const act = {
+    name: 'Banner Test',
+    curEx: 1, // Currently on A2
+    ex: [
+      { id: '0025', ss: true, ssGroup: 'ss_b', sets: [{ done: true }, { done: false }] },
+      { id: '0047', ss: true, ssGroup: 'ss_b', sets: [{ done: false }, { done: false }] },
+      { id: '0027', ss: true, ssGroup: 'ss_b', sets: [{ done: false }, { done: false }] }
+    ]
+  };
+  api.S.act = act;
+
+  const info = api.getSupersetInfo(act, 1);
+  const banner = api.renderSupersetBanner(info);
+
+  assert(banner.includes('⚡ TRI-SET [A1 + A2 + A3]'), 'Banner must display TRI-SET tag');
+  assert(banner.includes('Round 1 of 2 · Exercise 2 of 3 (A2)'), 'Banner must show relative position indicator');
+  assert(banner.includes('ss-pill-role">A1</span>'), 'Banner must have tab for A1');
+  assert(banner.includes('ss-pill-role">A2</span>'), 'Banner must have tab for A2');
+  assert(banner.includes('ss-pill-role">A3</span>'), 'Banner must have tab for A3');
+});
+
 // -----------------------------------------------------------------------------
 // TEST SUITE 3: TOP STEPPER HORIZONTAL PILL JUMP & SCROLL PRESERVATION
 // -----------------------------------------------------------------------------
@@ -692,24 +858,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.2.0-superset, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.2.0-superset';"), 'sw.js must use mygym-core-v5.2.0-superset cache name');
-  assert(swCode.includes("'./style.css?v=5.2.0'"), 'sw.js must precache style.css?v=5.2.0');
-  assert(swCode.includes("'./app.js?v=5.2.0'"), 'sw.js must precache app.js?v=5.2.0');
+it('sw.js cache key is bumped to mygym-core-v5.3.0-giantset, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.3.0-giantset';"), 'sw.js must use mygym-core-v5.3.0-giantset cache name');
+  assert(swCode.includes("'./style.css?v=5.3.0'"), 'sw.js must precache style.css?v=5.3.0');
+  assert(swCode.includes("'./app.js?v=5.3.0'"), 'sw.js must precache app.js?v=5.3.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.2.0'), 'index.html must link style.css?v=5.2.0');
-  assert(htmlCode.includes('app.js?v=5.2.0'), 'index.html must load app.js?v=5.2.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.2.0-superset'"), 'index.html must use mygym-v5.2.0-superset');
+  assert(htmlCode.includes('style.css?v=5.3.0'), 'index.html must link style.css?v=5.3.0');
+  assert(htmlCode.includes('app.js?v=5.3.0'), 'index.html must load app.js?v=5.3.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.3.0-giantset'"), 'index.html must use mygym-v5.3.0-giantset');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.2.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.2.0-superset');
+  assert.equal(api.APP_VERSION, '5.3.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.3.0-giantset');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
