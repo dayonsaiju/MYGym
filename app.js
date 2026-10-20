@@ -90,14 +90,14 @@ let S = {
   routines: [],
   logs: [],
   weights: [],
-  cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5, bodyModel: 'male' },
+  cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5, bodyModel: 'male', physique: null },
   sched: {},
   act: null,
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.4.0';
-const SHELL_VERSION = 'mygym-v5.4.0-anatomy';
+const APP_VERSION = '5.5.0';
+const SHELL_VERSION = 'mygym-v5.5.0-physique';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -2549,8 +2549,546 @@ function vCal() {
     `);
 }
 
-// 5. Body Weight & Waist Measurements Tracker with Dual SVG Trend Chart
-function vWeight() {
+// =============================================================================
+// 5. INTERACTIVE BODY TRANSFORMATION ROADMAP & VISUAL PHYSIQUE MORPH ENGINE (v5.5.0)
+// =============================================================================
+
+function calcUSNavyBF(gender, heightCm, weightKg, waistCm, neckCm, hipCm) {
+  const isFemale = (gender || S.cfg?.bodyModel) === 'female';
+  const h = Math.max(100, Math.min(250, Number(heightCm) || (isFemale ? 165 : 178)));
+  const waist = Math.max(45, Math.min(200, Number(waistCm) || (isFemale ? 74 : 85)));
+  const neck = Math.max(20, Math.min(65, Number(neckCm) || (isFemale ? 33 : 38)));
+  const hip = Math.max(50, Math.min(220, Number(hipCm) || Math.round(waist * 1.25)));
+
+  let bf;
+  if (isFemale) {
+    const val = Math.max(10, waist + hip - neck);
+    bf = 495 / (1.29579 - 0.35004 * Math.log10(val) + 0.22100 * Math.log10(h)) - 450;
+  } else {
+    const diff = Math.max(5, waist - neck);
+    bf = 495 / (1.0324 - 0.19077 * Math.log10(diff) + 0.15456 * Math.log10(h)) - 450;
+  }
+  return Math.max(4.0, Math.min(55.0, Math.round(bf * 10) / 10));
+}
+
+function getMorphInterpolation(pct) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0)) / 100;
+  // Waist scale: 1.0 down to 0.78
+  const waistScale = Math.round((1.0 - p * (1.0 - 0.78)) * 1000) / 1000;
+  // Shoulder scale: 1.0 up to 1.08
+  const shoulderScale = Math.round((1.0 + p * 0.08) * 1000) / 1000;
+  // Abdominal definition & striations: 0.15 up to 1.0
+  const abOpacity = Math.round((0.15 + p * 0.85) * 1000) / 1000;
+  // Chest definition: 0.25 up to 1.0
+  const chestDefinition = Math.round((0.25 + p * 0.75) * 1000) / 1000;
+  // Glow intensity: 0 to 1
+  const glowIntensity = Math.round(p * 100) / 100;
+
+  return { waistScale, shoulderScale, abOpacity, chestDefinition, glowIntensity };
+}
+
+function calcNutritionTargets(opts = {}) {
+  const gender = opts.gender || S.cfg?.bodyModel || 'male';
+  const isFemale = gender === 'female';
+  const weight = Math.max(35, Math.min(250, Number(opts.weight) || (isFemale ? 62 : 78)));
+  const height = Math.max(100, Math.min(250, Number(opts.height) || (isFemale ? 165 : 178)));
+  const goalType = opts.goalType || 'sixpack';
+  const currentBf = Number(opts.currentBf) || (isFemale ? 24.0 : 16.0);
+
+  const leanMass = weight * (1 - (currentBf / 100));
+  const bmr = 370 + (21.6 * leanMass);
+  const tdee = Math.round(bmr * 1.45);
+
+  let cals, proteinRatio, fatRatio;
+
+  if (goalType === 'sixpack') {
+    cals = Math.round(tdee - 450);
+    proteinRatio = 2.2;
+    fatRatio = 0.75;
+  } else if (goalType === 'bulk') {
+    cals = Math.round(tdee + 300);
+    proteinRatio = 2.0;
+    fatRatio = 0.85;
+  } else {
+    cals = Math.round(tdee - 150);
+    proteinRatio = 2.2;
+    fatRatio = 0.8;
+  }
+
+  cals = Math.max(1400, cals);
+
+  const protein = Math.round(weight * proteinRatio);
+  const fats = Math.round(weight * fatRatio);
+  const remainingCals = Math.max(150, cals - (protein * 4) - (fats * 9));
+  const carbs = Math.round(remainingCals / 4);
+
+  return {
+    cals,
+    protein,
+    proteinRatio,
+    carbs,
+    fats
+  };
+}
+
+function getDefaultPhysiqueConfig(gender = 'male') {
+  const isFemale = gender === 'female';
+  return {
+    height: isFemale ? 165 : 178,
+    weight: isFemale ? 62 : 78,
+    waist: isFemale ? 74 : 85,
+    neck: isFemale ? 33 : 38,
+    hip: isFemale ? 95 : 98,
+    goalType: 'sixpack',
+    targetBf: isFemale ? 18.0 : 11.0,
+    startBf: isFemale ? 26.0 : 19.5,
+    microProgressBonus: 0
+  };
+}
+
+function getPhysiqueState() {
+  const gender = S.cfg?.bodyModel || 'male';
+  const defaults = getDefaultPhysiqueConfig(gender);
+  const userP = S.cfg?.physique || {};
+
+  const sorted = [...(S.weights || [])].filter(x => (x.w != null && x.w > 0) || (x.waist != null && x.waist > 0)).sort((a, b) => a.t - b.t);
+  const latestW = [...sorted].reverse().find(x => x.w != null && x.w > 0);
+  const latestWaist = [...sorted].reverse().find(x => x.waist != null && x.waist > 0);
+
+  const height = Number(userP.height) || defaults.height;
+  const weight = latestW ? Number(latestW.w) : (Number(userP.weight) || defaults.weight);
+  const waist = latestWaist ? Number(latestWaist.waist) : (Number(userP.waist) || defaults.waist);
+  const neck = Number(userP.neck) || defaults.neck;
+  const hip = Number(userP.hip) || defaults.hip;
+  const goalType = userP.goalType || defaults.goalType;
+
+  const currentBf = calcUSNavyBF(gender, height, weight, waist, neck, hip);
+
+  let targetBf = Number(userP.targetBf);
+  if (!targetBf || isNaN(targetBf)) {
+    if (goalType === 'sixpack') targetBf = (gender === 'female' ? 18.0 : 11.0);
+    else if (goalType === 'bulk') targetBf = (gender === 'female' ? 22.0 : 14.0);
+    else targetBf = (gender === 'female' ? 19.5 : 12.5);
+  }
+
+  let startBf = Number(userP.startBf);
+  if (!startBf || isNaN(startBf)) {
+    const firstW = sorted.find(x => x.w != null && x.w > 0);
+    const firstWaist = sorted.find(x => x.waist != null && x.waist > 0);
+    if (firstW && firstWaist) {
+      startBf = calcUSNavyBF(gender, height, firstW.w, firstWaist.waist, neck, hip);
+    } else {
+      startBf = goalType === 'bulk' ? targetBf - 4.0 : Math.max(currentBf + 2.0, targetBf + 6.0);
+    }
+  }
+
+  let baseProgress = 0;
+  if (goalType === 'bulk') {
+    const totalDelta = targetBf - startBf;
+    if (Math.abs(totalDelta) > 0.1) {
+      baseProgress = ((currentBf - startBf) / totalDelta) * 100;
+    } else {
+      baseProgress = 50;
+    }
+  } else {
+    const totalFatLossTarget = startBf - targetBf;
+    if (totalFatLossTarget > 0.1) {
+      baseProgress = ((startBf - currentBf) / totalFatLossTarget) * 100;
+    } else {
+      baseProgress = currentBf <= targetBf ? 100 : 0;
+    }
+  }
+
+  const microBonus = Number(userP.microProgressBonus) || 0;
+  const progressPct = Math.max(0, Math.min(100, Math.round((baseProgress + microBonus) * 10) / 10));
+
+  const deltaBf = Math.abs(currentBf - targetBf);
+  const weeksRemaining = Math.max(1, Math.round(deltaBf / 0.45));
+  const workoutsRemaining = weeksRemaining * 4;
+
+  const macros = calcNutritionTargets({ gender, height, weight, goalType, currentBf });
+
+  let goalTitle = 'Lean Six-Pack';
+  if (goalType === 'bulk') goalTitle = 'Lean Muscle Bulk';
+  else if (goalType === 'recomp') goalTitle = 'Athletic Recomp';
+
+  return {
+    gender,
+    height,
+    weight,
+    waist,
+    neck,
+    hip,
+    goalType,
+    goalTitle,
+    currentBf,
+    targetBf,
+    startBf,
+    progressPct,
+    weeksRemaining,
+    workoutsRemaining,
+    macros,
+    microProgressBonus: microBonus
+  };
+}
+
+function generateMorphSvg(gender = 'male', progressPct = 42.5) {
+  const isFemale = (gender || S.cfg?.bodyModel) === 'female';
+  const p = Math.max(0, Math.min(100, Number(progressPct) || 0));
+  const { waistScale, shoulderScale, abOpacity, chestDefinition, glowIntensity } = getMorphInterpolation(p);
+
+  const glowFilterStyle = glowIntensity > 0.35
+    ? `filter: drop-shadow(0 0 ${(glowIntensity * 5).toFixed(1)}px rgba(255, 159, 10, ${(glowIntensity * 0.75).toFixed(2)}));`
+    : '';
+
+  return `
+    <svg id="morph-silhouette-svg" class="roadmap-morph-svg" viewBox="0 0 280 340" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="morph-body-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#232736"/>
+          <stop offset="100%" stop-color="#141721"/>
+        </linearGradient>
+        <linearGradient id="morph-gold-grad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#FF9F0A"/>
+          <stop offset="100%" stop-color="#FFD60A"/>
+        </linearGradient>
+        <filter id="gold-glow" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge>
+            <feMergeNode in="blur"/>
+            <feMergeNode in="SourceGraphic"/>
+          </feMerge>
+        </filter>
+      </defs>
+
+      <!-- Projected Target Goal Physique Ghost Outline -->
+      <path class="morph-ghost-silhouette" d="${isFemale
+        ? 'M 140 18 C 122 18 94 60 84 94 C 94 108 108 112 118 152 C 114 175 106 200 114 245 C 118 280 120 316 125 322 L 155 322 C 160 316 162 280 166 245 C 174 200 166 175 162 152 C 172 112 186 108 196 94 C 186 60 158 18 140 18 Z'
+        : 'M 140 18 C 120 18 80 62 68 100 C 80 116 100 122 114 162 C 110 185 102 215 110 256 C 115 285 118 316 124 322 L 156 322 C 162 316 165 285 170 256 C 178 215 170 185 166 162 C 180 122 200 116 212 100 C 200 62 160 18 140 18 Z'
+      }"/>
+
+      <!-- Base Anatomical Head & Neck -->
+      <circle cx="140" cy="30" r="14" fill="#161822" stroke="#252A3A" stroke-width="1.2"/>
+      <path d="M 133 44 L 133 56 M 147 44 L 147 56" stroke="#252A3A" stroke-width="1.2"/>
+
+      <!-- Lower Body (Hips, Quads, Calves) -->
+      ${isFemale ? `
+        <!-- Female Pelvis, Sculpted Quads, Sleek Calves -->
+        <path d="M 112 184 C 104 202 106 230 114 254 C 118 262 124 262 126 254 C 124 238 126 216 128 196 Z" fill="#1C202D" stroke="#2C3347" stroke-width="1.2"/>
+        <path d="M 168 184 C 176 202 174 230 166 254 C 162 262 156 262 154 254 C 156 238 154 216 152 196 Z" fill="#1C202D" stroke="#2C3347" stroke-width="1.2"/>
+        <path d="M 116 264 C 112 278 116 296 123 318 L 130 318 C 128 296 128 278 125 264 Z" fill="#181B26" stroke="#282F42" stroke-width="1"/>
+        <path d="M 164 264 C 168 278 164 296 157 318 L 150 318 C 152 296 152 278 155 264 Z" fill="#181B26" stroke="#282F42" stroke-width="1"/>
+      ` : `
+        <!-- Male Quads with Teardrop Definition, Calves -->
+        <path d="M 114 190 C 104 208 106 236 114 254 C 118 262 124 262 126 254 C 124 238 126 216 128 200 Z" fill="#1C202D" stroke="#2C3347" stroke-width="1.2"/>
+        <path d="M 166 190 C 176 208 174 236 166 254 C 162 262 156 262 154 254 C 156 238 154 216 152 200 Z" fill="#1C202D" stroke="#2C3347" stroke-width="1.2"/>
+        <path d="M 124 238 C 128 244 126 252 122 254 M 156 238 C 152 244 154 252 158 254" fill="none" stroke="#FF9F0A" stroke-width="1.2" opacity="0.6"/>
+        <path d="M 115 264 C 110 278 114 296 122 318 L 130 318 C 128 296 128 278 125 264 Z" fill="#181B26" stroke="#282F42" stroke-width="1"/>
+        <path d="M 165 264 C 170 278 166 296 158 318 L 150 318 C 152 296 152 278 155 264 Z" fill="#181B26" stroke="#282F42" stroke-width="1"/>
+      `}
+
+      <!-- Arms & Forearms -->
+      <path d="M 80 114 C 74 126 72 144 76 158 C 78 168 76 182 74 192 L 84 192 C 86 180 88 168 86 156 C 88 144 92 126 90 114 Z" fill="#181B26" stroke="#282F42" stroke-width="1"/>
+      <path d="M 200 114 C 206 126 208 144 204 158 C 202 168 204 182 206 192 L 196 192 C 194 180 192 168 194 156 C 192 144 188 126 190 114 Z" fill="#181B26" stroke="#282F42" stroke-width="1"/>
+
+      <!-- Morph Group: Shoulders & Traps (Broadens as shoulderScale increases) -->
+      <g id="morph-shoulders" transform="translate(140, 78) scale(${shoulderScale}, 1) translate(-140, -78)">
+        <path d="M 132 50 C 122 56 108 64 96 74 L 110 74 C 122 66 132 58 132 50 Z" fill="#1B1E2B" stroke="#2D3346" stroke-width="1"/>
+        <path d="M 148 50 C 158 56 172 64 184 74 L 170 74 C 158 66 148 58 148 50 Z" fill="#1B1E2B" stroke="#2D3346" stroke-width="1"/>
+        <path d="M 96 74 C 82 78 72 90 74 104 C 76 116 85 120 92 116 C 98 110 102 96 98 74 Z" fill="#1D2130" stroke="#333A4E" stroke-width="1.2"/>
+        <path d="M 184 74 C 198 78 208 90 206 104 C 204 116 195 120 188 116 C 182 110 178 96 182 74 Z" fill="#1D2130" stroke="#333A4E" stroke-width="1.2"/>
+        <!-- Lateral Deltoid Striation Highlight -->
+        <path d="M 85 86 C 88 94 92 102 91 108 M 195 86 C 192 94 188 102 189 108" fill="none" stroke="#FF9F0A" stroke-width="1.2" opacity="0.75"/>
+      </g>
+
+      <!-- Morph Group: Waist & Lats (Tapers as waistScale decreases 1.0 -> 0.78) -->
+      <g id="morph-waist" transform="translate(140, 155) scale(${waistScale}, 1) translate(-140, -155)">
+        <path d="${isFemale
+          ? 'M 102 114 C 102 135 114 150 118 164 L 162 164 C 166 150 178 135 178 114 Z'
+          : 'M 98 116 C 98 135 110 152 116 168 L 164 168 C 170 152 182 135 182 116 Z'
+        }" fill="#161822" stroke="#252A3A" stroke-width="1.2"/>
+        <path d="${isFemale
+          ? 'M 118 164 C 114 174 108 182 112 188 L 168 188 C 172 182 166 174 162 164 Z'
+          : 'M 116 168 C 114 176 112 184 114 190 L 166 190 C 168 184 166 176 164 168 Z'
+        }" fill="#181B26" stroke="#282F42" stroke-width="1.2"/>
+        <!-- Obliques Contours -->
+        <path d="M 115 160 C 122 168 126 176 128 182 M 165 160 C 158 168 154 176 152 182" fill="none" stroke="#FF9F0A" stroke-width="1.2" opacity="0.7"/>
+      </g>
+
+      <!-- Morph Group: Chiseled Chest / Pectoral Shelf -->
+      <g id="morph-pecs" opacity="${chestDefinition}">
+        <path d="${isFemale
+          ? 'M 137 86 C 120 88 106 98 108 116 C 110 126 124 128 137 126 Z'
+          : 'M 137 84 C 122 86 102 92 100 110 C 100 120 114 125 137 124 Z'
+        }" fill="#202434" stroke="#363E54" stroke-width="1.2"/>
+        <path d="${isFemale
+          ? 'M 143 86 C 160 88 174 98 172 116 C 170 126 156 128 143 126 Z'
+          : 'M 143 84 C 158 86 178 92 180 110 C 180 120 166 125 143 124 Z'
+        }" fill="#202434" stroke="#363E54" stroke-width="1.2"/>
+        <!-- Chiseled Lower Pec Underline with Gold Accent -->
+        <path d="M 104 114 C 114 122 126 124 137 124 M 176 114 C 166 122 154 124 143 124" fill="none" stroke="#FF9F0A" stroke-width="1.8" filter="url(#gold-glow)"/>
+      </g>
+
+      <!-- Morph Group: Serratus & Rib Striations -->
+      <g id="morph-striations" opacity="${(abOpacity * 0.85).toFixed(3)}">
+        <path d="M 112 130 L 122 136 M 110 140 L 121 146 M 112 150 L 122 156" fill="none" stroke="#FF9F0A" stroke-width="1.2"/>
+        <path d="M 168 130 L 158 136 M 170 140 L 159 146 M 168 150 L 158 156" fill="none" stroke="#FF9F0A" stroke-width="1.2"/>
+      </g>
+
+      <!-- Morph Group: 6-Pack Rectus Abdominis with Gold/Amber Glow -->
+      <g id="morph-abs" opacity="${abOpacity}" style="${glowFilterStyle}">
+        <!-- Linea Alba Midline -->
+        <line x1="140" y1="126" x2="140" y2="182" stroke="#FF9F0A" stroke-width="1.6"/>
+        <!-- Transverse Inscriptions -->
+        <line x1="128" y1="142" x2="152" y2="142" stroke="#FF9F0A" stroke-width="1.2"/>
+        <line x1="128" y1="160" x2="152" y2="160" stroke="#FF9F0A" stroke-width="1.2"/>
+        <!-- Abdominal Tiles -->
+        <rect x="129" y="128" width="9" height="12" rx="2" fill="#24293A" stroke="#3D465E" stroke-width="0.8"/>
+        <rect x="142" y="128" width="9" height="12" rx="2" fill="#24293A" stroke="#3D465E" stroke-width="0.8"/>
+        <rect x="128" y="144" width="10" height="14" rx="2" fill="#24293A" stroke="#3D465E" stroke-width="0.8"/>
+        <rect x="142" y="144" width="10" height="14" rx="2" fill="#24293A" stroke="#3D465E" stroke-width="0.8"/>
+        <rect x="129" y="162" width="9" height="16" rx="2" fill="#24293A" stroke="#3D465E" stroke-width="0.8"/>
+        <rect x="142" y="162" width="9" height="16" rx="2" fill="#24293A" stroke="#3D465E" stroke-width="0.8"/>
+      </g>
+    </svg>
+  `;
+}
+
+function updateMorphVisuals(pct) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  const { waistScale, shoulderScale, abOpacity, chestDefinition, glowIntensity } = getMorphInterpolation(p);
+
+  const svg = document.getElementById('morph-silhouette-svg');
+  if (svg) {
+    const waistG = svg.querySelector('#morph-waist');
+    if (waistG) waistG.setAttribute('transform', `translate(140, 155) scale(${waistScale}, 1) translate(-140, -155)`);
+
+    const shoulderG = svg.querySelector('#morph-shoulders');
+    if (shoulderG) shoulderG.setAttribute('transform', `translate(140, 78) scale(${shoulderScale}, 1) translate(-140, -78)`);
+
+    const absG = svg.querySelector('#morph-abs');
+    if (absG) {
+      absG.setAttribute('opacity', abOpacity.toFixed(3));
+      absG.style.filter = glowIntensity > 0.35 ? `drop-shadow(0 0 ${(glowIntensity * 5).toFixed(1)}px rgba(255, 159, 10, ${(glowIntensity * 0.75).toFixed(2)}))` : 'none';
+    }
+
+    const pecsG = svg.querySelector('#morph-pecs');
+    if (pecsG) pecsG.setAttribute('opacity', chestDefinition.toFixed(3));
+
+    const striatG = svg.querySelector('#morph-striations');
+    if (striatG) striatG.setAttribute('opacity', (abOpacity * 0.85).toFixed(3));
+  }
+
+  const numEl = document.getElementById('morph-readout-num');
+  if (numEl) numEl.textContent = `${p.toFixed(1)}%`;
+
+  const tagEl = document.getElementById('morph-curr-tag');
+  if (tagEl) tagEl.textContent = `Scrub: ${p.toFixed(1)}%`;
+
+  const ringEl = document.getElementById('morph-progress-ring');
+  if (ringEl) {
+    const circumference = 2 * Math.PI * 40; // 251.327
+    const offset = circumference - (p / 100) * circumference;
+    ringEl.style.strokeDashoffset = offset.toFixed(1);
+  }
+}
+
+function updateCalibrationPreview() {
+  const gEl = $('#calib-gender');
+  const hEl = $('#calib-height');
+  const wEl = $('#calib-weight');
+  const waistEl = $('#calib-waist');
+  const neckEl = $('#calib-neck');
+  const hipEl = $('#calib-hip');
+  const hipField = $('#calib-hip-field');
+  const liveBfEl = $('#calib-live-bf');
+
+  if (hipField) {
+    hipField.style.display = gEl?.value === 'female' ? '' : 'none';
+  }
+
+  const liveBf = calcUSNavyBF(
+    gEl?.value || 'male',
+    parseFloat(hEl?.value) || 178,
+    parseFloat(wEl?.value) || 78,
+    parseFloat(waistEl?.value) || 85,
+    parseFloat(neckEl?.value) || 38,
+    parseFloat(hipEl?.value) || 95
+  );
+
+  if (liveBfEl) liveBfEl.textContent = `${liveBf}%`;
+}
+
+function showPhysiqueCalibrationModal() {
+  const p = getPhysiqueState();
+  const isFemale = p.gender === 'female';
+
+  modal(`
+    <h2>🎯 Roadmap Calibration</h2>
+    <p class="t2 sm" style="margin-bottom:12px">Calibrate anthropometry, goal physique, and daily nutrition targets.</p>
+
+    <div class="calib-preview-banner" id="calib-preview-banner">
+      <span>📐</span>
+      <div>Estimated Body Fat: <b id="calib-live-bf">${p.currentBf}%</b> (US Navy Method)</div>
+    </div>
+
+    <div class="calib-modal-grid">
+      <div class="calib-field">
+        <label class="calib-lbl">Body Silhouette</label>
+        <select class="calib-select" id="calib-gender">
+          <option value="male" ${!isFemale ? 'selected' : ''}>Male Silhouette</option>
+          <option value="female" ${isFemale ? 'selected' : ''}>Female Silhouette</option>
+        </select>
+      </div>
+
+      <div class="calib-row">
+        <div class="calib-field">
+          <label class="calib-lbl">Height (cm)</label>
+          <input type="number" step="0.5" class="calib-input" id="calib-height" value="${p.height}" placeholder="178">
+        </div>
+        <div class="calib-field">
+          <label class="calib-lbl">Current Weight (kg)</label>
+          <input type="number" step="0.1" class="calib-input" id="calib-weight" value="${p.weight}" placeholder="78">
+        </div>
+      </div>
+
+      <div class="calib-row">
+        <div class="calib-field">
+          <label class="calib-lbl">Waist Circumference (cm)</label>
+          <input type="number" step="0.5" class="calib-input" id="calib-waist" value="${p.waist}" placeholder="85">
+        </div>
+        <div class="calib-field">
+          <label class="calib-lbl">Neck (cm)</label>
+          <input type="number" step="0.5" class="calib-input" id="calib-neck" value="${p.neck}" placeholder="38">
+        </div>
+      </div>
+
+      <div class="calib-field" id="calib-hip-field" style="${isFemale ? '' : 'display:none'}">
+        <label class="calib-lbl">Hip Circumference (cm)</label>
+        <input type="number" step="0.5" class="calib-input" id="calib-hip" value="${p.hip}" placeholder="95">
+      </div>
+
+      <div class="calib-field">
+        <label class="calib-lbl">Physique Goal</label>
+        <select class="calib-select" id="calib-goal">
+          <option value="sixpack" ${p.goalType === 'sixpack' ? 'selected' : ''}>🔥 Six-Pack Cut (Target ~11% BF)</option>
+          <option value="bulk" ${p.goalType === 'bulk' ? 'selected' : ''}>💪 Lean Muscle Bulk (Target ~14% BF)</option>
+          <option value="recomp" ${p.goalType === 'recomp' ? 'selected' : ''}>⚡ Body Recomposition (Target ~12.5% BF)</option>
+        </select>
+      </div>
+
+      <div class="calib-field">
+        <label class="calib-lbl">Target Body Fat (%)</label>
+        <input type="number" step="0.5" class="calib-input" id="calib-target-bf" value="${p.targetBf}" placeholder="11.0">
+      </div>
+    </div>
+
+    <button class="btn" data-a="savecalibration">Save & Recalculate Roadmap 🚀</button>
+  `);
+}
+
+function renderTransformationRoadmapCard() {
+  const p = getPhysiqueState();
+
+  const goalBadgeText = p.goalType === 'sixpack'
+    ? `TARGET: LEAN SIX-PACK (${p.targetBf}% BF)`
+    : (p.goalType === 'bulk'
+        ? `TARGET: LEAN MUSCLE BULK (${p.targetBf}% BF)`
+        : `TARGET: ATHLETIC RECOMP (${p.targetBf}% BF)`);
+
+  const circumference = 2 * Math.PI * 40; // 251.327
+  const strokeOffset = circumference - (p.progressPct / 100) * circumference;
+
+  const svgMorph = generateMorphSvg(p.gender, p.progressPct);
+
+  return `
+    <div class="roadmap-card">
+      <div class="roadmap-header">
+        <div class="roadmap-goal-badge">
+          <span>🎯</span> ${esc(goalBadgeText)}
+        </div>
+        <button class="roadmap-calib-btn" data-a="opencalibration">🎯 Update Goal & Measurements</button>
+      </div>
+
+      <div class="roadmap-visual-box">
+        <div class="roadmap-svg-wrap">
+          ${svgMorph}
+        </div>
+
+        <div class="morph-slider-container">
+          <div class="morph-slider-labels">
+            <span class="slider-marker start">0% Start (${p.startBf}%)</span>
+            <span class="slider-marker current" id="morph-curr-tag">Current: ${p.progressPct}%</span>
+            <span class="slider-marker goal">100% Goal (${p.targetBf}%)</span>
+          </div>
+          <input type="range" min="0" max="100" step="0.5" value="${p.progressPct}" id="morph-scrub-input" class="morph-scrub-slider" data-a="morph-scrub">
+          <div class="morph-slider-actions">
+            <button class="chip morph-reset-btn" data-a="resetmorph" data-pct="${p.progressPct}">↺ Snap to Current (${p.progressPct}%)</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="roadmap-gauge-card">
+        <div class="roadmap-gauge-ring-wrap">
+          <svg class="roadmap-gauge-svg" viewBox="0 0 96 96">
+            <defs>
+              <linearGradient id="gauge-grad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#0A84FF"/>
+                <stop offset="100%" stop-color="#FF9F0A"/>
+              </linearGradient>
+            </defs>
+            <circle class="roadmap-gauge-bg" cx="48" cy="48" r="40"/>
+            <circle class="roadmap-gauge-fill" id="morph-progress-ring" cx="48" cy="48" r="40"
+              stroke-dasharray="${circumference.toFixed(1)}"
+              stroke-dashoffset="${strokeOffset.toFixed(1)}"/>
+          </svg>
+          <div class="gauge-center-text">
+            <div class="gauge-pct" id="morph-readout-num">${p.progressPct}%</div>
+            <div class="gauge-sub">DONE</div>
+          </div>
+        </div>
+        <div class="roadmap-milestone-box">
+          <div class="roadmap-milestone-title">Estimated Timeline</div>
+          <div class="roadmap-milestone-sub">
+            Estimated: ~${p.weeksRemaining} Weeks remaining (approx. ${p.workoutsRemaining} consistent workouts)
+          </div>
+        </div>
+      </div>
+
+      <div class="fuel-blueprint-card">
+        <div class="fuel-blueprint-header">
+          <div class="fuel-title">🥗 Daily Fuel Blueprint</div>
+          <div class="fuel-tag">${esc(p.goalTitle)} Targets</div>
+        </div>
+        <div class="fuel-grid">
+          <div class="fuel-col">
+            <div class="fuel-val">${p.macros.cals.toLocaleString()}</div>
+            <div class="fuel-unit">kcal</div>
+            <div class="fuel-lbl">Calories</div>
+          </div>
+          <div class="fuel-col">
+            <div class="fuel-val">${p.macros.protein}g</div>
+            <div class="fuel-unit">${p.macros.proteinRatio}g/kg</div>
+            <div class="fuel-lbl">Protein</div>
+          </div>
+          <div class="fuel-col">
+            <div class="fuel-val">${p.macros.carbs}g</div>
+            <div class="fuel-unit">Carbs</div>
+            <div class="fuel-lbl">Fuel</div>
+          </div>
+          <div class="fuel-col">
+            <div class="fuel-val">${p.macros.fats}g</div>
+            <div class="fuel-unit">Fats</div>
+            <div class="fuel-lbl">Healthy Fats</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function vBody() {
+  const roadmapHtml = renderTransformationRoadmapCard();
   const sorted = [...S.weights].sort((a, b) => a.t - b.t);
   const weightsArr = sorted.filter(x => x.w != null && x.w > 0).map(x => x.w);
   const waistsArr = sorted.filter(x => x.waist != null && x.waist > 0).map(x => x.waist);
@@ -2674,7 +3212,9 @@ function vWeight() {
     }
   }
 
-  return viewHeader('Body Measurements') +
+  return viewHeader('Body & Transformation') +
+    roadmapHtml +
+    `<h2>Measurement Trends</h2>` +
     `<div class="stat-grid">` +
       `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
       `<div class="stat-box"><div class="stat-val">${latestWaist != null ? latestWaist.toFixed(1) + ' cm' : '--'}</div><div class="stat-lbl">Waist</div></div>` +
@@ -2744,6 +3284,8 @@ function vWeight() {
       }).join('') : '<p class="t2 sm" style="padding:14px 0">No measurement entries logged yet.</p>') +
     `</div>`;
 }
+
+const vWeight = vBody;
 
 // 6. History View (Strictly Dedicated to Past Workout Logs)
 const vHist = () => {
@@ -2818,7 +3360,8 @@ function render() {
     work: vWork,
     lib: vLib,
     cal: vCal,
-    weight: vWeight,
+    weight: vBody,
+    body: vBody,
     hist: vHist
   })[view]();
   v.scrollTop = y;
@@ -3235,6 +3778,7 @@ async function imp(f) {
       if (Number.isFinite(o.cfg.rest)) S.cfg.rest = Math.max(5, Math.min(600, +o.cfg.rest));
       if (typeof o.cfg.flash === 'boolean') S.cfg.flash = o.cfg.flash;
       if (o.cfg.bodyModel) S.cfg.bodyModel = o.cfg.bodyModel === 'female' ? 'female' : 'male';
+      if (o.cfg.physique && typeof o.cfg.physique === 'object') S.cfg.physique = { ...o.cfg.physique };
     }
 
     if (o.sched && typeof o.sched === 'object' && !Array.isArray(o.sched)) {
@@ -3589,11 +4133,28 @@ function finish() {
   const log = { id: uid(), date: Date.now(), name: a.name, dur: Date.now() - a.t0, ex, isDeload };
   S.logs.push(log);
   S.act = null;
-  save('logs', 'act', 'routines');
+
+  // Calculate micro-progress increment (+0.3% to +0.5% based on workout volume and consistency)
+  const baseInc = 0.3;
+  const volBonus = curVol >= 3500 ? 0.1 : 0;
+  const streakBonus = streak() >= 2 ? 0.1 : 0;
+  const microInc = Math.min(0.5, Math.round((baseInc + volBonus + streakBonus) * 10) / 10);
+
+  if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(S.cfg.bodyModel);
+  S.cfg.physique.microProgressBonus = Math.round(((S.cfg.physique.microProgressBonus || 0) + microInc) * 10) / 10;
+
+  save('logs', 'act', 'routines', 'cfg');
   stopRest();
   wl?.release?.();
 
   modal(`<h2>Workout Complete! 🏆</h2>
+    <div class="transformation-celebration-banner">
+      <span class="tcb-fire">🔥</span>
+      <div class="tcb-body">
+        <div class="tcb-title">Transformation Progress: +${microInc}% today!</div>
+        <div class="tcb-sub">1 workout closer to your goal physique 🔥</div>
+      </div>
+    </div>
     ${mmLog(log)}
     <div class="card" style="margin:12px 0;padding:12px">
       <div class="row">
@@ -3723,6 +4284,81 @@ document.addEventListener('click', e => {
     case 'calsel':
       calSelectedDate = t.dataset.date;
       break;
+
+    // Body & Transformation Roadmap Actions
+    case 'opencalibration': {
+      showPhysiqueCalibrationModal();
+      break;
+    }
+    case 'savecalibration': {
+      const hInp = $('#calib-height');
+      const wInp = $('#calib-weight');
+      const waistInp = $('#calib-waist');
+      const neckInp = $('#calib-neck');
+      const hipInp = $('#calib-hip');
+      const goalSel = $('#calib-goal');
+      const targetBfInp = $('#calib-target-bf');
+      const genderSel = $('#calib-gender');
+
+      const hVal = parseFloat(hInp?.value) || 178;
+      const wVal = parseFloat(wInp?.value);
+      const waistVal = parseFloat(waistInp?.value);
+      const neckVal = parseFloat(neckInp?.value) || 38;
+      const hipVal = parseFloat(hipInp?.value) || (waistVal ? waistVal * 1.25 : 95);
+      const goalVal = goalSel?.value || 'sixpack';
+      const targetBfVal = parseFloat(targetBfInp?.value) || 11.0;
+      const genderVal = genderSel?.value || S.cfg.bodyModel || 'male';
+
+      S.cfg.bodyModel = genderVal;
+      if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(genderVal);
+      S.cfg.physique = {
+        ...S.cfg.physique,
+        height: Math.max(100, Math.min(250, hVal)),
+        neck: Math.max(20, Math.min(70, neckVal)),
+        hip: Math.max(40, Math.min(200, hipVal)),
+        goalType: goalVal,
+        targetBf: Math.max(4, Math.min(45, targetBfVal))
+      };
+
+      if (Number.isFinite(wVal) && wVal > 0) S.cfg.physique.weight = rd(wVal);
+      if (Number.isFinite(waistVal) && waistVal > 0) S.cfg.physique.waist = rd(waistVal);
+
+      // Log entry in S.weights if user provided weight or waist
+      const dateVal = new Date().toISOString().slice(0, 10);
+      const hasW = Number.isFinite(wVal) && wVal > 0 && wVal < 500;
+      const hasWaist = Number.isFinite(waistVal) && waistVal > 0 && waistVal < 300;
+      if (hasW || hasWaist) {
+        const existing = S.weights.find(x => x.date === dateVal);
+        if (existing) {
+          if (hasW) existing.w = rd(wVal);
+          if (hasWaist) existing.waist = rd(waistVal);
+          existing.t = new Date(dateVal + 'T12:00:00').getTime();
+        } else {
+          S.weights.push({
+            id: uid(),
+            date: dateVal,
+            w: hasW ? rd(wVal) : null,
+            waist: hasWaist ? rd(waistVal) : null,
+            t: new Date(dateVal + 'T12:00:00').getTime()
+          });
+        }
+      }
+
+      save('cfg', 'weights');
+      close();
+      toast('Physique Roadmap calibrated! 🎯');
+      render();
+      break;
+    }
+    case 'resetmorph': {
+      const targetPct = parseFloat(t.dataset.pct);
+      const slider = $('#morph-scrub-input');
+      if (slider && Number.isFinite(targetPct)) {
+        slider.value = targetPct;
+        updateMorphVisuals(targetPct);
+      }
+      break;
+    }
 
     // Body Measurements (Weight + Waist)
     case 'setwv': {
@@ -4433,7 +5069,15 @@ const handleFieldUpdate = t => {
   }
 };
 
-document.addEventListener('input', e => handleFieldUpdate(e.target));
+document.addEventListener('input', e => {
+  handleFieldUpdate(e.target);
+  if (e.target.id === 'morph-scrub-input') {
+    updateMorphVisuals(parseFloat(e.target.value) || 0);
+  }
+  if (e.target.id && e.target.id.startsWith('calib-')) {
+    updateCalibrationPreview();
+  }
+});
 document.addEventListener('blur', e => handleFieldUpdate(e.target), true);
 document.addEventListener('change', e => {
   const t = e.target;
@@ -4441,6 +5085,29 @@ document.addEventListener('change', e => {
   if (t.id === 'f' && t.files[0]) {
     imp(t.files[0]);
     t.value = '';
+  }
+  if (t.id === 'calib-goal') {
+    const gEl = $('#calib-gender');
+    const targetBfEl = $('#calib-target-bf');
+    if (targetBfEl) {
+      const g = gEl?.value || S.cfg.bodyModel || 'male';
+      if (t.value === 'sixpack') targetBfEl.value = g === 'female' ? '18.0' : '11.0';
+      else if (t.value === 'bulk') targetBfEl.value = g === 'female' ? '22.0' : '14.0';
+      else targetBfEl.value = g === 'female' ? '19.5' : '12.5';
+    }
+    updateCalibrationPreview();
+  }
+  if (t.id === 'calib-gender') {
+    const hipField = $('#calib-hip-field');
+    if (hipField) hipField.style.display = t.value === 'female' ? '' : 'none';
+    const targetBfEl = $('#calib-target-bf');
+    const goalEl = $('#calib-goal');
+    if (targetBfEl) {
+      if (goalEl?.value === 'sixpack') targetBfEl.value = t.value === 'female' ? '18.0' : '11.0';
+      else if (goalEl?.value === 'bulk') targetBfEl.value = t.value === 'female' ? '22.0' : '14.0';
+      else targetBfEl.value = t.value === 'female' ? '19.5' : '12.5';
+    }
+    updateCalibrationPreview();
   }
   if (t.dataset.c) {
     if (t.dataset.c === 'inc') {
@@ -4614,7 +5281,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.4.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.5.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -4667,7 +5334,18 @@ if (typeof globalThis !== 'undefined') {
     mapMuscleToAnatomyKey,
     getTopExercisesForMuscle,
     ANATOMY_MUSCLES,
-    generateAnatomySvg
+    generateAnatomySvg,
+    calcUSNavyBF,
+    calcNutritionTargets,
+    getMorphInterpolation,
+    getDefaultPhysiqueConfig,
+    getPhysiqueState,
+    generateMorphSvg,
+    updateMorphVisuals,
+    showPhysiqueCalibrationModal,
+    renderTransformationRoadmapCard,
+    vBody,
+    vWeight
   };
 }
 

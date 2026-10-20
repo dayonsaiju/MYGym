@@ -335,7 +335,7 @@ function it(name, fn) {
 }
 
 console.log('\n======================================================');
-console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.4.0-anatomy)');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.5.0-physique)');
 console.log('======================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -934,24 +934,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.4.0-anatomy, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.4.0-anatomy';"), 'sw.js must use mygym-core-v5.4.0-anatomy cache name');
-  assert(swCode.includes("'./style.css?v=5.4.0'"), 'sw.js must precache style.css?v=5.4.0');
-  assert(swCode.includes("'./app.js?v=5.4.0'"), 'sw.js must precache app.js?v=5.4.0');
+it('sw.js cache key is bumped to mygym-core-v5.5.0-physique, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.5.0-physique';"), 'sw.js must use mygym-core-v5.5.0-physique cache name');
+  assert(swCode.includes("'./style.css?v=5.5.0'"), 'sw.js must precache style.css?v=5.5.0');
+  assert(swCode.includes("'./app.js?v=5.5.0'"), 'sw.js must precache app.js?v=5.5.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.4.0'), 'index.html must link style.css?v=5.4.0');
-  assert(htmlCode.includes('app.js?v=5.4.0'), 'index.html must load app.js?v=5.4.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.4.0-anatomy'"), 'index.html must use mygym-v5.4.0-anatomy');
+  assert(htmlCode.includes('style.css?v=5.5.0'), 'index.html must link style.css?v=5.5.0');
+  assert(htmlCode.includes('app.js?v=5.5.0'), 'index.html must load app.js?v=5.5.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.5.0-physique'"), 'index.html must use mygym-v5.5.0-physique');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.4.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.4.0-anatomy');
+  assert.equal(api.APP_VERSION, '5.5.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.5.0-physique');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1108,6 +1108,88 @@ it('Interactive Tap-to-Explore: showMuscleDetailSheet displays target name and t
   assert(modalOrDrawer.includes('Target: Pectorals (Chest)') || modalOrDrawer.includes('Pectorals'), 'Must show Target: Pectorals (Chest)');
   assert(modalOrDrawer.includes('mm-explore-item'), 'Must list matching exercises');
   assert(modalOrDrawer.includes('data-a="pickpreview"'), 'Exercises in explorer must have pickpreview action');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 9: INTERACTIVE BODY TRANSFORMATION ROADMAP & VISUAL PHYSIQUE MORPH ENGINE
+// -----------------------------------------------------------------------------
+console.log('\nSuite 9: Interactive Transformation Roadmap & Visual Physique Morph Engine');
+
+it('US Navy BF% math accurately calculates body fat percentage for male and female anthropometry', () => {
+  // Male: 178 cm, 78 kg, 85 cm waist, 38 cm neck
+  const maleBf = api.calcUSNavyBF('male', 178, 78, 85, 38);
+  assert(maleBf >= 16.0 && maleBf <= 17.0, `Male BF should be ~16.4%, got ${maleBf}`);
+
+  // Female: 165 cm, 62 kg, 74 cm waist, 33 cm neck, 95 cm hip
+  const femaleBf = api.calcUSNavyBF('female', 165, 62, 74, 33, 95);
+  assert(femaleBf >= 25.5 && femaleBf <= 27.5, `Female BF should be ~26.4%, got ${femaleBf}`);
+});
+
+it('Visual morph scaling bounds strictly satisfy waist scale 1.0 -> 0.78, shoulder scale 1.0 -> 1.08, and ab opacity 0.15 -> 1.0', () => {
+  // Baseline (0% progress)
+  const morph0 = api.getMorphInterpolation(0);
+  assert.equal(morph0.waistScale, 1.0, 'Waist scale at 0% must be 1.0');
+  assert.equal(morph0.shoulderScale, 1.0, 'Shoulder scale at 0% must be 1.0');
+  assert.equal(morph0.abOpacity, 0.15, 'Abdominal opacity at 0% must be 0.15');
+
+  // Mid-way (50% progress)
+  const morph50 = api.getMorphInterpolation(50);
+  assert.equal(morph50.waistScale, 0.89, 'Waist scale at 50% must be 0.89');
+  assert.equal(morph50.shoulderScale, 1.04, 'Shoulder scale at 50% must be 1.04');
+  assert.equal(morph50.abOpacity, 0.575, 'Abdominal opacity at 50% must be 0.575');
+
+  // Goal (100% progress)
+  const morph100 = api.getMorphInterpolation(100);
+  assert.equal(morph100.waistScale, 0.78, 'Waist scale at 100% must be 0.78');
+  assert.equal(morph100.shoulderScale, 1.08, 'Shoulder scale at 100% must be 1.08');
+  assert.equal(morph100.abOpacity, 1.0, 'Abdominal opacity at 100% must be 1.0');
+  assert.equal(morph100.chestDefinition, 1.0, 'Chest definition at 100% must be 1.0');
+});
+
+it('Nutrition target calculations yield 4-column metrics (Calories, Protein, Carbs, Fats) calibrated to goal type', () => {
+  const cutTargets = api.calcNutritionTargets({ gender: 'male', weight: 78, currentBf: 16.0, goalType: 'sixpack' });
+  assert(cutTargets.cals >= 2000 && cutTargets.cals <= 2300, `Cut calories should be ~2150, got ${cutTargets.cals}`);
+  assert.equal(cutTargets.proteinRatio, 2.2, 'Cut protein ratio must be 2.2 g/kg');
+  assert(cutTargets.protein >= 150, 'Protein grams must be >= 150g');
+  assert(cutTargets.carbs > 150, 'Carbs must be allocated from remaining calories');
+  assert(cutTargets.fats > 40, 'Fats must be allocated');
+
+  const bulkTargets = api.calcNutritionTargets({ gender: 'male', weight: 78, currentBf: 16.0, goalType: 'bulk' });
+  assert(bulkTargets.cals > cutTargets.cals, 'Bulk calories must exceed cut calories');
+  assert.equal(bulkTargets.proteinRatio, 2.0, 'Bulk protein ratio must be 2.0 g/kg');
+});
+
+it('renderTransformationRoadmapCard renders comprehensive roadmap UI with SVG morph, scrub slider, and fuel blueprint', () => {
+  const cardHtml = api.renderTransformationRoadmapCard();
+  assert(cardHtml.includes('roadmap-card'), 'Must contain roadmap-card container');
+  assert(cardHtml.includes('roadmap-goal-badge'), 'Must contain roadmap-goal-badge');
+  assert(cardHtml.includes('morph-silhouette-svg'), 'Must render morph-silhouette-svg');
+  assert(cardHtml.includes('morph-scrub-input'), 'Must contain Apple-style morph scrub slider');
+  assert(cardHtml.includes('morph-progress-ring'), 'Must contain circular progress ring');
+  assert(cardHtml.includes('fuel-blueprint-card'), 'Must render Daily Fuel Blueprint');
+  assert(cardHtml.includes('Calories'), 'Fuel blueprint must have Calories column');
+  assert(cardHtml.includes('Protein'), 'Fuel blueprint must have Protein column');
+  assert(cardHtml.includes('Carbs'), 'Fuel blueprint must have Carbs column');
+  assert(cardHtml.includes('Healthy Fats'), 'Fuel blueprint must have Healthy Fats column');
+  assert(cardHtml.includes('opencalibration'), 'Must provide Update Goal & Measurements button');
+});
+
+it('Workout Complete celebration hook calculates micro-progress (+0.3% to +0.5%) and displays celebratory banner', () => {
+  assert(appCode.includes('transformation-celebration-banner'), 'app.js must include transformation-celebration-banner');
+  assert(appCode.includes('Transformation Progress: +'), 'app.js must display progress increment in celebration banner');
+  assert(appCode.includes('1 workout closer to your goal physique'), 'app.js must display celebratory motivation tagline');
+});
+
+it('showPhysiqueCalibrationModal opens bottom sheet for goal, height, weight, waist, and target BF', () => {
+  api.showPhysiqueCalibrationModal();
+  const sheetHtml = elementsMap['#m'].innerHTML;
+  assert(sheetHtml.includes('Roadmap Calibration'), 'Must display Roadmap Calibration title');
+  assert(sheetHtml.includes('calib-height'), 'Must include height input');
+  assert(sheetHtml.includes('calib-weight'), 'Must include weight input');
+  assert(sheetHtml.includes('calib-waist'), 'Must include waist input');
+  assert(sheetHtml.includes('calib-goal'), 'Must include goal select');
+  assert(sheetHtml.includes('calib-target-bf'), 'Must include target BF input');
+  assert(sheetHtml.includes('savecalibration'), 'Must include savecalibration action');
 });
 
 console.log(`\n======================================================`);

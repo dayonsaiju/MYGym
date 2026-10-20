@@ -3095,5 +3095,407 @@ textarea.note:focus {
   border: 0.5px solid var(--bd, #2c2c2e);
 }
 
+/* ==========================================================================
+   TRANSFORMATION ROADMAP & VISUAL PHYSIQUE MORPH ENGINE (v5.5.0)
+   ========================================================================== */
+
+.roadmap-card {
+  background: linear-gradient(180deg, #181922 0%, #111319 100%);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--r-md, 14px);
+  padding: 16px;
+  margin: 12px 0 16px 0;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  position: relative;
+  overflow: hidden;
+}
+
+.roadmap-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #0A84FF 0%, #FF9F0A 50%, #30D158 100%);
+}
+
+.roadmap-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.roadmap-goal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--accent-achievement, #FF9F0A);
+  background: rgba(255, 159, 10, 0.12);
+  border: 0.5px solid rgba(255, 159, 10, 0.4);
+  padding: 5px 10px;
+  border-radius: 20px;
+}
+
+.roadmap-calib-btn {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 0.5px solid var(--bd, #2c2c32);
+  color: #FFFFFF;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.roadmap-calib-btn:active {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(0.97);
+}
+
+.roadmap-visual-box {
+  width: 100%;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 159, 10, 0.06) 0%, rgba(10, 10, 11, 0.7) 70%);
+  border: 0.5px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+}
+
+.roadmap-svg-wrap {
+  width: 100%;
+  max-width: 270px;
+  height: 300px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.roadmap-morph-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.morph-ghost-silhouette {
+  fill: none;
+  stroke: rgba(255, 159, 10, 0.22);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.morph-base-body {
+  fill: #161822;
+  stroke: #252A3A;
+  stroke-width: 1.2;
+}
+
+.morph-highlight-gold {
+  stroke: #FF9F0A;
+  filter: drop-shadow(0 0 4px rgba(255, 159, 10, 0.5));
+}
+
+.morph-slider-container {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.morph-slider-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--t2, #8E8E93);
+  margin-bottom: 6px;
+}
+
+.morph-slider-labels .current {
+  color: var(--accent-achievement, #FF9F0A);
+}
+
+.morph-scrub-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #0A84FF 0%, #30D158 50%, #FF9F0A 100%);
+  outline: none;
+  margin: 6px 0;
+}
+
+.morph-scrub-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+  border: 2.5px solid #FF9F0A;
+  transition: transform 0.1s ease;
+}
+
+.morph-scrub-slider::-webkit-slider-thumb:active {
+  transform: scale(1.15);
+}
+
+.morph-slider-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.morph-reset-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  min-height: 24px;
+}
+
+.roadmap-gauge-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px 14px;
+  margin-top: 12px;
+}
+
+.roadmap-gauge-ring-wrap {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.roadmap-gauge-svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.roadmap-gauge-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 7;
+}
+
+.roadmap-gauge-fill {
+  fill: none;
+  stroke: url(#gauge-grad);
+  stroke-width: 7;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s ease;
+}
+
+.gauge-center-text {
+  position: absolute;
+  text-align: center;
+  pointer-events: none;
+}
+
+.gauge-pct {
+  font-size: 16px;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: -0.5px;
+}
+
+.gauge-sub {
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent-achievement, #FF9F0A);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.roadmap-milestone-box {
+  flex: 1;
+  min-width: 0;
+}
+
+.roadmap-milestone-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t2, #8E8E93);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.roadmap-milestone-sub {
+  font-size: 14px;
+  font-weight: 600;
+  color: #F2F2F7;
+  margin-top: 4px;
+  line-height: 1.35;
+}
+
+/* Daily Fuel Blueprint */
+.fuel-blueprint-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.fuel-blueprint-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.fuel-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #FFFFFF;
+  letter-spacing: 0.3px;
+}
+
+.fuel-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent-primary, #0A84FF);
+}
+
+.fuel-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  text-align: center;
+}
+
+.fuel-col {
+  background: rgba(0, 0, 0, 0.35);
+  border: 0.5px solid rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 8px 4px;
+}
+
+.fuel-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+
+.fuel-unit {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent-achievement, #FF9F0A);
+  margin-top: 2px;
+}
+
+.fuel-lbl {
+  font-size: 10px;
+  color: var(--t2, #8E8E93);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-top: 3px;
+}
+
+/* Workout Complete Celebration Banner */
+.transformation-celebration-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, rgba(255, 159, 10, 0.16) 0%, rgba(255, 69, 58, 0.12) 100%);
+  border: 1px solid rgba(255, 159, 10, 0.45);
+  border-radius: var(--r-md, 14px);
+  padding: 12px 14px;
+  margin: 12px 0;
+  box-shadow: 0 4px 16px rgba(255, 159, 10, 0.15);
+}
+
+.tcb-fire {
+  font-size: 26px;
+  flex-shrink: 0;
+}
+
+.tcb-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #FF9F0A;
+}
+
+.tcb-sub {
+  font-size: 12px;
+  color: #E5E5EA;
+  margin-top: 2px;
+}
+
+/* Calibration Modal Bottom Sheet */
+.calib-modal-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.calib-row {
+  display: flex;
+  gap: 10px;
+}
+
+.calib-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.calib-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--t2, #8E8E93);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.calib-input, .calib-select {
+  width: 100%;
+  background: var(--bg-surface, #16161A);
+  border: 0.5px solid var(--bd, #2C2C32);
+  border-radius: 10px;
+  color: #FFFFFF;
+  font-size: 15px;
+  padding: 10px 12px;
+  outline: none;
+}
+
+.calib-input:focus, .calib-select:focus {
+  border-color: var(--accent-primary, #0A84FF);
+}
+
+.calib-preview-banner {
+  background: rgba(10, 132, 255, 0.1);
+  border: 0.5px solid rgba(10, 132, 255, 0.3);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: #E5E5EA;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+
 
 
