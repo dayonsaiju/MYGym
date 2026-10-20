@@ -335,7 +335,7 @@ function it(name, fn) {
 }
 
 console.log('\n======================================================');
-console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.5.0-physique)');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.5.1-fix)');
 console.log('======================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -934,24 +934,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.5.0-physique, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.5.0-physique';"), 'sw.js must use mygym-core-v5.5.0-physique cache name');
-  assert(swCode.includes("'./style.css?v=5.5.0'"), 'sw.js must precache style.css?v=5.5.0');
-  assert(swCode.includes("'./app.js?v=5.5.0'"), 'sw.js must precache app.js?v=5.5.0');
+it('sw.js cache key is bumped to mygym-core-v5.5.1-fix, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.5.1-fix';"), 'sw.js must use mygym-core-v5.5.1-fix cache name');
+  assert(swCode.includes("'./style.css?v=5.5.1'"), 'sw.js must precache style.css?v=5.5.1');
+  assert(swCode.includes("'./app.js?v=5.5.1'"), 'sw.js must precache app.js?v=5.5.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.5.0'), 'index.html must link style.css?v=5.5.0');
-  assert(htmlCode.includes('app.js?v=5.5.0'), 'index.html must load app.js?v=5.5.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.5.0-physique'"), 'index.html must use mygym-v5.5.0-physique');
+  assert(htmlCode.includes('style.css?v=5.5.1'), 'index.html must link style.css?v=5.5.1');
+  assert(htmlCode.includes('app.js?v=5.5.1'), 'index.html must load app.js?v=5.5.1');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.5.1-fix'"), 'index.html must use mygym-v5.5.1-fix');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.5.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.5.0-physique');
+  assert.equal(api.APP_VERSION, '5.5.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.5.1-fix');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1190,6 +1190,45 @@ it('showPhysiqueCalibrationModal opens bottom sheet for goal, height, weight, wa
   assert(sheetHtml.includes('calib-goal'), 'Must include goal select');
   assert(sheetHtml.includes('calib-target-bf'), 'Must include target BF input');
   assert(sheetHtml.includes('savecalibration'), 'Must include savecalibration action');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 10: RELIABLE EXERCISE DATABASE LOADING & AIR-GAPPED FALLBACK (v5.5.1)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 10: Reliable Exercise Database Loading & Air-Gapped Fallback');
+
+it('app.js defines robust loadExercises function with fallback paths', () => {
+  assert(appCode.includes('async function loadExercises()'), 'app.js must define async function loadExercises()');
+  assert(appCode.includes("fetch('./exercises.json')"), 'loadExercises must attempt ./exercises.json');
+  assert(appCode.includes("fetch('exercises.json')"), 'loadExercises must attempt fallback exercises.json');
+  assert(appCode.includes('res.ok'), 'loadExercises must verify response.ok');
+});
+
+it('app.js ensures await loadExercises() is executed in init() before initial render', () => {
+  assert(appCode.includes('async function init()'), 'app.js must define async function init()');
+  assert(appCode.includes('await loadExercises()'), 'init() must await loadExercises()');
+  const initStart = appCode.indexOf('async function init()');
+  const loadExPos = appCode.indexOf('await loadExercises()', initStart);
+  const renderPos = appCode.indexOf('render();', initStart);
+  assert(loadExPos > -1 && renderPos > -1 && loadExPos < renderPos, 'await loadExercises() must execute before initial render()');
+});
+
+it('sw.js declares const ASSETS with exercises.json for offline precache', () => {
+  assert(swCode.includes('const ASSETS = ['), 'sw.js must define const ASSETS');
+  assert(swCode.includes("'./exercises.json'"), 'sw.js ASSETS must include ./exercises.json');
+});
+
+it('loadExercises populates EXDB and EXIDX with properly normalized exercises and resolves exercise names in X(id)', async () => {
+  // Clear EXDB and EXIDX to test cold-start loading
+  api.EXDB = [];
+  for (const k in api.EXIDX) delete api.EXIDX[k];
+
+  await api.loadExercises();
+  assert(Array.isArray(api.EXDB) && api.EXDB.length > 0, 'EXDB must be populated with exercises');
+  assert(api.EXIDX['0001'] != null, 'EXIDX must contain indexed exercise 0001');
+  assert.equal(api.EXIDX['0001'].name, '3/4 Sit-Up', 'Exercise 0001 name must be normalized title');
+  assert.notEqual(api.EXIDX['0001'].name, '0001', 'Exercise 0001 name must not be its raw ID');
+  assert.equal(api.EXIDX['0001'].tg, 'abs', 'Exercise 0001 target must be abs');
 });
 
 console.log(`\n======================================================`);

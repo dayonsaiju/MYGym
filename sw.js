@@ -1,15 +1,17 @@
-const C = 'mygym-core-v5.5.0-physique';
-const CORE_ASSETS = [
+const C = 'mygym-core-v5.5.1-fix';
+const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=5.5.0',
+  './style.css?v=5.5.1',
   './app.js',
-  './app.js?v=5.5.0',
+  './app.js?v=5.5.1',
   './manifest.json',
   './icon.png',
-  './exercises.json'
+  './exercises.json',
+  'exercises.json'
 ];
+const CORE_ASSETS = ASSETS;
 
 self.addEventListener('install', e => {
   self.skipWaiting();
@@ -57,7 +59,10 @@ self.addEventListener('fetch', e => {
         }
         return response;
       }).catch(() => {
-        // Return null if offline and not in cache
+        // Fallback to precached exercises.json if offline or alternate path
+        if (e.request && e.request.url && e.request.url.includes('exercises.json')) {
+          return caches.match('./exercises.json').then(fb => fb || caches.match('exercises.json'));
+        }
       });
     })
   );

@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.5.0';
-const SHELL_VERSION = 'mygym-v5.5.0-physique';
+const APP_VERSION = '5.5.1';
+const SHELL_VERSION = 'mygym-v5.5.1-fix';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5192,19 +5192,47 @@ document.addEventListener('touchcancel', () => {
 });
 
 // ---- Boot Sequence ----
-(async () => {
-  // 1. Asynchronously load all 1,324 exercises from local exercises.json
+async function loadExercises() {
+  let raw = null;
   try {
     const res = await fetch('./exercises.json');
-    if (res.ok) {
-      const raw = await res.json();
-      EXDB = raw.map(normalizeExercise);
-      EXIDX = {};
-      EXDB.forEach(e => { EXIDX[e.id] = e; });
-    }
+    if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+    raw = await res.json();
   } catch (err) {
-    console.warn('Local exercises.json load issue:', err);
+    console.error('Failed to load exercises.json:', err);
+    try {
+      // Fallback attempt from root path
+      const res2 = await fetch('exercises.json');
+      if (!res2.ok) throw new Error('Fallback fetch failed: ' + res2.status);
+      raw = await res2.json();
+    } catch (err2) {
+      console.error('Failed to load exercises.json fallback:', err2);
+      if (typeof window !== 'undefined' && window.location) {
+        try {
+          const path = window.location.pathname || '/';
+          const dir = path.substring(0, path.lastIndexOf('/') + 1) || '/';
+          const fullPath = (window.location.origin || '') + dir + 'exercises.json';
+          const res3 = await fetch(fullPath);
+          if (!res3.ok) throw new Error('Path-based fetch failed: ' + res3.status);
+          raw = await res3.json();
+        } catch (err3) {
+          console.error('Failed all attempts to load exercises.json:', err3);
+        }
+      }
+    }
   }
+
+  if (Array.isArray(raw) && raw.length > 0) {
+    EXDB = raw.map(normalizeExercise);
+    EXIDX = {};
+    EXDB.forEach(e => { EXIDX[e.id] = e; });
+  }
+  return EXDB;
+}
+
+async function init() {
+  // 1. Asynchronously load all 1,324 exercises from local exercises.json
+  await loadExercises();
 
   // 2. Load stored state from IndexedDB / localStorage
   for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload']) {
@@ -5281,7 +5309,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.5.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.5.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -5292,13 +5320,18 @@ document.addEventListener('touchcancel', () => {
       }
     });
   }
-})();
+}
+
+// Auto-run boot sequence
+init();
 
 // Expose test & inspection handle
 if (typeof globalThis !== 'undefined') {
   globalThis.__MYGYM__ = {
     APP_VERSION,
     SHELL_VERSION,
+    loadExercises,
+    init,
     calcWorkload,
     checkDeloadStatus,
     getSupersetInfo,
