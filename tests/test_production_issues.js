@@ -25,6 +25,22 @@ class MockElement {
     this.scrollTop = 0;
     this.hidden = false;
     this._lastScrollIntoView = null;
+    this.classList = {
+      _classes: new Set(className ? className.split(/\s+/).filter(Boolean) : []),
+      add: (c) => this.classList._classes.add(c),
+      remove: (c) => this.classList._classes.delete(c),
+      toggle: (c, force) => {
+        if (force === undefined) {
+          if (this.classList._classes.has(c)) this.classList._classes.delete(c);
+          else this.classList._classes.add(c);
+        } else if (force) {
+          this.classList._classes.add(c);
+        } else {
+          this.classList._classes.delete(c);
+        }
+      },
+      contains: (c) => this.classList._classes.has(c)
+    };
   }
 
   get innerHTML() {
@@ -189,12 +205,56 @@ const mockWindow = {
     setItem(k, v) { this._data[k] = String(v); }
   },
   navigator: {
-    vibrate: () => {},
+    _lastVibrate: null,
+    vibrate(pattern) {
+      mockWindow.navigator._lastVibrate = pattern;
+      return true;
+    },
     storage: { persist: async () => true },
     serviceWorker: {
       register: async () => ({ update: () => {} }),
       addEventListener: () => {}
     }
+  },
+  AudioContext: class MockAudioContext {
+    constructor() {
+      this.state = 'running';
+      this.currentTime = 0;
+      this.destination = {};
+      this.oscillators = [];
+      this.gains = [];
+      mockWindow._lastAudioContext = this;
+    }
+    resume() { this.state = 'running'; }
+    createOscillator() {
+      const osc = {
+        type: 'sine',
+        frequency: {
+          value: 440,
+          setValueAtTime: (val, t) => { osc.frequency.value = val; osc._freqSet = { val, t }; }
+        },
+        connect: (target) => { osc._target = target; },
+        start: (t) => { osc._started = t; },
+        stop: (t) => { osc._stopped = t; }
+      };
+      this.oscillators.push(osc);
+      return osc;
+    }
+    createGain() {
+      const gain = {
+        gain: {
+          value: 1,
+          setValueAtTime: (val, t) => { gain.gain.value = val; gain._set = { val, t }; },
+          linearRampToValueAtTime: (val, t) => { gain._linearRamp = { val, t }; },
+          exponentialRampToValueAtTime: (val, t) => { gain._expRamp = { val, t }; }
+        },
+        connect: (target) => { gain._target = target; }
+      };
+      this.gains.push(gain);
+      return gain;
+    }
+    createBuffer() { return {}; }
+    createBufferSource() { return { connect: () => {}, start: () => {} }; }
   },
   indexedDB: {
     open: () => ({
@@ -256,6 +316,7 @@ exercisesJson.forEach(e => {
     t: 'w'
   };
 });
+api.EXDB = exercisesJson.map(api.normalizeExercise);
 
 let passed = 0;
 let total = 0;
@@ -274,7 +335,7 @@ function it(name, fn) {
 }
 
 console.log('\n======================================================');
-console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.3.1-ui)');
+console.log('RUNNING PRODUCTION VERIFICATION TEST SUITE (v5.4.0-anatomy)');
 console.log('======================================================\n');
 
 // -----------------------------------------------------------------------------
@@ -873,24 +934,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.3.1-ui, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.3.1-ui';"), 'sw.js must use mygym-core-v5.3.1-ui cache name');
-  assert(swCode.includes("'./style.css?v=5.3.1'"), 'sw.js must precache style.css?v=5.3.1');
-  assert(swCode.includes("'./app.js?v=5.3.1'"), 'sw.js must precache app.js?v=5.3.1');
+it('sw.js cache key is bumped to mygym-core-v5.4.0-anatomy, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.4.0-anatomy';"), 'sw.js must use mygym-core-v5.4.0-anatomy cache name');
+  assert(swCode.includes("'./style.css?v=5.4.0'"), 'sw.js must precache style.css?v=5.4.0');
+  assert(swCode.includes("'./app.js?v=5.4.0'"), 'sw.js must precache app.js?v=5.4.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.3.1'), 'index.html must link style.css?v=5.3.1');
-  assert(htmlCode.includes('app.js?v=5.3.1'), 'index.html must load app.js?v=5.3.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.3.1-ui'"), 'index.html must use mygym-v5.3.1-ui');
+  assert(htmlCode.includes('style.css?v=5.4.0'), 'index.html must link style.css?v=5.4.0');
+  assert(htmlCode.includes('app.js?v=5.4.0'), 'index.html must load app.js?v=5.4.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.4.0-anatomy'"), 'index.html must use mygym-v5.4.0-anatomy');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.3.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.3.1-ui');
+  assert.equal(api.APP_VERSION, '5.4.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-v5.4.0-anatomy');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -911,6 +972,142 @@ it('forceupdate action executes aggressive SW unregister, cache eviction, and ti
   assert(appCode.includes('await caches.delete(k)'), 'forceupdate must delete cache keys');
   assert(appCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'forceupdate must redirect with timestamp');
   assert(!appCode.includes('indexedDB.deleteDatabase'), 'forceupdate must never delete IndexedDB data');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 6: EXERCISE PICKER PREVIEW MODAL (GIF + FORM CUES)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 6: Exercise Picker Preview Modal (GIF + Form Cues)');
+
+it('renderPickResults provides quick ℹ️ Preview action and tap-to-inspect target', () => {
+  const pickResultsHtml = api.renderPickResults();
+  assert(pickResultsHtml.includes('pick-ex-row'), 'Must contain pick-ex-row container');
+  assert(pickResultsHtml.includes('ex-row-tap-preview'), 'Must contain tap-to-preview container');
+  assert(pickResultsHtml.includes('data-a="pickpreview"'), 'Tapping thumbnail or title must trigger pickpreview');
+  assert(pickResultsHtml.includes('ℹ️ Preview'), 'Must render dedicated ℹ️ Preview button');
+  assert(pickResultsHtml.includes('data-a="pick"'), 'Must have distinct + Add button');
+});
+
+it('showExercisePickerPreview renders high-res demonstration GIF, metadata, and form cues', () => {
+  const testExId = exercisesJson[0].id;
+  api.showExercisePickerPreview(testExId);
+
+  const modalHtml = elementsMap['#m'].innerHTML;
+  assert(modalHtml.includes('picker-preview-sheet'), 'Must render preview sheet');
+  assert(modalHtml.includes('picker-preview-gif'), 'Must render animated demonstration GIF');
+  assert(modalHtml.includes('picker-preview-cues-card'), 'Must render form cues card');
+  assert(modalHtml.includes('Step-by-Step Form Execution Cues'), 'Must render form cues header');
+  assert(modalHtml.includes('picker-preview-steps'), 'Must render step-by-step form cues');
+  assert(modalHtml.includes('data-a="backtopicker"'), 'Must have ← Back to Exercise Picker button');
+});
+
+it('showExercisePickerPreview dynamically adapts prominent action button for Routine, Superset, and Workout', () => {
+  const testExId = exercisesJson[0].id;
+
+  // 1. Routine context
+  api.showExercisePicker('Choose Exercise for Routine');
+  api.showExercisePickerPreview(testExId);
+  assert(elementsMap['#m'].innerHTML.includes('+ Add to Routine'), 'Primary action must be + Add to Routine');
+
+  // 2. Superset context
+  api.showExercisePicker('Select Exercise to Add as A2');
+  api.showExercisePickerPreview(testExId);
+  assert(elementsMap['#m'].innerHTML.includes('+ Add to Superset'), 'Primary action must be + Add to Superset');
+
+  // 3. Active workout context
+  api.S.act = { rid: 'r1', name: 'Leg Day', t0: Date.now(), ex: [], curEx: 0 };
+  api.showExercisePicker('Add Exercise to Workout');
+  api.showExercisePickerPreview(testExId);
+  assert(elementsMap['#m'].innerHTML.includes('+ Add to Workout'), 'Primary action must be + Add to Workout');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 7: SUBTLE, NON-INTRUSIVE REST TIMER AUDIO CHIME
+// -----------------------------------------------------------------------------
+console.log('\nSuite 7: Subtle, Non-Intrusive Rest Timer Audio Chime & Gentle Haptic');
+
+it('playRestChime synthesizes Apple-style calm bell dual-tone sine wave arpeggio', () => {
+  api.playRestChime();
+  const ctx = mockWindow._lastAudioContext;
+  assert(ctx, 'AudioContext must be created and active');
+  assert.equal(ctx.oscillators.length, 2, 'Must create dual-tone oscillators');
+  assert.equal(ctx.oscillators[0].type, 'sine', 'Tone 1 must be pure sine wave');
+  assert.equal(ctx.oscillators[1].type, 'sine', 'Tone 2 must be pure sine wave');
+  assert.equal(ctx.oscillators[0].frequency.value, 587.33, 'Tone 1 must be D5 (587.33 Hz)');
+  assert.equal(ctx.oscillators[1].frequency.value, 880.00, 'Tone 2 must be A5 (880.00 Hz)');
+});
+
+it('playRestChime applies smooth attack and exponential gain decay preventing clicks', () => {
+  const ctx = mockWindow._lastAudioContext;
+  if (ctx) {
+    ctx.gains.length = 0;
+    ctx.oscillators.length = 0;
+  }
+  api.playRestChime();
+  assert.equal(ctx.gains.length, 2, 'Must create gain envelope for each tone');
+  assert(ctx.gains[0]._linearRamp, 'Tone 1 must have smooth linear attack ramp');
+  assert(ctx.gains[0]._expRamp, 'Tone 1 must have smooth exponential decay ramp');
+  assert(ctx.gains[1]._linearRamp, 'Tone 2 must have smooth linear attack ramp');
+  assert(ctx.gains[1]._expRamp, 'Tone 2 must have smooth exponential decay ramp');
+});
+
+it('Rest completion triggers gentle dual-pulse haptic vibration [100, 50, 100]', () => {
+  mockWindow.navigator._lastVibrate = null;
+  api.T.end = Date.now() - 1000;
+  api.S.cfg.vibrate = true;
+  api.S.cfg.sound = true;
+  api.tick();
+  assert.equal(JSON.stringify(mockWindow.navigator._lastVibrate), JSON.stringify([100, 50, 100]), 'Must trigger gentle dual-pulse haptic [100, 50, 100]');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 8: ANATOMICAL MUSCLE HEATMAP (FRONT & BACK DUAL VIEW)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 8: Anatomical Muscle Heatmap & Interactive Tap-to-Explore');
+
+it('mmap renders dual view (FRONT and BACK) with 13 well-defined anatomical muscle groups', () => {
+  const svg = api.generateAnatomySvg('male', ['pecs'], ['deltoids']);
+  assert(svg.includes('FRONT'), 'Must render FRONT view label');
+  assert(svg.includes('BACK'), 'Must render BACK view label');
+  assert(svg.includes('mm-base'), 'Must render sleek dark graphite / slate body base');
+
+  const required13 = [
+    'pecs', 'lats', 'traps', 'deltoids', 'biceps', 'triceps', 'forearms',
+    'abs', 'obliques', 'glutes', 'quads', 'hamstrings', 'calves'
+  ];
+  required13.forEach(muscle => {
+    assert(svg.includes(`data-muscle="${muscle}"`), `SVG must include muscle group ${muscle}`);
+  });
+});
+
+it('mmap applies vibrant dynamic heatmap fill (amber/gold for primary, cyan for secondary)', () => {
+  const svg = api.generateAnatomySvg('male', ['pecs', 'quads'], ['deltoids', 'calves']);
+  assert(svg.includes('mm-muscle p') || svg.includes('data-muscle="pecs" class="mm-muscle p'), 'Primary muscles must have class p');
+  assert(svg.includes('mm-muscle s') || svg.includes('data-muscle="deltoids" class="mm-muscle s'), 'Secondary muscles must have class s');
+  assert(cssCode.includes('.mm-muscle.p'), 'style.css must define vibrant amber/gold fill for .p');
+  assert(cssCode.includes('.mm-muscle.s'), 'style.css must define vibrant cyan fill for .s');
+});
+
+it('Supports male and female silhouette options via bodyModel toggle', () => {
+  const svgMale = api.generateAnatomySvg('male');
+  const svgFemale = api.generateAnatomySvg('female');
+  assert(svgMale.includes('Anatomical Muscle Heatmap (Male)'), 'Male SVG must have Male label');
+  assert(svgFemale.includes('Anatomical Muscle Heatmap (Female)'), 'Female SVG must have Female label');
+
+  // Verify Settings modal contains Anatomical Model toggle
+  api.S.cfg.bodyModel = 'male';
+  api.S.cfg.bodyModel = 'female';
+  assert.equal(api.S.cfg.bodyModel, 'female', 'S.cfg.bodyModel must accept female');
+  api.S.cfg.bodyModel = 'male';
+  assert.equal(api.S.cfg.bodyModel, 'male', 'S.cfg.bodyModel must accept male');
+});
+
+it('Interactive Tap-to-Explore: showMuscleDetailSheet displays target name and top library exercises', () => {
+  api.showMuscleDetailSheet('pecs');
+  const modalOrDrawer = elementsMap['#m'].innerHTML;
+  assert(modalOrDrawer.includes('Target: Pectorals (Chest)') || modalOrDrawer.includes('Pectorals'), 'Must show Target: Pectorals (Chest)');
+  assert(modalOrDrawer.includes('mm-explore-item'), 'Must list matching exercises');
+  assert(modalOrDrawer.includes('data-a="pickpreview"'), 'Exercises in explorer must have pickpreview action');
 });
 
 console.log(`\n======================================================`);

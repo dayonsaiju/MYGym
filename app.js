@@ -90,14 +90,14 @@ let S = {
   routines: [],
   logs: [],
   weights: [],
-  cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5 },
+  cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5, bodyModel: 'male' },
   sched: {},
   act: null,
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.3.1';
-const SHELL_VERSION = 'mygym-v5.3.1-ui';
+const APP_VERSION = '5.4.0';
+const SHELL_VERSION = 'mygym-v5.4.0-anatomy';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -200,20 +200,240 @@ const IC = {
 };
 const ic = (n, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[n] || ''}</svg>`;
 
-// ---- Muscle Map ----
-const MM = [
-  ['Shoulders', '<ellipse cx="30" cy="38" rx="9" ry="7"/><ellipse cx="70" cy="38" rx="9" ry="7"/><ellipse cx="130" cy="38" rx="9" ry="7"/><ellipse cx="170" cy="38" rx="9" ry="7"/>'],
-  ['Chest', '<rect x="36" y="34" width="28" height="18" rx="6"/>'],
-  ['Arms', '<rect x="17" y="46" width="9" height="36" rx="4"/><rect x="74" y="46" width="9" height="36" rx="4"/><rect x="117" y="46" width="9" height="36" rx="4"/><rect x="174" y="46" width="9" height="36" rx="4"/>'],
-  ['Core', '<rect x="38" y="55" width="24" height="30" rx="6"/>'],
-  ['Legs', '<rect x="36" y="89" width="13" height="52" rx="6"/><rect x="51" y="89" width="13" height="52" rx="6"/><rect x="136" y="89" width="13" height="52" rx="6"/><rect x="151" y="89" width="13" height="52" rx="6"/>'],
-  ['Back', '<rect x="134" y="34" width="32" height="44" rx="8"/>']
-];
-const mmap = (p = [], q = []) => `<svg class="mm" viewBox="0 0 200 150"><g class="bd"><circle cx="50" cy="16" r="10"/><circle cx="150" cy="16" r="10"/></g>${MM.map(([g, s]) => `<g class="${p.includes(g) ? 'p' : q.includes(g) ? 's' : ''}">${s}</g>`).join('')}</svg>`;
-const mmLog = l => {
-  const p = [...new Set(l.ex.map(x => X(x.id).g))];
-  return mmap(p, [...new Set(l.ex.flatMap(x => X(x.id).sec.map(mapBodyPartToGroup)))].filter(g => !p.includes(g)));
+// ---- Anatomical Muscle Map Heatmap (Front & Back Dual View + Interactive Discovery) ----
+const ANATOMY_MUSCLES = {
+  pecs: { name: 'Pectorals (Chest)', keys: ['pec', 'chest', 'pectorals'] },
+  lats: { name: 'Latissimus Dorsi (Lats)', keys: ['lat', 'lats', 'latissimus'] },
+  traps: { name: 'Trapezius (Traps)', keys: ['trap', 'traps', 'trapezius', 'neck', 'upper back', 'levator scapulae'] },
+  deltoids: { name: 'Deltoids (Shoulders)', keys: ['delt', 'delts', 'deltoid', 'deltoids', 'shoulder', 'shoulders'] },
+  biceps: { name: 'Biceps Brachii', keys: ['bicep', 'biceps'] },
+  triceps: { name: 'Triceps Brachii', keys: ['tricep', 'triceps'] },
+  forearms: { name: 'Forearms', keys: ['forearm', 'forearms', 'lower arm', 'lower arms', 'wrist flexors'] },
+  abs: { name: 'Rectus Abdominis (Abs)', keys: ['ab', 'abs', 'rectus', 'abdominis', 'core'] },
+  obliques: { name: 'Obliques (Core)', keys: ['oblique', 'obliques', 'serratus anterior', 'waist'] },
+  glutes: { name: 'Gluteus Maximus (Glutes)', keys: ['glute', 'glutes', 'gluteus', 'butt'] },
+  quads: { name: 'Quadriceps (Quads)', keys: ['quad', 'quads', 'quadriceps', 'upper legs'] },
+  hamstrings: { name: 'Hamstrings', keys: ['hamstring', 'hamstrings'] },
+  calves: { name: 'Calves', keys: ['calf', 'calves', 'gastrocnemius', 'soleus', 'lower legs'] }
 };
+
+const mapMuscleToAnatomyKey = str => {
+  if (!str) return [];
+  const s = String(str).toLowerCase().trim();
+  const matched = [];
+  if (s.includes('chest') || s.includes('pec')) matched.push('pecs');
+  if (s.includes('lat') && !s.includes('lateral')) matched.push('lats');
+  if (s.includes('trap') || s.includes('neck') || s.includes('levator') || s.includes('upper back')) matched.push('traps');
+  if (s.includes('delt') || s.includes('shoulder')) matched.push('deltoids');
+  if (s.includes('bicep')) matched.push('biceps');
+  if (s.includes('tricep')) matched.push('triceps');
+  if (s.includes('forearm') || s.includes('lower arm') || s.includes('wrist')) matched.push('forearms');
+  if (s.includes('ab') && !s.includes('abductor')) matched.push('abs');
+  if (s.includes('oblique') || s.includes('serratus')) matched.push('obliques');
+  if (s.includes('glute')) matched.push('glutes');
+  if (s.includes('quad') || s.includes('upper leg') || s.includes('adductor') || s.includes('abductor')) matched.push('quads');
+  if (s.includes('hamstring')) matched.push('hamstrings');
+  if (s.includes('calf') || s.includes('calves') || s.includes('gastrocnemius') || s.includes('soleus') || s.includes('lower leg') || s.includes('shin')) matched.push('calves');
+  if (s === 'arms' || s === 'arm') matched.push('biceps', 'triceps', 'forearms');
+  if (s === 'legs' || s === 'leg') matched.push('quads', 'hamstrings', 'glutes', 'calves');
+  if (s === 'back') matched.push('lats', 'traps');
+  if (s === 'core' || s === 'waist') matched.push('abs', 'obliques');
+  return [...new Set(matched)];
+};
+
+const getTopExercisesForMuscle = (muscleKey, limit = 6) => {
+  const muscleInfo = ANATOMY_MUSCLES[muscleKey];
+  if (!muscleInfo || !Array.isArray(EXDB)) return [];
+  const keys = muscleInfo.keys || [];
+
+  const matches = EXDB.filter(e => {
+    const tg = (e.tg || '').toLowerCase();
+    const g = (e.g || '').toLowerCase();
+    const bp = (e.bp || '').toLowerCase();
+    const name = (e.name || '').toLowerCase();
+    const sec = (e.sec || []).map(s => String(s).toLowerCase());
+    return keys.some(k => tg.includes(k) || sec.some(sm => sm.includes(k)) || g.includes(k) || bp.includes(k) || name.includes(k));
+  });
+
+  matches.sort((a, b) => {
+    const aTg = (a.tg || '').toLowerCase();
+    const bTg = (b.tg || '').toLowerCase();
+    const aExact = keys.some(k => aTg.includes(k)) ? 10 : 0;
+    const bExact = keys.some(k => bTg.includes(k)) ? 10 : 0;
+    const eqRank = eq => (eq === 'barbell' ? 4 : eq === 'dumbbell' ? 3 : eq === 'cable' ? 2 : 1);
+    const aScore = aExact + eqRank(a.eq);
+    const bScore = bExact + eqRank(b.eq);
+    return bScore - aScore;
+  });
+
+  return matches.slice(0, limit);
+};
+
+const generateAnatomySvg = (gender = 'male', primary = [], secondary = [], opts = {}) => {
+  const isFemale = (gender || S.cfg?.bodyModel) === 'female';
+  const normP = [...new Set((primary || []).flatMap(mapMuscleToAnatomyKey))];
+  const normQ = [...new Set((secondary || []).flatMap(mapMuscleToAnatomyKey))].filter(k => !normP.includes(k));
+
+  const shW = isFemale ? 23 : 26;
+  const wW = isFemale ? 11 : 14;
+  const hW = isFemale ? 20 : 17;
+  const thW = isFemale ? 14 : 15;
+
+  const fc = 80;
+  const bc = 240;
+
+  const isP = m => normP.includes(m);
+  const isS = m => normQ.includes(m);
+  const isSel = m => opts.selectedMuscle === m;
+  const cls = m => `mm-muscle ${isP(m) ? 'p' : (isS(m) ? 's' : '')} ${isSel(m) ? 'selected' : ''}`.trim();
+
+  return `<svg class="mm-svg" viewBox="0 0 320 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Anatomical Muscle Heatmap (${isFemale ? 'Female' : 'Male'})">
+    <defs>
+      <filter id="glow-p" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="0" stdDeviation="2.5" flood-color="#f59e0b" flood-opacity="0.8"/>
+      </filter>
+      <filter id="glow-s" x="-20%" y="-20%" width="140%" height="140%">
+        <feDropShadow dx="0" dy="0" stdDeviation="2" flood-color="#38bdf8" flood-opacity="0.7"/>
+      </filter>
+    </defs>
+
+    <!-- Labels -->
+    <text x="${fc}" y="12" text-anchor="middle" class="mm-label">FRONT</text>
+    <text x="${bc}" y="12" text-anchor="middle" class="mm-label">BACK</text>
+
+    <!-- FRONT SILHOUETTE BASE -->
+    <g class="mm-base">
+      <ellipse cx="${fc}" cy="23" rx="9" ry="11"/>
+      <path d="M ${fc-4} 34 L ${fc-5} 41 L ${fc+5} 41 L ${fc+4} 34 Z"/>
+      <path d="M ${fc-6} 41 C ${fc-16} 42 ${fc-shW} 45 ${fc-shW-5} 52 C ${fc-shW-8} 62 ${fc-shW-6} 80 ${fc-shW-3} 90 L ${fc-shW-6} 118 C ${fc-shW-4} 123 ${fc-shW+1} 123 ${fc-shW+2} 118 L ${fc-shW+4} 92 L ${fc-wW-5} 84 C ${fc-wW-2} 93 ${fc-hW} 98 ${fc-hW} 104 C ${fc-hW} 118 ${fc-thW} 142 ${fc-thW+3} 150 L ${fc-thW+2} 190 C ${fc-thW+4} 195 ${fc-thW+9} 195 ${fc-thW+10} 190 L ${fc-4} 150 L ${fc-3} 106 L ${fc+3} 106 L ${fc+4} 150 L ${fc+thW-10} 190 C ${fc+thW-9} 195 ${fc+thW-4} 195 ${fc+thW-2} 190 L ${fc+thW-3} 150 C ${fc+thW} 142 ${fc+hW} 118 ${fc+hW} 104 C ${fc+hW} 98 ${fc+wW+2} 93 ${fc+wW+5} 84 L ${fc+shW-4} 92 L ${fc+shW-2} 118 C ${fc+shW-1} 123 ${fc+shW+4} 123 ${fc+shW+6} 118 L ${fc+shW+3} 90 C ${fc+shW+6} 80 ${fc+shW+8} 62 ${fc+shW+5} 52 C ${fc+shW} 45 ${fc+16} 42 ${fc+6} 41 Z"/>
+    </g>
+
+    <!-- BACK SILHOUETTE BASE -->
+    <g class="mm-base">
+      <ellipse cx="${bc}" cy="23" rx="9" ry="11"/>
+      <path d="M ${bc-4} 34 L ${bc-5} 41 L ${bc+5} 41 L ${bc+4} 34 Z"/>
+      <path d="M ${bc-6} 41 C ${bc-16} 42 ${bc-shW} 45 ${bc-shW-5} 52 C ${bc-shW-8} 62 ${bc-shW-6} 80 ${bc-shW-3} 90 L ${bc-shW-6} 118 C ${bc-shW-4} 123 ${bc-shW+1} 123 ${bc-shW+2} 118 L ${bc-shW+4} 92 L ${bc-wW-5} 84 C ${bc-wW-2} 93 ${bc-hW} 98 ${bc-hW} 104 C ${bc-hW} 118 ${bc-thW} 142 ${bc-thW+3} 150 L ${bc-thW+2} 190 C ${bc-thW+4} 195 ${bc-thW+9} 195 ${bc-thW+10} 190 L ${bc-4} 150 L ${bc-3} 106 L ${bc+3} 106 L ${bc+4} 150 L ${bc+thW-10} 190 C ${bc+thW-9} 195 ${bc+thW-4} 195 ${bc+thW-2} 190 L ${bc+thW-3} 150 C ${bc+thW} 142 ${bc+hW} 118 ${bc+hW} 104 C ${bc+hW} 98 ${bc+wW+2} 93 ${bc+wW+5} 84 L ${bc+shW-4} 92 L ${bc+shW-2} 118 C ${bc+shW-1} 123 ${bc+shW+4} 123 ${bc+shW+6} 118 L ${bc+shW+3} 90 C ${bc+shW+6} 80 ${bc+shW+8} 62 ${bc+shW+5} 52 C ${bc+shW} 45 ${bc+16} 42 ${bc+6} 41 Z"/>
+    </g>
+
+    <!-- FRONT MUSCLES -->
+    <g class="mm-muscles-front">
+      <path class="${cls('traps')}" data-a="explore-muscle" data-muscle="traps" d="M ${fc-5} 35 C ${fc-9} 38 ${fc-14} 41 ${fc-18} 44 L ${fc-12} 45 L ${fc-5} 41 Z M ${fc+5} 35 C ${fc+9} 38 ${fc+14} 41 ${fc+18} 44 L ${fc+12} 45 L ${fc+5} 41 Z"/>
+      <path class="${cls('deltoids')}" data-a="explore-muscle" data-muscle="deltoids" d="M ${fc-19} 44 C ${fc-shW-4} 46 ${fc-shW-6} 53 ${fc-shW-4} 63 C ${fc-shW+1} 64 ${fc-17} 60 ${fc-17} 53 Z M ${fc+19} 44 C ${fc+shW+4} 46 ${fc+shW+6} 53 ${fc+shW+4} 63 C ${fc+shW-1} 64 ${fc+17} 60 ${fc+17} 53 Z"/>
+      <path class="${cls('pecs')}" data-a="explore-muscle" data-muscle="pecs" d="M ${fc-2} 44 L ${fc-15} 45 C ${fc-17} 53 ${fc-14} 62 ${fc-2} 64 C ${fc-1} 58 ${fc-1} 50 ${fc-2} 44 Z M ${fc+2} 44 L ${fc+15} 45 C ${fc+17} 53 ${fc+14} 62 ${fc+2} 64 C ${fc+1} 58 ${fc+1} 50 ${fc+2} 44 Z"/>
+      <path class="${cls('biceps')}" data-a="explore-muscle" data-muscle="biceps" d="M ${fc-shW-3} 64 C ${fc-shW-6} 71 ${fc-shW-5} 81 ${fc-shW-2} 87 C ${fc-shW+2} 86 ${fc-shW+4} 78 ${fc-shW+3} 70 Z M ${fc+shW+3} 64 C ${fc+shW+6} 71 ${fc+shW+5} 81 ${fc+shW+2} 87 C ${fc+shW-2} 86 ${fc+shW-4} 78 ${fc+shW-3} 70 Z"/>
+      <path class="${cls('forearms')}" data-a="explore-muscle" data-muscle="forearms" d="M ${fc-shW-2} 89 C ${fc-shW-7} 97 ${fc-shW-7} 107 ${fc-shW-4} 116 C ${fc-shW} 116 ${fc-shW+3} 109 ${fc-shW+2} 100 Z M ${fc+shW+2} 89 C ${fc+shW+7} 97 ${fc+shW+7} 107 ${fc+shW+4} 116 C ${fc+shW} 116 ${fc+shW-3} 109 ${fc+shW-2} 100 Z"/>
+      <path class="${cls('abs')}" data-a="explore-muscle" data-muscle="abs" d="M ${fc-5} 66 L ${fc-1} 66 L ${fc-1} 72 L ${fc-5} 72 Z M ${fc+1} 66 L ${fc+5} 66 L ${fc+5} 72 L ${fc+1} 72 Z M ${fc-5} 74 L ${fc-1} 74 L ${fc-1} 80 L ${fc-5} 80 Z M ${fc+1} 74 L ${fc+5} 74 L ${fc+5} 80 L ${fc+1} 80 Z M ${fc-5} 82 L ${fc-1} 82 L ${fc-1} 90 L ${fc-4} 89 Z M ${fc+1} 82 L ${fc+5} 82 L ${fc+4} 89 L ${fc+1} 90 Z"/>
+      <path class="${cls('obliques')}" data-a="explore-muscle" data-muscle="obliques" d="M ${fc-13} 66 C ${fc-wW-2} 73 ${fc-wW-1} 82 ${fc-8} 89 C ${fc-6} 86 ${fc-6} 78 ${fc-7} 70 Z M ${fc+13} 66 C ${fc+wW+2} 73 ${fc+wW+1} 82 ${fc+8} 89 C ${fc+6} 86 ${fc+6} 78 ${fc+7} 70 Z"/>
+      <path class="${cls('quads')}" data-a="explore-muscle" data-muscle="quads" d="M ${fc-hW+2} 98 C ${fc-thW-2} 108 ${fc-thW-1} 126 ${fc-thW+3} 142 C ${fc-8} 144 ${fc-3} 139 ${fc-3} 126 C ${fc-3} 113 ${fc-6} 102 ${fc-hW+2} 98 Z M ${fc+hW-2} 98 C ${fc+thW+2} 108 ${fc+thW+1} 126 ${fc+thW-3} 142 C ${fc+8} 144 ${fc+3} 139 ${fc+3} 126 C ${fc+3} 113 ${fc+6} 102 ${fc+hW-2} 98 Z"/>
+      <path class="${cls('calves')}" data-a="explore-muscle" data-muscle="calves" d="M ${fc-thW+2} 150 C ${fc-thW-2} 160 ${fc-thW-1} 172 ${fc-thW+2} 186 C ${fc-6} 186 ${fc-4} 178 ${fc-4} 168 Z M ${fc+thW-2} 150 C ${fc+thW+2} 160 ${fc+thW+1} 172 ${fc+thW-2} 186 C ${fc+6} 186 ${fc+4} 178 ${fc+4} 168 Z"/>
+    </g>
+
+    <!-- BACK MUSCLES -->
+    <g class="mm-muscles-back">
+      <path class="${cls('traps')}" data-a="explore-muscle" data-muscle="traps" d="M ${bc} 35 L ${bc-12} 44 C ${bc-8} 52 ${bc-4} 58 ${bc} 68 C ${bc+4} 58 ${bc+8} 52 ${bc+12} 44 Z"/>
+      <path class="${cls('deltoids')}" data-a="explore-muscle" data-muscle="deltoids" d="M ${bc-14} 45 C ${bc-shW-4} 46 ${bc-shW-6} 53 ${bc-shW-4} 63 C ${bc-shW+1} 64 ${bc-15} 60 ${bc-13} 53 Z M ${bc+14} 45 C ${bc+shW+4} 46 ${bc+shW+6} 53 ${bc+shW+4} 63 C ${bc+shW-1} 64 ${bc+15} 60 ${bc+13} 53 Z"/>
+      <path class="${cls('lats')}" data-a="explore-muscle" data-muscle="lats" d="M ${bc-2} 64 C ${bc-7} 56 ${bc-15} 55 ${bc-18} 61 C ${bc-wW-5} 71 ${bc-wW-2} 82 ${bc-5} 89 L ${bc-2} 83 Z M ${bc+2} 64 C ${bc+7} 56 ${bc+15} 55 ${bc+18} 61 C ${bc+wW+5} 71 ${bc+wW+2} 82 ${bc+5} 89 L ${bc+2} 83 Z"/>
+      <path class="${cls('triceps')}" data-a="explore-muscle" data-muscle="triceps" d="M ${bc-shW-3} 64 C ${bc-shW-6} 71 ${bc-shW-5} 81 ${bc-shW-2} 87 C ${bc-shW+2} 86 ${bc-shW+4} 78 ${bc-shW+3} 70 Z M ${bc+shW+3} 64 C ${bc+shW+6} 71 ${bc+shW+5} 81 ${bc+shW+2} 87 C ${bc+shW-2} 86 ${bc+shW-4} 78 ${bc+shW-3} 70 Z"/>
+      <path class="${cls('forearms')}" data-a="explore-muscle" data-muscle="forearms" d="M ${bc-shW-2} 89 C ${bc-shW-7} 97 ${bc-shW-7} 107 ${bc-shW-4} 116 C ${bc-shW} 116 ${bc-shW+3} 109 ${bc-shW+2} 100 Z M ${bc+shW+2} 89 C ${bc+shW+7} 97 ${bc+shW+7} 107 ${bc+shW+4} 116 C ${bc+shW} 116 ${bc+shW-3} 109 ${bc+shW-2} 100 Z"/>
+      <path class="${cls('glutes')}" data-a="explore-muscle" data-muscle="glutes" d="M ${bc-hW+2} 93 C ${bc-hW-2} 100 ${bc-hW-1} 112 ${bc-5} 116 C ${bc-1} 116 ${bc-1} 106 ${bc-2} 95 C ${bc-6} 94 ${bc-10} 93 ${bc-hW+2} 93 Z M ${bc+hW-2} 93 C ${bc+hW+2} 100 ${bc+hW+1} 112 ${bc+5} 116 C ${bc+1} 116 ${bc+1} 106 ${bc+2} 95 C ${bc+6} 94 ${bc+10} 93 ${bc+hW-2} 93 Z"/>
+      <path class="${cls('hamstrings')}" data-a="explore-muscle" data-muscle="hamstrings" d="M ${bc-hW+3} 118 C ${bc-thW-2} 127 ${bc-thW-1} 138 ${bc-thW+3} 145 C ${bc-6} 145 ${bc-3} 139 ${bc-3} 128 C ${bc-3} 121 ${bc-6} 118 ${bc-hW+3} 118 Z M ${bc+hW-3} 118 C ${bc+thW+2} 127 ${bc+thW+1} 138 ${bc+thW-3} 145 C ${bc+6} 145 ${bc+3} 139 ${bc+3} 128 C ${bc+3} 121 ${bc+6} 118 ${bc+hW-3} 118 Z"/>
+      <path class="${cls('calves')}" data-a="explore-muscle" data-muscle="calves" d="M ${bc-thW+2} 150 C ${bc-thW-3} 160 ${bc-thW-2} 172 ${bc-thW+3} 186 C ${bc-5} 186 ${bc-2} 178 ${bc-2} 168 Z M ${bc+thW-2} 150 C ${bc+thW+3} 160 ${bc+thW+2} 172 ${bc+thW-3} 186 C ${bc+5} 186 ${bc+2} 178 ${bc+2} 168 Z"/>
+    </g>
+  </svg>`;
+};
+
+const mmap = (p = [], q = [], opts = {}) => {
+  const gender = opts.gender || S.cfg?.bodyModel || 'male';
+  const svg = generateAnatomySvg(gender, p, q, opts);
+  if (opts.wrap === false) return svg;
+  return `
+    <div class="mm-wrap" id="mm-container">
+      ${svg}
+      <div id="mm-explore-sheet" class="mm-explore-drawer"></div>
+    </div>
+  `;
+};
+
+const mmLog = (l, opts = {}) => {
+  if (!l || !Array.isArray(l.ex)) return mmap([], [], opts);
+  const p = [...new Set(l.ex.flatMap(x => {
+    const ex = X(x.id);
+    return [...mapMuscleToAnatomyKey(ex.tg), ...mapMuscleToAnatomyKey(ex.g)];
+  }))];
+  const q = [...new Set(l.ex.flatMap(x => {
+    const ex = X(x.id);
+    return (ex.sec || []).flatMap(mapMuscleToAnatomyKey);
+  }))].filter(k => !p.includes(k));
+
+  return mmap(p, q, {
+    ...opts,
+    gender: S.cfg?.bodyModel || 'male',
+    interactive: true
+  });
+};
+
+function showMuscleDetailSheet(muscleKey) {
+  const drawer = document.getElementById('mm-explore-sheet');
+  const muscleInfo = ANATOMY_MUSCLES[muscleKey] || { name: muscleKey };
+  const topExercises = getTopExercisesForMuscle(muscleKey, 6);
+
+  document.querySelectorAll('.mm-muscle').forEach(el => {
+    el.classList.toggle('selected', el.dataset.muscle === muscleKey);
+  });
+
+  const contentHtml = `
+    <div class="mm-explore-inner">
+      <div class="mm-explore-header">
+        <div class="mm-explore-target-chip">
+          <span class="mm-chip-dot"></span>
+          <span class="mm-chip-text">Target: <b>${esc(muscleInfo.name)}</b></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="t2 sm">${topExercises.length} top exercises</span>
+          <button class="x mm-close-btn" data-a="close-mm-explore" title="Close" style="min-height:28px;padding:2px 8px">✕</button>
+        </div>
+      </div>
+      <div class="mm-explore-list">
+        ${topExercises.length ? topExercises.map(e => `
+          <div class="mm-explore-item" data-a="pickpreview" data-id="${esc(e.id)}">
+            <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+            <div class="mm-explore-meta">
+              <div class="mm-explore-name">${esc(e.name)}</div>
+              <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+            </div>
+            <button class="chip" data-a="pickpreview" data-id="${esc(e.id)}" style="font-size:11px;padding:3px 8px">Preview</button>
+          </div>
+        `).join('') : '<p class="t2 sm" style="padding:12px;text-align:center">No library exercises for this target.</p>'}
+      </div>
+    </div>
+  `;
+
+  if (drawer) {
+    drawer.innerHTML = contentHtml;
+    drawer.classList.add('open');
+    drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  } else {
+    modal(`
+      <div class="sheet-title-row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">Target: ${esc(muscleInfo.name)}</h2>
+        <button class="x" data-a="close">Close</button>
+      </div>
+      <p class="t2 sm" style="margin-top:-6px;margin-bottom:12px">Top matching movements from exercise library</p>
+      <div class="mm-explore-list" style="max-height:55vh;overflow-y:auto">
+        ${topExercises.map(e => `
+          <div class="mm-explore-item" data-a="pickpreview" data-id="${esc(e.id)}" style="cursor:pointer">
+            <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+            <div class="mm-explore-meta">
+              <div class="mm-explore-name">${esc(e.name)}</div>
+              <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+            </div>
+            <button class="chip" data-a="pickpreview" data-id="${esc(e.id)}">Preview</button>
+          </div>
+        `).join('')}
+      </div>
+    `);
+  }
+}
 
 // ---- Math & Progression Engine ----
 const rd = n => Math.round((Number(n) || 0) * 10) / 10;
@@ -587,21 +807,50 @@ const unlock = () => {
   } catch {}
 };
 
-const beep = () => {
+const playRestChime = () => {
   try {
     if (!ac) unlock();
     if (!ac) return;
     if (ac.state === 'suspended') ac.resume();
-    const o = ac.createOscillator(), g = ac.createGain();
-    o.connect(g);
-    g.connect(ac.destination);
-    o.frequency.value = 880;
-    g.gain.setValueAtTime(0.35, ac.currentTime);
-    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.8);
-    o.start();
-    o.stop(ac.currentTime + 0.8);
+
+    const t0 = ac.currentTime;
+
+    // Tone 1: Gentle warm bell tone (D5 - 587.33 Hz)
+    const o1 = ac.createOscillator();
+    const g1 = ac.createGain();
+    o1.type = 'sine';
+    o1.frequency.setValueAtTime(587.33, t0);
+    o1.connect(g1);
+    g1.connect(ac.destination);
+
+    // Smooth gain curve: soft attack (18ms) to eliminate click, natural exponential decay
+    g1.gain.setValueAtTime(0.0001, t0);
+    g1.gain.linearRampToValueAtTime(0.20, t0 + 0.018);
+    g1.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.60);
+
+    o1.start(t0);
+    o1.stop(t0 + 0.60);
+
+    // Tone 2: Harmonic upper chime (A5 - 880.00 Hz) offset by 100ms
+    const t1 = t0 + 0.10;
+    const o2 = ac.createOscillator();
+    const g2 = ac.createGain();
+    o2.type = 'sine';
+    o2.frequency.setValueAtTime(880.00, t1);
+    o2.connect(g2);
+    g2.connect(ac.destination);
+
+    // Smooth gain curve for second tone
+    g2.gain.setValueAtTime(0.0001, t1);
+    g2.gain.linearRampToValueAtTime(0.24, t1 + 0.022);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.85);
+
+    o2.start(t1);
+    o2.stop(t1 + 0.85);
   } catch {}
 };
+
+const beep = playRestChime;
 
 function startRest(s) {
   unlock();
@@ -618,8 +867,8 @@ function tick() {
   const l = Math.ceil(remaining / 1000);
   if (l <= 0) {
     stopRest();
-    if (S.cfg.sound !== false) beep();
-    if (S.cfg.vibrate !== false) navigator.vibrate?.([200, 100, 200]);
+    if (S.cfg.sound !== false) playRestChime();
+    if (S.cfg.vibrate !== false && navigator.vibrate) navigator.vibrate([100, 50, 100]);
     if (S.cfg.flash) {
       document.body.classList.remove('flash');
       void document.body.offsetWidth;
@@ -2626,7 +2875,9 @@ function showExerciseModal(ex) {
   `);
 }
 
-// ---- Exercise Picker Modal ----
+// ---- Exercise Picker Modal & Inspection Preview ----
+let currentPickerTitle = 'Add Exercise';
+
 const renderPickResults = () => {
   const q = (pickQuery || '').trim().toLowerCase();
   const filtered = EXDB.filter(e => {
@@ -2642,18 +2893,24 @@ const renderPickResults = () => {
   }
 
   return filtered.map(e => `
-    <div class="ex-row" data-a="pick" data-id="${esc(e.id)}">
-      <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
-      <div class="ex-info">
-        <div class="ex-name">${esc(e.name)}</div>
-        <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+    <div class="ex-row pick-ex-row" data-id="${esc(e.id)}">
+      <div class="ex-row-tap-preview" data-a="pickpreview" data-id="${esc(e.id)}">
+        <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+        <div class="ex-info">
+          <div class="ex-name">${esc(e.name)}</div>
+          <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
+        </div>
       </div>
-      <button class="chip on" style="pointer-events:none">+ Add</button>
+      <div class="ex-row-actions">
+        <button class="chip ex-preview-btn" data-a="pickpreview" data-id="${esc(e.id)}" title="Preview Exercise">ℹ️ Preview</button>
+        <button class="chip on ex-add-btn" data-a="pick" data-id="${esc(e.id)}" title="Add Exercise">+ Add</button>
+      </div>
     </div>
   `).join('');
 };
 
 function showExercisePicker(title = 'Add Exercise') {
+  currentPickerTitle = title;
   pickQuery = '';
   pickCategory = 'All';
   modal(`<h2>${esc(title)}</h2>
@@ -2663,6 +2920,60 @@ function showExercisePicker(title = 'Add Exercise') {
     </div>
     <div id="pick-list" class="card" style="max-height:55vh;overflow-y:auto;padding:0 12px">
       ${renderPickResults()}
+    </div>
+  `);
+}
+
+function showExercisePickerPreview(id) {
+  const ex = X(id);
+  if (!ex) return;
+
+  let actionLabel = '+ Add to Workout';
+  const titleLower = (currentPickerTitle || '').toLowerCase();
+  if (titleLower.includes('routine')) {
+    actionLabel = '+ Add to Routine';
+  } else if (titleLower.includes('superset') || titleLower.includes('add as') || titleLower.includes('a2') || titleLower.includes('a3')) {
+    actionLabel = '+ Add to Superset';
+  } else if (S.act) {
+    actionLabel = '+ Add to Workout';
+  } else {
+    actionLabel = '+ Add to Routine';
+  }
+
+  const mediaSrc = `./media/${esc(ex.gif || ex.img)}`;
+  const secMuscles = ex.sec && ex.sec.length ? ex.sec.join(', ') : '';
+
+  modal(`
+    <div class="picker-preview-sheet">
+      <div class="picker-preview-header">
+        <h2 class="picker-preview-title">${esc(ex.name)}</h2>
+        <div class="picker-preview-badges">
+          <span class="ex-badge ac">${esc(ex.g)}</span>
+          <span class="ex-badge">${esc(ex.eq)}</span>
+          ${ex.tg ? `<span class="ex-badge tg">Target: ${esc(ex.tg)}</span>` : ''}
+        </div>
+        ${secMuscles ? `<div class="picker-preview-secondary t2 sm" style="margin-top:6px">Secondary: <b>${esc(secMuscles)}</b></div>` : ''}
+      </div>
+
+      <div class="picker-preview-media">
+        <img class="picker-preview-gif" src="${mediaSrc}" alt="${esc(ex.name)}" onerror="this.style.display='none'">
+      </div>
+
+      <div class="picker-preview-cues-card card">
+        <div class="picker-preview-cues-title">Step-by-Step Form Execution Cues</div>
+        ${ex.st && ex.st.length ? `
+          <ol class="ex-steps picker-preview-steps">
+            ${ex.st.map(s => `<li>${esc(s)}</li>`).join('')}
+          </ol>
+        ` : `
+          <p class="t2 sm" style="font-style:italic;margin:6px 0">Maintain core brace, smooth eccentric control, and full active range of motion.</p>
+        `}
+      </div>
+
+      <div class="picker-preview-actions">
+        <button class="btn btn-primary picker-preview-add-btn" data-a="pick" data-id="${esc(ex.id)}">${actionLabel}</button>
+        <button class="btn s outline picker-preview-back-btn" data-a="backtopicker">← Back to Exercise Picker</button>
+      </div>
     </div>
   `);
 }
@@ -2923,6 +3234,7 @@ async function imp(f) {
     if (o.cfg && typeof o.cfg === 'object' && !Array.isArray(o.cfg)) {
       if (Number.isFinite(o.cfg.rest)) S.cfg.rest = Math.max(5, Math.min(600, +o.cfg.rest));
       if (typeof o.cfg.flash === 'boolean') S.cfg.flash = o.cfg.flash;
+      if (o.cfg.bodyModel) S.cfg.bodyModel = o.cfg.bodyModel === 'female' ? 'female' : 'male';
     }
 
     if (o.sched && typeof o.sched === 'object' && !Array.isArray(o.sched)) {
@@ -3022,6 +3334,14 @@ function showSettingsModal() {
           <label class="settings-row">
             <span class="settings-label">Default Weight Increment (kg)</span>
             <input type="number" inputmode="decimal" step="0.5" class="settings-input-num" data-c="inc" value="${S.cfg.inc || 2.5}">
+          </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Anatomical Model</span>
+            <select class="settings-select" data-c="bodyModel">
+              <option value="male" ${S.cfg.bodyModel !== 'female' ? 'selected' : ''}>Male Silhouette</option>
+              <option value="female" ${S.cfg.bodyModel === 'female' ? 'selected' : ''}>Female Silhouette</option>
+            </select>
           </label>
         </div>
       </div>
@@ -3848,6 +4168,27 @@ document.addEventListener('click', e => {
       showExercisePicker('Add Exercise to Workout');
       return;
     }
+    case 'pickpreview': {
+      showExercisePickerPreview(id);
+      return;
+    }
+    case 'backtopicker': {
+      showExercisePicker(currentPickerTitle || 'Add Exercise');
+      return;
+    }
+    case 'explore-muscle': {
+      showMuscleDetailSheet(t.dataset.muscle);
+      return;
+    }
+    case 'close-mm-explore': {
+      const drawer = document.getElementById('mm-explore-sheet');
+      if (drawer) {
+        drawer.innerHTML = '';
+        drawer.classList.remove('open');
+      }
+      document.querySelectorAll('.mm-muscle.selected').forEach(el => el.classList.remove('selected'));
+      return;
+    }
     case 'pick': {
       const cb = P;
       P = null;
@@ -4104,6 +4445,8 @@ document.addEventListener('change', e => {
   if (t.dataset.c) {
     if (t.dataset.c === 'inc') {
       S.cfg.inc = Math.max(0.25, Math.min(50, parseFloat(t.value) || 2.5));
+    } else if (t.dataset.c === 'bodyModel') {
+      S.cfg.bodyModel = t.value === 'female' ? 'female' : 'male';
     } else {
       S.cfg[t.dataset.c] = t.type === 'checkbox' ? t.checked : Math.max(5, +t.value || 90);
     }
@@ -4271,7 +4614,7 @@ document.addEventListener('touchcancel', () => {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.3.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.4.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -4305,8 +4648,26 @@ if (typeof globalThis !== 'undefined') {
     handleSetCompleted,
     S,
     T,
+    tick,
+    startRest,
+    stopRest,
     setVolume,
-    EXIDX
+    EXIDX,
+    get EXDB() { return EXDB; },
+    set EXDB(val) { EXDB = val; },
+    normalizeExercise,
+    playRestChime,
+    beep,
+    showExercisePicker,
+    showExercisePickerPreview,
+    renderPickResults,
+    mmap,
+    mmLog,
+    showMuscleDetailSheet,
+    mapMuscleToAnatomyKey,
+    getTopExercisesForMuscle,
+    ANATOMY_MUSCLES,
+    generateAnatomySvg
   };
 }
 
