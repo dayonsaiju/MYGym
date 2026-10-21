@@ -96,14 +96,16 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.5.1';
-const SHELL_VERSION = 'mygym-v5.5.1-fix';
+const APP_VERSION = '5.6.0';
+const SHELL_VERSION = 'mygym-core-v5.6.0-reviewed';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
 let swapQuery = '', swapCategory = 'All', swapIdx = 0;
 let bodyMetricView = 'both'; // 'both', 'weight', 'waist'
 let histQuery = '', histRoutine = 'All';
+let workGifCollapsed = false;
+let lastRoutineSyncBackup = null;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -119,11 +121,12 @@ const fmtDur = ms => {
 
 const save = (...k) => Promise.all(k.map(x => put(x, S[x])));
 
-// Clean & sanitize exercise names (fix corrupted degree encodings and title-casing)
+// Clean & sanitize exercise names (fix corrupted degree encodings, typos and title-casing)
 const cleanExName = s => {
   let str = String(s || '').trim();
   str = str.replace(/45\s*[вbB]\s*°/gi, '45°')
-           .replace(/\b45\s*degrees?\b/gi, '45°');
+           .replace(/\b45\s*degrees?\b/gi, '45°')
+           .replace(/\ball fours squad stretch\b/gi, 'All Fours Quad Stretch');
   if (str && (str === str.toLowerCase() || str === str.toUpperCase())) {
     str = str.toLowerCase().replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
   }
@@ -147,8 +150,9 @@ const mapBodyPartToGroup = bp => {
 };
 
 const normalizeExercise = e => {
-  const isCardio = e.bp === 'cardio';
-  const isBodyweight = e.eq === 'body weight';
+  const isCardio = e.bp === 'cardio' || e.t === 't';
+  const isBodyweight = e.eq === 'body weight' || e.t === 'b';
+  const modality = isCardio ? 'timed_cardio' : (isBodyweight ? 'bodyweight' : 'strength');
   return {
     id: String(e.id || '').replace(/[^a-zA-Z0-9_-]/g, ''),
     name: cleanExName(e.n || e.name || e.id || ''),
@@ -161,13 +165,20 @@ const normalizeExercise = e => {
     img: String(e.img || '').replace(/[^a-zA-Z0-9_.-]/g, ''),
     gif: String(e.gif || '').replace(/[^a-zA-Z0-9_.-]/g, ''),
     t: isCardio ? 't' : (isBodyweight ? 'b' : 'w'),
+    type: modality,
     u: false
   };
 };
 
 const X = id => {
   const sid = String(id || '');
-  if (EXIDX[sid]) return EXIDX[sid];
+  if (EXIDX[sid]) {
+    const ex = EXIDX[sid];
+    if (!ex.type) {
+      ex.type = (ex.t === 't' || ex.bp === 'cardio') ? 'timed_cardio' : ((ex.t === 'b' || ex.eq === 'body weight') ? 'bodyweight' : 'strength');
+    }
+    return ex;
+  }
   return {
     id: sid,
     name: cleanExName(sid),
@@ -180,8 +191,20 @@ const X = id => {
     img: '',
     gif: '',
     t: 'w',
+    type: 'strength',
     u: false
   };
+};
+
+const isCardioOrMobilityExercise = exId => {
+  const e = X(exId);
+  if (!e) return false;
+  if (e.type === 'timed_cardio' || e.t === 't' || e.bp === 'cardio' || e.g === 'Cardio' || e.g === 'Mobility') return true;
+  const n = (e.name || '').toLowerCase();
+  if (n.includes('stretch') || n.includes('mobility') || n.includes('cardio') || n.includes('treadmill') || n.includes('elliptical') || n.includes('bike') || n.includes('rowing machine') || n.includes('jumping jack')) {
+    return true;
+  }
+  return false;
 };
 
 // ---- Icons ----
@@ -478,11 +501,22 @@ const best = id => {
   return b ? scoreSet(id, b) : 0;
 };
 
-const lastSet = id => {
-  for (let i = S.logs.length - 1; i >= 0; i--) {
-    const x = S.logs[i].ex.find(x => String(x.id) === String(id));
-    if (x && x.sets && x.sets.length) return x.sets[0];
+const getLastSessionExercise = id => {
+  const sid = String(id || '');
+  for (let i = (S.logs || []).length - 1; i >= 0; i--) {
+    const l = S.logs[i];
+    if (!Array.isArray(l.ex)) continue;
+    const found = l.ex.find(x => String(x.id) === sid);
+    if (found && Array.isArray(found.sets) && found.sets.length > 0) {
+      return found;
+    }
   }
+  return null;
+};
+
+const lastSet = id => {
+  const ex = getLastSessionExercise(id);
+  if (ex && ex.sets && ex.sets.length) return ex.sets[0];
   return null;
 };
 
@@ -569,58 +603,103 @@ function prog(rx, sets) {
 }
 
 // ---- Personal Record (PR) Engine ----
-const getExercisePRs = id => {
+const getExercisePRs = (id, excludeSet = null) => {
   let maxWeight = 0;
   let max1RM = 0;
   let maxVolume = 0;
   let count = 0;
+  const maxRepsByWeight = new Map();
 
-  for (const log of S.logs) {
+  const processSet = (s, isUni) => {
+    if (!s || s === excludeSet) return;
+    const w = Math.max(0, Number(s.w) || 0);
+    const r = Math.max(0, Number(s.r) || 0);
+    const isDone = s.done || (isUni && s.sideL && s.sideR);
+    if (isDone && (w > 0 || r > 0)) {
+      count++;
+      if (w > maxWeight) maxWeight = w;
+      const oneRM = br(w, r); // Estimated 1RM via Brzycki formula
+      if (oneRM > max1RM) max1RM = oneRM;
+      const currMaxR = maxRepsByWeight.get(w) || 0;
+      if (r > currMaxR) maxRepsByWeight.set(w, r);
+      maxVolume += setVolume(s, isUni, id);
+    }
+  };
+
+  // 1. Scan historical logs in S.logs
+  for (const log of (S.logs || [])) {
     for (const ex of (log.ex || [])) {
       if (String(ex.id) === String(id)) {
-        let sessionVol = 0;
         for (const s of (ex.sets || [])) {
-          const w = Number(s.w) || 0;
-          const r = Number(s.r) || 0;
-          const isDone = s.done || (ex.uni && s.sideL && s.sideR);
-          if (isDone && (w > 0 || r > 0)) {
-            count++;
-            if (w > maxWeight) maxWeight = w;
-            const oneRM = e1(w, r);
-            if (oneRM > max1RM) max1RM = oneRM;
-            sessionVol += setVolume(s, ex.uni);
-          }
+          processSet(s, !!ex.uni);
         }
-        if (sessionVol > maxVolume) maxVolume = sessionVol;
       }
     }
   }
 
-  return { maxWeight, max1RM, maxVolume, count };
+  // 2. Scan active session S.act sets (excluding the current set)
+  if (S.act && Array.isArray(S.act.ex)) {
+    for (const ex of S.act.ex) {
+      if (String(ex.id) === String(id)) {
+        for (const s of (ex.sets || [])) {
+          processSet(s, !!ex.uni);
+        }
+      }
+    }
+  }
+
+  return { maxWeight, max1RM, maxVolume, count, maxRepsByWeight };
 };
 
-const checkSetPR = (id, s, uni = false) => {
-  const w = Number(s?.w) || 0;
-  const r = Number(s?.r) || 0;
+const checkPersonalRecord = (id, s, uni = false, excludeSet = null) => {
+  const w = Math.max(0, Number(s?.w) || 0);
+  const r = Math.max(0, Number(s?.r) || 0);
   const isDone = s?.done || (uni && s?.sideL && s?.sideR);
   if (!isDone || (w <= 0 && r <= 0)) return null;
 
-  const prior = getExercisePRs(id);
-  const oneRM = e1(w, r);
+  // Compare against global all-time bests across entire history (excluding current set s)
+  const prior = getExercisePRs(id, excludeSet || s);
+  const oneRM = br(w, r); // Brzycki formula: Weight * (36 / (37 - Reps))
   const types = [];
 
-  if (w > 0 && ((prior.maxWeight > 0 && w > prior.maxWeight) || (prior.count === 0 && w > 0))) {
-    types.push('Weight');
-  }
-  if (oneRM > 0 && ((prior.max1RM > 0 && oneRM > prior.max1RM) || (prior.count === 0 && oneRM > 0))) {
-    types.push('1RM');
+  if (prior.count === 0) {
+    // First milestone logged for this exercise
+    if (w > 0) types.push('Weight');
+    if (oneRM > 0) types.push('1RM');
+  } else {
+    // Absolute Max Weight logged
+    if (w > 0 && w > prior.maxWeight) {
+      types.push('Weight');
+    }
+    // Max Reps at that specific weight
+    const priorRepsAtWeight = prior.maxRepsByWeight.get(w) || 0;
+    if (priorRepsAtWeight > 0 && r > priorRepsAtWeight) {
+      types.push('Reps');
+    }
+    // Estimated 1RM via Brzycki formula
+    if (oneRM > 0 && oneRM > prior.max1RM) {
+      types.push('1RM');
+    }
   }
 
+  // Strictly suppress false PR trophies when completing sub-maximal or duplicate sets
   if (types.length) {
-    return { isPR: true, types, w, oneRM, desc: types.join(' & ') + ' PR' };
+    let primaryType = 'weight';
+    if (prior.count === 0) {
+      primaryType = w > 0 ? 'weight' : '1rm';
+    } else if (w > 0 && w > prior.maxWeight) {
+      primaryType = 'weight';
+    } else if ((prior.maxRepsByWeight.get(w) || 0) > 0 && r > (prior.maxRepsByWeight.get(w) || 0)) {
+      primaryType = 'reps';
+    } else if (oneRM > 0 && oneRM > prior.max1RM) {
+      primaryType = '1rm';
+    }
+    return { isPR: true, type: primaryType, types, w, r, oneRM, desc: types.join(' & ') + ' PR' };
   }
   return null;
 };
+
+const checkSetPR = checkPersonalRecord;
 
 // ---- Barbell Plate Calculator ----
 const calcPlates = (totalWeight, barWeight = 20) => {
@@ -964,23 +1043,29 @@ const getLastExerciseNote = id => {
   return '';
 };
 
-const setVolume = (s, isUni = false) => {
-  const w = Number(s.w) > 0 ? Number(s.w) : 1;
-  const r = Number(s.r) || 0;
-  const uni = isUni || s.uni;
-  const hasBoth = s.done || (s.sideL && s.sideR);
-  const hasOne = s.sideL || s.sideR;
+const setVolume = (s, isUni = false, exId = null) => {
+  if (exId && isCardioOrMobilityExercise(exId)) return 0;
+  const w = Math.max(0, Number(s?.w) || 0);
+  const r = Math.max(0, Number(s?.r) || 0);
+  const uni = isUni || s?.uni;
+  const hasBoth = s?.done || (s?.sideL && s?.sideR);
+  const hasOne = s?.sideL || s?.sideR;
   const mult = uni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
   return w * r * mult;
 };
 
-const vol = l => Math.round(l.ex.reduce((a, x) => a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => {
-  const isUni = x.uni || s.uni;
-  const hasBoth = s.done || (s.sideL && s.sideR);
-  const hasOne = s.sideL || s.sideR;
-  const mult = isUni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
-  return b + (Number(s.w) || 0) * (Number(s.r) || 0) * mult;
-}, 0) : 0), 0));
+const vol = l => Math.round((l?.ex || []).reduce((a, x) => {
+  if (isCardioOrMobilityExercise(x.id)) return a;
+  return a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => {
+    const isUni = x.uni || s.uni;
+    const hasBoth = s.done || (s.sideL && s.sideR);
+    const hasOne = s.sideL || s.sideR;
+    const mult = isUni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
+    const w = Math.max(0, Number(s.w) || 0);
+    const r = Math.max(0, Number(s.r) || 0);
+    return b + w * r * mult;
+  }, 0) : 0);
+}, 0));
 
 // ---- 100% Offline Deterministic Recovery & ACWR Engine ----
 const calcWorkload = (logs = S.logs) => {
@@ -1006,9 +1091,11 @@ const calcWorkload = (logs = S.logs) => {
     let logVol = 0;
     for (const x of l.ex) {
       if (!Array.isArray(x.sets)) continue;
+      // HARD EXCLUSION: Timed cardio and mobility exercises must NEVER contribute to strength tonnage or ACWR load calculations
+      if (isCardioOrMobilityExercise(x.id)) continue;
       const isUni = !!x.uni;
       for (const s of x.sets) {
-        logVol += setVolume(s, isUni || !!s.uni);
+        logVol += setVolume(s, isUni || !!s.uni, x.id);
       }
     }
 
@@ -1281,17 +1368,27 @@ function showRirPicker(i, j) {
 }
 
 const newSets = (id, n = 3) => {
-  const l = lastSet(id);
-  const defReps = X(id).t === 't' ? 30 : 8;
-  return Array.from({ length: Math.max(1, n) }, () => ({
-    w: l ? l.w : 0,
-    r: l ? l.r : defReps,
-    rpe: '',
-    rir: null,
-    done: false,
-    sideL: false,
-    sideR: false
-  }));
+  const prevEx = getLastSessionExercise(id);
+  const exInfo = X(id);
+  const isTimed = exInfo.type === 'timed_cardio' || exInfo.t === 't';
+  const defReps = isTimed ? 30 : 8;
+  return Array.from({ length: Math.max(1, n) }, (_, j) => {
+    const prevSet = prevEx?.sets?.[j] || prevEx?.sets?.at(-1);
+    let prefillWeight = 0;
+    if (prevSet && prevSet.w != null && prevSet.w !== '') {
+      prefillWeight = Number(prevSet.w);
+    }
+    const prefillReps = (prevSet && prevSet.r != null && prevSet.r !== '') ? Number(prevSet.r) : defReps;
+    return {
+      w: prefillWeight,
+      r: prefillReps,
+      rpe: '',
+      rir: null,
+      done: false,
+      sideL: false,
+      sideR: false
+    };
+  });
 };
 
 // ---- State for Library Filters & Calendar ----
@@ -2015,12 +2112,111 @@ function renderWorkHeroCard(a, curIdx) {
   const currentEx = a.ex[curIdx];
   const exInfo = X(currentEx.id);
   const isBarbell = (exInfo.eq || '').toLowerCase().includes('barbell');
+  const isDumbbell = (exInfo.eq || '').toLowerCase().includes('dumbbell') || (exInfo.name || '').toLowerCase().includes('dumbbell');
   const ssInfo = getSupersetInfo(a, curIdx);
+
+  const prevEx = getLastSessionExercise(currentEx.id);
+  const r = a.rid ? S.routines.find(r => r.id === a.rid) : null;
+  const rx = r?.ex?.find(q => String(q.id) === String(currentEx.id));
+  const repCeiling = rx?.reps2 || rx?.reps || 12;
+  const prevDoneSets = (prevEx?.sets || []).filter(s => s && (s.done || s.sideL || s.sideR || Number(s.r) > 0));
+  const isDoubleProgReady = prevDoneSets.length >= 1 && prevDoneSets.every(s => (Number(s.r) || 0) >= repCeiling);
 
   return `
     <div class="card work-hero-card" id="work-hero-card">
-      <!-- Exercise Demonstration GIF - 100% visible with clean letterboxing, zero overlay buttons -->
-      <div class="work-hero-media" data-a="zoomexgif" data-id="${esc(exInfo.id)}" title="Tap to expand fullscreen demonstration">
+      <!-- Header Info & Tags directly at top -->
+      <div class="work-hero-info">
+        <div class="row" style="margin-bottom:4px">
+          <div class="work-hero-title">${esc(exInfo.name)}</div>
+          <button class="chip gif-toggle-chip" data-a="togglegif" data-i="${curIdx}" style="font-size:11px;padding:2px 8px">${workGifCollapsed ? '👁️ Show Demo GIF' : 'Hide GIF'}</button>
+        </div>
+        <div class="work-hero-tags">
+          <span class="ex-badge ac">${esc(exInfo.g)}</span>
+          ${exInfo.tg ? `<span class="ex-badge">${esc(exInfo.tg)}</span>` : ''}
+          <span class="ex-badge">${esc(exInfo.eq)}</span>
+          ${isDumbbell ? `<span class="ex-badge dumbbell-badge">⚖️ (Weight per dumbbell)</span>` : ''}
+          ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? '<span class="ex-badge">Timed Cardio</span>' : ''}
+          ${exInfo.type === 'bodyweight' || exInfo.t === 'b' ? '<span class="ex-badge">Bodyweight</span>' : ''}
+          ${currentEx.uni ? '<span class="ex-badge" style="background:rgba(100,210,255,0.2);color:var(--bl);border:1px solid var(--bl)">⚖️ Each Side (L/R)</span>' : ''}
+          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
+          ${isDoubleProgReady ? `<button class="chip chip-suggestion" data-a="applysuggestion" data-i="${curIdx}" data-inc="2.5" title="Double Progression rep ceiling met! Tap to bump +2.5kg">⚡ +2.5kg suggested</button>` : ''}
+          ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
+        </div>
+      </div>
+
+      <!-- PRIMARY VIEWPORT ELEMENT: Sets & Reps Logger Table above the fold -->
+      <div class="work-sets-container">
+        <div class="set-header-row">
+          <span style="width:34px;text-align:center">Set</span>
+          <span class="set-prev-hdr" style="width:78px;text-align:center">Prev</span>
+          <span style="flex:1.2;text-align:center">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Duration' : 'Weight (kg)'}</span>
+          <span style="flex:1;text-align:center">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Target (s)' : 'Reps'}</span>
+          <span style="width:58px;text-align:center">RIR <button class="jargon-micro-btn" data-a="explainjargon" data-term="rir" title="Explain RIR">?</button></span>
+          <span style="width:${currentEx.uni ? '84px' : '40px'};text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
+        </div>
+        ${currentEx.sets.map((s, j) => {
+          const prevS = prevEx?.sets?.[j];
+          let prevText = '—';
+          if (prevS && (prevS.w != null || prevS.r != null)) {
+            if (exInfo.type === 'timed_cardio' || exInfo.t === 't') {
+              prevText = `${prevS.r || 0}s`;
+            } else if (exInfo.type === 'bodyweight' || exInfo.t === 'b') {
+              prevText = `${prevS.w > 0 ? '+' + prevS.w + 'kg' : '0kg'} × ${prevS.r || 0}`;
+            } else {
+              prevText = `${prevS.w || 0}kg × ${prevS.r || 0}`;
+            }
+          }
+
+          const r = (f, v, u) => {
+            if (f === 'w' && exInfo.type !== 'timed_cardio' && exInfo.t !== 't') {
+              return `<div class="set-input-wrap has-steppers ${isBarbell ? 'has-plate-btn' : ''}">
+                <button class="step-btn step-minus" data-a="stepw" data-i="${curIdx}" data-j="${j}" data-delta="-2.5" title="-2.5 kg">-2.5</button>
+                <input type="number" inputmode="decimal" data-f="w" data-i="${curIdx}" data-j="${j}" value="${v}">
+                <span class="u">${u}</span>
+                <button class="step-btn step-plus" data-a="stepw" data-i="${curIdx}" data-j="${j}" data-delta="2.5" title="+2.5 kg">+2.5</button>
+                ${isBarbell ? `<button class="plate-calc-btn" data-a="openplatecalc" data-w="${s.w || 20}" data-name="${esc(exInfo.name)}" title="Plate Calculator">${ic('disc', 14)}</button>` : ''}
+              </div>`;
+            }
+            return `<div class="set-input-wrap">
+              <input type="number" inputmode="${f === 'r' ? 'numeric' : 'decimal'}" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}">
+              <span class="u">${u}</span>
+            </div>`;
+          };
+
+          const isFail = s.rir === 0 || s.rpe >= 10;
+          const isSet = s.rir != null || (s.rpe != null && s.rpe !== '');
+          const rirText = s.rir != null ? (s.rir === 0 ? '0 💥' : (s.rir >= 3 ? '3+' : s.rir)) : (s.rpe != null && s.rpe !== '' ? (10 - +s.rpe) : 'RIR');
+          const isSetDone = s.done || (currentEx.uni && s.sideL && s.sideR);
+          const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
+
+          return `<div class="set ${s.done ? 'd' : ''}" data-i="${curIdx}" data-j="${j}">
+            <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">
+              ${j + 1}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆 PR!</span>` : ''}
+            </button>
+            <span class="set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</span>
+            ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? '' : r('w', s.w, (exInfo.type === 'bodyweight' || exInfo.t === 'b') ? '+kg' : 'kg')}
+            ${r('r', s.r, (exInfo.type === 'timed_cardio' || exInfo.t === 't') ? 'sec' : 'reps')}
+            <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve / Intensity">${rirText}</button>
+            ${currentEx.uni ? `
+              <div class="uni-ck-group">
+                <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
+                <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
+              </div>
+            ` : `
+              <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
+            `}
+          </div>`;
+        }).join('')}
+      </div>
+
+      <div class="row g" style="margin-top:10px">
+        <button class="btn s" data-a="addset" data-i="${curIdx}">${ic('plus', 16)} Add set</button>
+        <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
+      </div>
+      <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
+
+      <!-- Compact / Collapsible Exercise Demonstration GIF -->
+      <div class="work-hero-media" data-a="zoomexgif" data-id="${esc(exInfo.id)}" ${workGifCollapsed ? 'style="display:none"' : ''} title="Tap to expand fullscreen demonstration">
         <img class="work-hero-gif" src="./media/${esc(exInfo.gif || exInfo.img)}" alt="${esc(exInfo.name)}" loading="eager" onerror="this.onerror=null;this.src='./media/${esc(exInfo.img || exInfo.gif)}';">
         <div class="work-gif-tap-hint">🔍 Tap to expand</div>
       </div>
@@ -2035,67 +2231,6 @@ function renderWorkHeroCard(a, curIdx) {
         }
         <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
       </div>
-
-      <div class="work-hero-info">
-        <div class="row" style="margin-bottom:4px">
-          <div class="work-hero-title">${esc(exInfo.name)}</div>
-          <button class="chip" data-a="swapex" data-i="${curIdx}" style="font-size:12px;padding:0 10px;min-height:32px">⇄ Change</button>
-        </div>
-        <div class="work-hero-tags">
-          <span class="ex-badge ac">${esc(exInfo.g)}</span>
-          ${exInfo.tg ? `<span class="ex-badge">${esc(exInfo.tg)}</span>` : ''}
-          <span class="ex-badge">${esc(exInfo.eq)}</span>
-          ${exInfo.t === 't' ? '<span class="ex-badge">Timed (s)</span>' : ''}
-          ${currentEx.uni ? '<span class="ex-badge" style="background:rgba(100,210,255,0.2);color:var(--bl);border:1px solid var(--bl)">⚖️ Each Side (L/R)</span>' : ''}
-          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
-          ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
-        </div>
-      </div>
-
-      <!-- Set Logger Table for active exercise -->
-      <div class="work-sets-container">
-        <div class="set-header-row">
-          <span style="width:36px;text-align:center">Set</span>
-          <span style="flex:1">${exInfo.t === 't' ? 'Duration' : 'Weight (kg)'}</span>
-          <span style="flex:1">${exInfo.t === 't' ? 'Target (s)' : 'Reps'}</span>
-          <span style="width:58px;text-align:center">RIR</span>
-          <span style="width:${currentEx.uni ? '84px' : '40px'};text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
-        </div>
-        ${currentEx.sets.map((s, j) => {
-          const r = (f, v, u) => `<div class="set-input-wrap ${f === 'w' && isBarbell ? 'has-plate-btn' : ''}">
-            <input type="number" inputmode="decimal" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}">
-            <span class="u">${u}</span>
-            ${f === 'w' && isBarbell ? `<button class="plate-calc-btn" data-a="openplatecalc" data-w="${s.w || 20}" data-name="${esc(exInfo.name)}" title="Plate Calculator">${ic('disc', 14)}</button>` : ''}
-          </div>`;
-          const isFail = s.rir === 0 || s.rpe >= 10;
-          const isSet = s.rir != null || (s.rpe != null && s.rpe !== '');
-          const rirText = s.rir != null ? (s.rir === 0 ? '0 💥' : (s.rir >= 3 ? '3+' : s.rir)) : (s.rpe != null && s.rpe !== '' ? (10 - +s.rpe) : 'RIR');
-          const isSetDone = s.done || (currentEx.uni && s.sideL && s.sideR);
-          const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
-          return `<div class="set ${s.done ? 'd' : ''}" data-i="${curIdx}" data-j="${j}">
-            <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">
-              ${j + 1}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆 PR!</span>` : ''}
-            </button>
-            ${exInfo.t === 't' ? '' : r('w', s.w, exInfo.t === 'b' ? '+kg' : 'kg')}
-            ${r('r', s.r, exInfo.t === 't' ? 'sec' : 'reps')}
-            <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve / Intensity">${rirText}</button>
-            ${currentEx.uni ? `
-              <div class="uni-ck-group">
-                <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
-                <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
-              </div>
-            ` : `
-              <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
-            `}
-          </div>`;
-        }).join('')}
-      </div>
-
-      <div class="row g" style="margin-top:12px">
-        <button class="btn s" data-a="addset" data-i="${curIdx}">${ic('plus', 16)} Add set</button>
-        <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
-      </div>
-      <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
     </div>
   `;
 }
@@ -2110,7 +2245,7 @@ function renderWorkNavStepper(a, curIdx) {
         ☰ Overview (${curIdx + 1}/${a.ex.length})
       </button>
       ${curIdx === a.ex.length - 1
-        ? `<button class="btn work-nav-btn fin-step" data-a="fin">Finish Workout 🎉</button>`
+        ? `<button class="btn work-nav-btn fin-step" data-a="promptfin">Finish Workout 🎉</button>`
         : `<button class="btn work-nav-btn" data-a="worknext">Next Exercise ›</button>`
       }
     </div>
@@ -2352,8 +2487,8 @@ function vWork() {
       </div>
       <div class="work-top-actions">
         <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
-        <button class="btn sm-btn" data-a="fin">Finish</button>
-        <button class="btn s sm-btn red" data-a="cancel">✕</button>
+        <button class="btn sm-btn" data-a="promptfin">Finish</button>
+        <button class="btn s sm-btn red" data-a="promptcancel">✕</button>
       </div>
     </div>
 
@@ -2390,7 +2525,7 @@ function vWork() {
 
     <div class="row g" style="margin-top:14px">
       <button class="btn s" data-a="addex">${ic('plus', 16)} Add Exercise</button>
-      <button class="btn s red" data-a="cancel">Discard Workout</button>
+      <button class="btn s red" data-a="promptcancel">Discard Workout</button>
     </div>
   `;
 }
@@ -2491,7 +2626,11 @@ function vCal() {
 
   // Workouts for selected date
   const selLogs = S.logs.filter(l => new Date(l.date).toISOString().slice(0, 10) === calSelectedDate);
-  const selDateDisplay = new Date(calSelectedDate + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const selDateObj = new Date(calSelectedDate + 'T12:00:00');
+  const selDateDay = selDateObj.getDay();
+  const selDateDisplay = selDateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const scheduledRidForDate = S.sched ? (S.sched[selDateDay] || '') : '';
+  const scheduledRoutineForDate = scheduledRidForDate ? S.routines.find(r => r.id === scheduledRidForDate) : null;
 
   const todayDay = new Date().getDay();
   const SPLIT_DAYS = [1, 2, 3, 4, 5, 6, 0]; // Monday to Sunday grid
@@ -2539,14 +2678,27 @@ function vCal() {
           ${l.ex.map(x => renderRoutineSummaryRow(x)).join('')}
         </div>
       </div>
-    `).join('') : `
+    `).join('') : (scheduledRoutineForDate ? `
+      <div class="card today-split-hero">
+        <div class="row">
+          <div>
+            <div class="today-split-badge">⭐ Scheduled Routine (${DAYS[selDateDay]})</div>
+            <div class="today-split-title">${esc(scheduledRoutineForDate.name)}</div>
+          </div>
+          ${!S.act ? `<button class="btn sched-start-btn" data-a="start" data-id="${esc(scheduledRoutineForDate.id)}">⚡ Start Routine</button>` : ''}
+        </div>
+        <div class="routine-summary-list">
+          ${scheduledRoutineForDate.ex.map(renderRoutineSummaryRow).join('')}
+        </div>
+      </div>
+    ` : `
       <div class="card empty-state-card sm">
         <div class="empty-state-icon">🌿</div>
-        <div class="empty-state-title">Rest Day</div>
-        <p class="t2 sm">No workouts logged on this date.</p>
-        ${!S.act ? `<button class="btn s sm-btn" data-a="start" style="margin-top:10px">Log Workout on this Day</button>` : ''}
+        <div class="empty-state-title">Scheduled Rest Day</div>
+        <p class="t2 sm">No workouts scheduled or logged for ${DAYS[selDateDay]}.</p>
+        ${!S.act ? `<button class="btn s sm-btn" data-a="tab" data-k="train" style="margin-top:10px">Browse Routines</button>` : ''}
       </div>
-    `);
+    `));
 }
 
 // =============================================================================
@@ -2592,27 +2744,43 @@ function calcNutritionTargets(opts = {}) {
   const isFemale = gender === 'female';
   const weight = Math.max(35, Math.min(250, Number(opts.weight) || (isFemale ? 62 : 78)));
   const height = Math.max(100, Math.min(250, Number(opts.height) || (isFemale ? 165 : 178)));
-  const goalType = opts.goalType || 'sixpack';
+  const age = Math.max(14, Math.min(100, Number(opts.age || S.cfg?.physique?.age) || 28));
+  const goalType = opts.goalType || S.cfg?.physique?.goalType || 'sixpack';
   const currentBf = Number(opts.currentBf) || (isFemale ? 24.0 : 16.0);
+  const activityLevel = opts.activityLevel || S.cfg?.physique?.activityLevel || 'moderate';
+
+  const actMultipliers = {
+    sedentary: 1.2,
+    light: 1.375,
+    moderate: 1.45,
+    very_active: 1.725
+  };
+  const actMult = actMultipliers[activityLevel] || 1.45;
 
   const leanMass = weight * (1 - (currentBf / 100));
   const bmr = 370 + (21.6 * leanMass);
-  const tdee = Math.round(bmr * 1.45);
+  const tdee = Math.round(bmr * actMult);
 
-  let cals, proteinRatio, fatRatio;
+  let cals, proteinRatio, fatRatio, weeklyTargetRate;
 
-  if (goalType === 'sixpack') {
-    cals = Math.round(tdee - 450);
-    proteinRatio = 2.2;
-    fatRatio = 0.75;
-  } else if (goalType === 'bulk') {
-    cals = Math.round(tdee + 300);
+  if (goalType === 'bulk') {
+    // 2. Lean Bulk: Target Surplus -> Calorie Surplus (TDEE + 250), weekly rate target (+0.25 kg/wk)
+    cals = Math.round(tdee + 250);
     proteinRatio = 2.0;
     fatRatio = 0.85;
-  } else {
-    cals = Math.round(tdee - 150);
+    weeklyTargetRate = '+0.25 kg/week';
+  } else if (goalType === 'recomp') {
+    // 3. Recomposition: Maintenance calories
+    cals = Math.round(tdee);
     proteinRatio = 2.2;
     fatRatio = 0.8;
+    weeklyTargetRate = '0.00 kg/week (recomp)';
+  } else {
+    // 1. Cut (sixpack/cut): Target BF% < Current BF% -> Calorie Deficit (TDEE - 400)
+    cals = Math.round(tdee - 400);
+    proteinRatio = 2.2;
+    fatRatio = 0.75;
+    weeklyTargetRate = '-0.40 kg/week';
   }
 
   cals = Math.max(1400, cals);
@@ -2624,10 +2792,14 @@ function calcNutritionTargets(opts = {}) {
 
   return {
     cals,
+    tdee,
+    rateTarget: weeklyTargetRate,
+    weeklyTargetRate,
     protein,
     proteinRatio,
     carbs,
-    fats
+    fats,
+    goalType
   };
 }
 
@@ -2639,6 +2811,9 @@ function getDefaultPhysiqueConfig(gender = 'male') {
     waist: isFemale ? 74 : 85,
     neck: isFemale ? 33 : 38,
     hip: isFemale ? 95 : 98,
+    age: 28,
+    activityLevel: 'moderate',
+    experienceLevel: 'beginner',
     goalType: 'sixpack',
     targetBf: isFemale ? 18.0 : 11.0,
     startBf: isFemale ? 26.0 : 19.5,
@@ -2660,13 +2835,16 @@ function getPhysiqueState() {
   const waist = latestWaist ? Number(latestWaist.waist) : (Number(userP.waist) || defaults.waist);
   const neck = Number(userP.neck) || defaults.neck;
   const hip = Number(userP.hip) || defaults.hip;
+  const age = Number(userP.age) || defaults.age;
+  const activityLevel = userP.activityLevel || defaults.activityLevel;
+  const experienceLevel = userP.experienceLevel || defaults.experienceLevel;
   const goalType = userP.goalType || defaults.goalType;
 
   const currentBf = calcUSNavyBF(gender, height, weight, waist, neck, hip);
 
   let targetBf = Number(userP.targetBf);
   if (!targetBf || isNaN(targetBf)) {
-    if (goalType === 'sixpack') targetBf = (gender === 'female' ? 18.0 : 11.0);
+    if (goalType === 'sixpack' || goalType === 'cut') targetBf = (gender === 'female' ? 18.0 : 11.0);
     else if (goalType === 'bulk') targetBf = (gender === 'female' ? 22.0 : 14.0);
     else targetBf = (gender === 'female' ? 19.5 : 12.5);
   }
@@ -2706,11 +2884,11 @@ function getPhysiqueState() {
   const weeksRemaining = Math.max(1, Math.round(deltaBf / 0.45));
   const workoutsRemaining = weeksRemaining * 4;
 
-  const macros = calcNutritionTargets({ gender, height, weight, goalType, currentBf });
+  const macros = calcNutritionTargets({ gender, height, weight, goalType, currentBf, age, activityLevel });
 
-  let goalTitle = 'Lean Six-Pack';
+  let goalTitle = 'Lean Cut';
   if (goalType === 'bulk') goalTitle = 'Lean Muscle Bulk';
-  else if (goalType === 'recomp') goalTitle = 'Athletic Recomp';
+  else if (goalType === 'recomp') goalTitle = 'Body Recomposition';
 
   return {
     gender,
@@ -2719,6 +2897,9 @@ function getPhysiqueState() {
     waist,
     neck,
     hip,
+    age,
+    activityLevel,
+    experienceLevel,
     goalType,
     goalTitle,
     currentBf,
@@ -2729,6 +2910,58 @@ function getPhysiqueState() {
     workoutsRemaining,
     macros,
     microProgressBonus: microBonus
+  };
+}
+
+function getTransformationMetrics() {
+  const p = getPhysiqueState();
+  const sorted = [...(S.weights || [])].filter(x => (x.w != null && x.w > 0) || (x.waist != null && x.waist > 0)).sort((a, b) => a.t - b.t);
+  const dayMs = 86400000;
+  const firstT = sorted.length ? sorted[0].t : 0;
+  const lastT = sorted.length ? sorted.at(-1).t : 0;
+  const totalDaysHistory = (firstT && lastT) ? Math.max(1, Math.floor((lastT - firstT) / dayMs) + 1) : (sorted.length ? 1 : 0);
+  const distinctDays = new Set(sorted.map(x => dk(x.t))).size;
+  const isGated = totalDaysHistory < 14 || distinctDays < 2;
+
+  // 7-day rolling average of waist and weight
+  const sevenDaysAgo = lastT - 7 * dayMs;
+  const rollingEntries = sorted.filter(x => x.t >= sevenDaysAgo);
+  const wEntries = rollingEntries.filter(x => x.w != null && x.w > 0);
+  const waistEntries = rollingEntries.filter(x => x.waist != null && x.waist > 0);
+
+  const avgWeight = wEntries.length ? (wEntries.reduce((acc, x) => acc + x.w, 0) / wEntries.length) : p.weight;
+  const avgWaist = waistEntries.length ? (waistEntries.reduce((acc, x) => acc + x.waist, 0) / waistEntries.length) : p.waist;
+
+  const rollingBf = calcUSNavyBF(p.gender, p.height, avgWeight, avgWaist, p.neck, p.hip);
+
+  let milestonePct = 0;
+  if (p.goalType === 'bulk') {
+    const totalDelta = p.targetBf - p.startBf;
+    if (Math.abs(totalDelta) > 0.1) {
+      milestonePct = ((rollingBf - p.startBf) / totalDelta) * 100;
+    } else {
+      milestonePct = 50;
+    }
+  } else {
+    const totalFatLossTarget = p.startBf - p.targetBf;
+    if (totalFatLossTarget > 0.1) {
+      milestonePct = ((p.startBf - rollingBf) / totalFatLossTarget) * 100;
+    } else {
+      milestonePct = rollingBf <= p.targetBf ? 100 : 0;
+    }
+  }
+
+  const bonus = Number(p.microProgressBonus) || 0;
+  const finalMilestonePct = Math.max(0, Math.min(100, Math.round((milestonePct + bonus) * 10) / 10));
+
+  return {
+    isGated,
+    totalDaysHistory,
+    distinctDays,
+    avgWeight: rd(avgWeight),
+    avgWaist: rd(avgWaist),
+    rollingBf,
+    milestonePct: finalMilestonePct
   };
 }
 
@@ -2933,12 +3166,38 @@ function showPhysiqueCalibrationModal() {
     </div>
 
     <div class="calib-modal-grid">
-      <div class="calib-field">
-        <label class="calib-lbl">Body Silhouette</label>
-        <select class="calib-select" id="calib-gender">
-          <option value="male" ${!isFemale ? 'selected' : ''}>Male Silhouette</option>
-          <option value="female" ${isFemale ? 'selected' : ''}>Female Silhouette</option>
-        </select>
+      <div class="calib-row">
+        <div class="calib-field">
+          <label class="calib-lbl">Biological Sex / Silhouette</label>
+          <select class="calib-select" id="calib-gender">
+            <option value="male" ${!isFemale ? 'selected' : ''}>Male</option>
+            <option value="female" ${isFemale ? 'selected' : ''}>Female</option>
+          </select>
+        </div>
+        <div class="calib-field">
+          <label class="calib-lbl">Age</label>
+          <input type="number" step="1" min="14" max="100" class="calib-input" id="calib-age" value="${p.age || 26}" placeholder="26">
+        </div>
+      </div>
+
+      <div class="calib-row">
+        <div class="calib-field">
+          <label class="calib-lbl">Activity Level</label>
+          <select class="calib-select" id="calib-activity">
+            <option value="sedentary" ${p.activityLevel === 'sedentary' ? 'selected' : ''}>Sedentary (Desk Job)</option>
+            <option value="light" ${p.activityLevel === 'light' ? 'selected' : ''}>Light (1–3 Days/Wk)</option>
+            <option value="moderate" ${!p.activityLevel || p.activityLevel === 'moderate' ? 'selected' : ''}>Moderate (3–5 Days/Wk)</option>
+            <option value="very_active" ${p.activityLevel === 'very_active' ? 'selected' : ''}>Very Active (6–7 Days/Wk)</option>
+          </select>
+        </div>
+        <div class="calib-field">
+          <label class="calib-lbl">Experience Level</label>
+          <select class="calib-select" id="calib-experience">
+            <option value="beginner" ${p.experienceLevel === 'beginner' ? 'selected' : ''}>Beginner (&lt;1 Yr)</option>
+            <option value="intermediate" ${!p.experienceLevel || p.experienceLevel === 'intermediate' ? 'selected' : ''}>Intermediate (1–3 Yrs)</option>
+            <option value="advanced" ${p.experienceLevel === 'advanced' ? 'selected' : ''}>Advanced (3+ Yrs)</option>
+          </select>
+        </div>
       </div>
 
       <div class="calib-row">
@@ -2969,11 +3228,11 @@ function showPhysiqueCalibrationModal() {
       </div>
 
       <div class="calib-field">
-        <label class="calib-lbl">Physique Goal</label>
+        <label class="calib-lbl">Physique Goal Architecture</label>
         <select class="calib-select" id="calib-goal">
-          <option value="sixpack" ${p.goalType === 'sixpack' ? 'selected' : ''}>🔥 Six-Pack Cut (Target ~11% BF)</option>
-          <option value="bulk" ${p.goalType === 'bulk' ? 'selected' : ''}>💪 Lean Muscle Bulk (Target ~14% BF)</option>
-          <option value="recomp" ${p.goalType === 'recomp' ? 'selected' : ''}>⚡ Body Recomposition (Target ~12.5% BF)</option>
+          <option value="sixpack" ${p.goalType === 'sixpack' || p.goalType === 'cut' ? 'selected' : ''}>🔥 Cut (Calorie Deficit: TDEE - 400 kcal)</option>
+          <option value="bulk" ${p.goalType === 'bulk' ? 'selected' : ''}>💪 Lean Bulk (Calorie Surplus: TDEE + 250 kcal, +0.25 kg/wk target)</option>
+          <option value="recomp" ${p.goalType === 'recomp' ? 'selected' : ''}>⚡ Recomposition (Maintenance: TDEE)</option>
         </select>
       </div>
 
@@ -2989,17 +3248,19 @@ function showPhysiqueCalibrationModal() {
 
 function renderTransformationRoadmapCard() {
   const p = getPhysiqueState();
+  const trans = getTransformationMetrics();
 
-  const goalBadgeText = p.goalType === 'sixpack'
-    ? `TARGET: LEAN SIX-PACK (${p.targetBf}% BF)`
+  const goalBadgeText = p.goalType === 'sixpack' || p.goalType === 'cut'
+    ? `TARGET: CUT (${p.targetBf}% BF · DEFICIT)`
     : (p.goalType === 'bulk'
-        ? `TARGET: LEAN MUSCLE BULK (${p.targetBf}% BF)`
-        : `TARGET: ATHLETIC RECOMP (${p.targetBf}% BF)`);
+        ? `TARGET: LEAN BULK (${p.targetBf}% BF · +0.25kg/wk SURPLUS)`
+        : `TARGET: RECOMPOSITION (${p.targetBf}% BF · MAINTENANCE)`);
 
   const circumference = 2 * Math.PI * 40; // 251.327
-  const strokeOffset = circumference - (p.progressPct / 100) * circumference;
+  const displayPct = trans.isGated ? p.progressPct : trans.milestonePct;
+  const strokeOffset = circumference - (displayPct / 100) * circumference;
 
-  const svgMorph = generateMorphSvg(p.gender, p.progressPct);
+  const svgMorph = generateMorphSvg(p.gender, displayPct);
 
   return `
     <div class="roadmap-card">
@@ -3018,17 +3279,17 @@ function renderTransformationRoadmapCard() {
         <div class="morph-slider-container">
           <div class="morph-slider-labels">
             <span class="slider-marker start">0% Start (${p.startBf}%)</span>
-            <span class="slider-marker current" id="morph-curr-tag">Current: ${p.progressPct}%</span>
+            <span class="slider-marker current" id="morph-curr-tag">Current: ${displayPct}%</span>
             <span class="slider-marker goal">100% Goal (${p.targetBf}%)</span>
           </div>
-          <input type="range" min="0" max="100" step="0.5" value="${p.progressPct}" id="morph-scrub-input" class="morph-scrub-slider" data-a="morph-scrub">
+          <input type="range" min="0" max="100" step="0.5" value="${displayPct}" id="morph-scrub-input" class="morph-scrub-slider" data-a="morph-scrub">
           <div class="morph-slider-actions">
-            <button class="chip morph-reset-btn" data-a="resetmorph" data-pct="${p.progressPct}">↺ Snap to Current (${p.progressPct}%)</button>
+            <button class="chip morph-reset-btn" data-a="resetmorph" data-pct="${displayPct}">↺ Snap to Current (${displayPct}%)</button>
           </div>
         </div>
       </div>
 
-      <div class="roadmap-gauge-card">
+      <div class="roadmap-gauge-card ${trans.isGated ? 'gated' : ''}">
         <div class="roadmap-gauge-ring-wrap">
           <svg class="roadmap-gauge-svg" viewBox="0 0 96 96">
             <defs>
@@ -3040,17 +3301,21 @@ function renderTransformationRoadmapCard() {
             <circle class="roadmap-gauge-bg" cx="48" cy="48" r="40"/>
             <circle class="roadmap-gauge-fill" id="morph-progress-ring" cx="48" cy="48" r="40"
               stroke-dasharray="${circumference.toFixed(1)}"
-              stroke-dashoffset="${strokeOffset.toFixed(1)}"/>
+              stroke-dashoffset="${trans.isGated ? circumference.toFixed(1) : strokeOffset.toFixed(1)}"
+              style="${trans.isGated ? 'display:none;' : ''}"/>
           </svg>
           <div class="gauge-center-text">
-            <div class="gauge-pct" id="morph-readout-num">${p.progressPct}%</div>
-            <div class="gauge-sub">DONE</div>
+            <div class="gauge-pct" id="morph-readout-num">${trans.isGated ? '🔒' : trans.milestonePct + '%'}</div>
+            <div class="gauge-sub">MILESTONE</div>
           </div>
         </div>
         <div class="roadmap-milestone-box">
-          <div class="roadmap-milestone-title">Estimated Timeline</div>
+          <div class="roadmap-milestone-title">Transformation Milestone</div>
           <div class="roadmap-milestone-sub">
-            Estimated: ~${p.weeksRemaining} Weeks remaining (approx. ${p.workoutsRemaining} consistent workouts)
+            ${trans.isGated
+              ? `Requires at least 14 days of body history (${trans.totalDaysHistory}d logged). Derived from 7-day rolling averages of waist and weight rather than daily water fluctuations.`
+              : `Milestone derived from 7-day rolling averages (${trans.avgWeight}kg, ${trans.avgWaist}cm). ~${p.weeksRemaining} wks remaining (~${p.workoutsRemaining} workouts).`
+            }
           </div>
         </div>
       </div>
@@ -3088,6 +3353,7 @@ function renderTransformationRoadmapCard() {
 }
 
 function vBody() {
+  const p = getPhysiqueState();
   const roadmapHtml = renderTransformationRoadmapCard();
   const sorted = [...S.weights].sort((a, b) => a.t - b.t);
   const weightsArr = sorted.filter(x => x.w != null && x.w > 0).map(x => x.w);
@@ -3107,6 +3373,7 @@ function vBody() {
 
   const diffW = (latestW != null && firstW != null && weightsArr.length > 1) ? rd(latestW - firstW) : null;
   const diffWaist = (latestWaist != null && firstWaist != null && waistsArr.length > 1) ? rd(latestWaist - firstWaist) : null;
+  const isBulk = p.goalType === 'bulk';
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -3212,13 +3479,15 @@ function vBody() {
     }
   }
 
+  const netWeightClass = diffW != null ? (isBulk ? (diffW > 0 ? 'text-green' : (diffW < 0 ? 'text-orange' : '')) : (diffW < 0 ? 'text-green' : (diffW > 0 ? 'text-orange' : ''))) : '';
+
   return viewHeader('Body & Transformation') +
     roadmapHtml +
     `<h2>Measurement Trends</h2>` +
     `<div class="stat-grid">` +
       `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
       `<div class="stat-box"><div class="stat-val">${latestWaist != null ? latestWaist.toFixed(1) + ' cm' : '--'}</div><div class="stat-lbl">Waist</div></div>` +
-      `<div class="stat-box"><div class="stat-val">${diffW != null ? (diffW > 0 ? '+' + diffW : diffW) + ' kg' : '--'}</div><div class="stat-lbl">Net Weight</div></div>` +
+      `<div class="stat-box"><div class="stat-val ${netWeightClass}">${diffW != null ? (diffW > 0 ? '+' + diffW : diffW) + ' kg' : '--'}</div><div class="stat-lbl">Net Weight</div></div>` +
       `<div class="stat-box"><div class="stat-val">${diffWaist != null ? (diffWaist > 0 ? '+' + diffWaist : diffWaist) + ' cm' : '--'}</div><div class="stat-lbl">Net Waist</div></div>` +
     `</div>` +
     `<div class="card">` +
@@ -3252,8 +3521,8 @@ function vBody() {
         let diffWHtml = '';
         if (prev && item.w != null && prev.w != null) {
           const d = rd(item.w - prev.w);
-          if (d > 0) diffWHtml = `<span class="diff-tag up">+${d} kg</span>`;
-          else if (d < 0) diffWHtml = `<span class="diff-tag down">${d} kg</span>`;
+          if (d > 0) diffWHtml = `<span class="diff-tag up ${isBulk ? 'bulk-pos' : ''}">+${d} kg</span>`;
+          else if (d < 0) diffWHtml = `<span class="diff-tag down ${isBulk ? 'bulk-neg' : ''}">${d} kg</span>`;
           else diffWHtml = `<span class="diff-tag same">0 kg</span>`;
         }
         let diffWaistHtml = '';
@@ -3384,6 +3653,65 @@ function render() {
     ['weight', 'weight', 'Body'],
     ['hist', 'clock', 'History']
   ].map(([k, i, t]) => `<button data-a="tab" data-k="${k}" class="${view === k || (view === 'work' && k === 'train') ? 'on' : ''}">${ic(i)}<span>${t}</span></button>`).join('');
+}
+
+// ---- Science Jargon Micro-Sheets ----
+function showJargonSheet(term) {
+  const glossary = {
+    rir: {
+      title: 'RIR (Reps in Reserve)',
+      badge: 'Intensity Metric',
+      desc: 'Reps in Reserve (RIR) indicates how many more clean repetitions you could have performed before reaching muscular failure.',
+      bullets: [
+        '<b>RIR 0:</b> Muscular failure. Zero additional reps possible. Highest fatigue and neurological strain.',
+        '<b>RIR 1–2:</b> The Hypertrophy Sweet Spot. Stimulates full motor unit recruitment while ensuring sustainable systemic recovery.',
+        '<b>RIR 3+:</b> Sub-maximal intensity. Best suited for warm-up sets, technique priming, or active deload phases.'
+      ]
+    },
+    'double-progression': {
+      title: 'Double Progression',
+      badge: 'Progression Protocol',
+      desc: 'A gold-standard evidence-based progression system where you progress volume (repetitions) before advancing load (weight).',
+      bullets: [
+        '<b>Phase 1 (Volume):</b> Pick a rep bracket (e.g. 8–12 reps). Keep weight constant and build repetitions across all sets.',
+        '<b>Phase 2 (Milestone):</b> When you successfully hit the upper rep ceiling (e.g. 12 reps) on ALL prescribed sets...',
+        '<b>Phase 3 (Load):</b> Increase weight (+2.5 kg) and reset repetitions back to the lower floor (8 reps).'
+      ]
+    },
+    volume: {
+      title: 'MEV / MAV / MRV Volume Landmarks',
+      badge: 'Hypertrophy Landmarks',
+      desc: 'Scientific landmarks for weekly working set volume per muscle group (Renaissance Periodization):',
+      bullets: [
+        '<b>MEV (Minimum Effective Volume):</b> ~6–10 weekly sets. Minimum workload required to stimulate noticeable muscular adaptations.',
+        '<b>MAV (Maximum Adaptive Volume):</b> ~12–18 weekly sets. The optimal zone where you achieve the highest rate of muscle hypertrophy.',
+        '<b>MRV (Maximum Recoverable Volume):</b> ~20–25+ weekly sets. Volume ceiling beyond which fatigue accumulates faster than recovery, causing negative returns.'
+      ]
+    },
+    acwr: {
+      title: 'ACWR (Acute:Chronic Workload Ratio)',
+      badge: 'Fatigue & Recovery Engine',
+      desc: 'Compares your acute fatigue (past 7 days volume) against your chronic capacity baseline (rolling 28 days volume).',
+      bullets: [
+        '<b>0.8 – 1.3 (Sweet Spot):</b> Optimal training stimulus with minimal risk of overtraining or soft-tissue injury.',
+        '<b>1.3 – 1.5 (Elevated Fatigue):</b> Training load is ramping quickly. Monitor sleep, nutrition, and joint fatigue closely.',
+        '<b>&gt; 1.5 (Danger Spike):</b> Rapid unmanaged volume spike. Triggers automatic deload recommendations to prevent systemic overtraining.'
+      ]
+    }
+  };
+
+  const item = glossary[term] || glossary.rir;
+  modal(`
+    <div class="jargon-sheet">
+      <div class="jargon-sheet-badge">${esc(item.badge)}</div>
+      <h2 style="margin:6px 0 10px">${esc(item.title)}</h2>
+      <p class="t2" style="font-size:14px;line-height:1.5;margin-bottom:14px">${esc(item.desc)}</p>
+      <div class="jargon-bullets">
+        ${item.bullets.map(b => `<div class="jargon-bullet-item">${b}</div>`).join('')}
+      </div>
+      <button class="btn s" data-a="closemodal" style="margin-top:16px;width:100%">Got It 👍</button>
+    </div>
+  `);
 }
 
 // ---- Exercise Details Modal ----
@@ -3598,6 +3926,31 @@ function showSwapModal(idx) {
       ${renderSwapResults()}
     </div>
   `);
+}
+
+// ---- Routine Editor Form Synchronizer ----
+function syncEFromForm() {
+  if (!E) return;
+  const nameInp = document.querySelector('input[data-e="name"]');
+  if (nameInp) E.name = nameInp.value;
+  if (!E.ex) return;
+  E.ex.forEach((x, i) => {
+    const sInp = document.querySelector(`input[data-e="sets"][data-i="${i}"]`);
+    const rInp = document.querySelector(`input[data-e="reps"][data-i="${i}"]`);
+    const r2Inp = document.querySelector(`input[data-e="reps2"][data-i="${i}"]`);
+    const wInp = document.querySelector(`input[data-e="w"][data-i="${i}"]`);
+    const incInp = document.querySelector(`input[data-e="inc"][data-i="${i}"]`);
+    const pSel = document.querySelector(`select[data-e="prog"][data-i="${i}"]`);
+    const noteInp = document.querySelector(`input[data-e="note"][data-i="${i}"]`);
+
+    if (sInp) x.sets = parseInt(sInp.value, 10) || x.sets;
+    if (rInp) x.reps = parseInt(rInp.value, 10) || x.reps;
+    if (r2Inp) x.reps2 = parseInt(r2Inp.value, 10) || x.reps2;
+    if (wInp) x.w = Math.max(0, parseFloat(wInp.value) || 0);
+    if (incInp) x.inc = Math.max(0.25, parseFloat(incInp.value) || 2.5);
+    if (pSel) x.prog = pSel.value;
+    if (noteInp) x.note = noteInp.value;
+  });
 }
 
 // ---- Routine Editor ----
@@ -4057,6 +4410,27 @@ function finish() {
   const r = S.routines.find(r => r.id === a.rid);
   const notes = [];
   if (r) {
+    lastRoutineSyncBackup = {
+      rid: r.id,
+      backup: r.ex.map(rx => ({
+        id: rx.id,
+        sets: (rx.sets || []).map(s => ({ ...s }))
+      })),
+      appliedEx: ex
+    };
+
+    // By default (checked), update routine base weights with today's completed weights
+    ex.forEach(completedEx => {
+      const rx = r.ex.find(q => String(q.id) === String(completedEx.id));
+      if (rx && rx.sets) {
+        completedEx.sets.forEach((s, idx) => {
+          if (rx.sets[idx] && s.w > 0) {
+            rx.sets[idx].w = s.w;
+          }
+        });
+      }
+    });
+
     a.ex.forEach(x => {
       const rx = r.ex.find(q => String(q.id) === String(x.id));
       if (rx) {
@@ -4184,6 +4558,14 @@ function finish() {
         <span>${streak()} days 🔥</span>
       </div>
     </div>
+    ${r ? `
+      <div class="card" style="margin:12px 0;padding:12px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600">
+          <input type="checkbox" id="sync-routine-weights-toggle" data-a="togglesyncweights" checked style="width:20px;height:20px;accent-color:var(--ac)">
+          <span>Update routine base weights with today's completed weights</span>
+        </label>
+      </div>
+    ` : ''}
     ${sessionPRs.length ? `
       <h2 style="color:var(--accent-achievement);display:flex;align-items:center;gap:6px">
         <span>🏆</span> New Personal Records!
@@ -4299,6 +4681,9 @@ document.addEventListener('click', e => {
       const goalSel = $('#calib-goal');
       const targetBfInp = $('#calib-target-bf');
       const genderSel = $('#calib-gender');
+      const ageInp = $('#calib-age');
+      const actSel = $('#calib-activity');
+      const expSel = $('#calib-experience');
 
       const hVal = parseFloat(hInp?.value) || 178;
       const wVal = parseFloat(wInp?.value);
@@ -4308,11 +4693,17 @@ document.addEventListener('click', e => {
       const goalVal = goalSel?.value || 'sixpack';
       const targetBfVal = parseFloat(targetBfInp?.value) || 11.0;
       const genderVal = genderSel?.value || S.cfg.bodyModel || 'male';
+      const ageVal = parseInt(ageInp?.value, 10) || 26;
+      const actVal = actSel?.value || 'moderate';
+      const expVal = expSel?.value || 'intermediate';
 
       S.cfg.bodyModel = genderVal;
       if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(genderVal);
       S.cfg.physique = {
         ...S.cfg.physique,
+        age: Math.max(14, Math.min(100, ageVal)),
+        activityLevel: actVal,
+        experienceLevel: expVal,
         height: Math.max(100, Math.min(250, hVal)),
         neck: Math.max(20, Math.min(70, neckVal)),
         hip: Math.max(40, Math.min(200, hipVal)),
@@ -4513,6 +4904,7 @@ document.addEventListener('click', e => {
             if (!ssGroup) ssGroup = 'ss_' + start;
             ssRole = String.fromCharCode(65 + (idx - start));
           }
+          const prevEx = getLastSessionExercise(x.id);
           return {
             id: x.id,
             ss: isSs,
@@ -4521,15 +4913,24 @@ document.addEventListener('click', e => {
             ssPair: ssGroup,
             uni: isUni,
             note: x.note || getLastExerciseNote(x.id),
-            sets: Array.from({ length: targetSets }, () => ({
-              w: targetWeight,
-              r: targetReps,
-              rpe: '',
-              rir: null,
-              done: false,
-              sideL: false,
-              sideR: false
-            }))
+            sets: Array.from({ length: targetSets }, (_, setIdx) => {
+              const prevSet = prevEx?.sets?.[setIdx] || prevEx?.sets?.at(-1);
+              const prefillW = (prevSet && prevSet.w != null && prevSet.w !== '')
+                ? (isDeloadActive ? Math.max(0, rd(Number(prevSet.w) * 0.8)) : Number(prevSet.w))
+                : targetWeight;
+              const prefillR = (prevSet && prevSet.r != null && prevSet.r !== '')
+                ? Number(prevSet.r)
+                : targetReps;
+              return {
+                w: prefillW,
+                r: prefillR,
+                rpe: '',
+                rir: null,
+                done: false,
+                sideL: false,
+                sideR: false
+              };
+            })
           };
         }) : []
       };
@@ -4851,6 +5252,112 @@ document.addEventListener('click', e => {
       if (pickList) pickList.innerHTML = renderPickResults();
       return;
     }
+    case 'stepw': {
+      const x = S.act?.ex[i], s = x?.sets[j];
+      if (!s) return;
+      const delta = parseFloat(t.dataset.delta) || 0;
+      const curW = parseFloat(s.w) || 0;
+      const newW = Math.max(0, Math.round((curW + delta) * 10) / 10);
+      s.w = newW;
+      save('act');
+      const inp = document.querySelector(`input[data-f="w"][data-i="${i}"][data-j="${j}"]`);
+      if (inp) inp.value = newW;
+      else switchWorkExercise(i, false);
+      return;
+    }
+    case 'togglegif': {
+      workGifCollapsed = !workGifCollapsed;
+      const mediaEl = document.querySelector('.work-hero-media');
+      const chipEl = document.querySelector('.gif-toggle-chip');
+      if (mediaEl) mediaEl.classList.toggle('collapsed', workGifCollapsed);
+      if (chipEl) chipEl.textContent = workGifCollapsed ? '👁️ Show Demo GIF' : 'Hide GIF';
+      return;
+    }
+    case 'applysuggestion': {
+      const x = S.act?.ex[i];
+      if (!x || !x.sets) return;
+      const inc = parseFloat(t.dataset.inc) || 2.5;
+      x.sets.forEach(s => {
+        s.w = Math.max(0, Math.round(((parseFloat(s.w) || 0) + inc) * 10) / 10);
+      });
+      save('act');
+      toast(`Applied +${inc}kg Double Progression! ⚡`);
+      switchWorkExercise(i, false);
+      return;
+    }
+    case 'explainjargon': {
+      showJargonSheet(t.dataset.term);
+      return;
+    }
+    case 'promptfin': {
+      modal(`
+        <div class="confirm-sheet">
+          <div class="confirm-icon">🏁</div>
+          <h2>Finish and Save Workout?</h2>
+          <p class="t2" style="margin-bottom:16px">All completed sets, reps, and PRs will be logged to your history.</p>
+          <button class="btn" data-a="fin" style="margin-bottom:8px">Finish & Log Workout 🏆</button>
+          <button class="btn s" data-a="closemodal">Continue Logging</button>
+        </div>
+      `);
+      return;
+    }
+    case 'promptcancel': {
+      modal(`
+        <div class="confirm-sheet">
+          <div class="confirm-icon" style="color:var(--rd)">⚠️</div>
+          <h2 style="color:var(--rd)">Discard Workout?</h2>
+          <p class="t2" style="margin-bottom:16px">Discard this workout? All progress today will be lost.</p>
+          <button class="btn red" data-a="confirmdiscard" style="margin-bottom:8px">Discard Workout ✕</button>
+          <button class="btn s" data-a="closemodal">Keep Workout</button>
+        </div>
+      `);
+      return;
+    }
+    case 'confirmdiscard': {
+      S.act = null;
+      save('act');
+      stopRest();
+      close();
+      view = 'train';
+      toast('Workout discarded');
+      render();
+      return;
+    }
+    case 'closemodal': {
+      close();
+      return;
+    }
+    case 'togglesyncweights': {
+      const cb = $('#sync-routine-weights-toggle');
+      if (lastRoutineSyncBackup && lastRoutineSyncBackup.rid) {
+        const rObj = S.routines.find(rt => rt.id === lastRoutineSyncBackup.rid);
+        if (rObj) {
+          if (cb && !cb.checked) {
+            lastRoutineSyncBackup.backup.forEach(b => {
+              const rx = rObj.ex.find(q => String(q.id) === String(b.id));
+              if (rx && rx.sets) {
+                b.sets.forEach((bs, idx) => {
+                  if (rx.sets[idx]) rx.sets[idx].w = bs.w;
+                });
+              }
+            });
+            toast('Routine weights reverted to previous targets');
+          } else {
+            lastRoutineSyncBackup.appliedEx.forEach(completedEx => {
+              const rx = rObj.ex.find(q => String(q.id) === String(completedEx.id));
+              if (rx && rx.sets) {
+                completedEx.sets.forEach((s, idx) => {
+                  if (rx.sets[idx] && s.w > 0) rx.sets[idx].w = s.w;
+                });
+              }
+            });
+            toast('Routine base weights synced with completed weights');
+          }
+          save('routines');
+        }
+      }
+      return;
+    }
     case 'fin': finish(); return;
     case 'cancel': if (confirm('Discard this workout?')) { S.act = null; save('act'); stopRest(); view = 'train'; } break;
     case 'hist': {
@@ -4866,17 +5373,20 @@ document.addEventListener('click', e => {
       return;
     }
     case 'adde': {
+      syncEFromForm();
       P = exId => {
         const exData = X(exId);
+        const isCardio = exData.type === 'timed_cardio' || exData.t === 't' || isCardioOrMobilityExercise(exData.id);
+        const isBw = exData.type === 'bodyweight' || exData.t === 'b';
         E.ex.push({
           id: exData.id,
           sets: 3,
-          reps: exData.t === 't' ? 30 : 8,
-          reps2: exData.t === 't' ? 60 : 12,
-          w: exData.t === 'b' ? 0 : 20,
+          reps: isCardio ? 30 : 8,
+          reps2: isCardio ? 60 : 12,
+          w: (isCardio || isBw) ? 0 : 20,
           inc: 2.5,
           prog: 'linear',
-          cur: exData.t === 't' ? 30 : 8,
+          cur: isCardio ? 30 : 8,
           stalls: 0,
           note: '',
           ss: false
@@ -4887,6 +5397,7 @@ document.addEventListener('click', e => {
       return;
     }
     case 'mvu': {
+      syncEFromForm();
       const idx = +t.dataset.i;
       if (E && E.ex && idx > 0) {
         const item = E.ex.splice(idx, 1)[0];
@@ -4896,6 +5407,7 @@ document.addEventListener('click', e => {
       return;
     }
     case 'mvd': {
+      syncEFromForm();
       const idx = +t.dataset.i;
       if (E && E.ex && idx < E.ex.length - 1) {
         const item = E.ex.splice(idx, 1)[0];
@@ -4904,7 +5416,12 @@ document.addEventListener('click', e => {
       }
       return;
     }
-    case 'rmx': E.ex.splice(i, 1); showE(); return;
+    case 'rmx': {
+      syncEFromForm();
+      E.ex.splice(i, 1);
+      showE();
+      return;
+    }
     case 'savee': {
       E.name = E.name.trim() || 'Routine';
       E.ex.forEach(x => {
@@ -5309,7 +5826,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.5.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.6.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -5378,7 +5895,12 @@ if (typeof globalThis !== 'undefined') {
     showPhysiqueCalibrationModal,
     renderTransformationRoadmapCard,
     vBody,
-    vWeight
+    vWeight,
+    checkPersonalRecord,
+    getLastSessionExercise,
+    getTransformationMetrics,
+    isCardioOrMobilityExercise,
+    showJargonSheet
   };
 }
 

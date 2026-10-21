@@ -300,23 +300,11 @@ script.runInContext(context);
 const api = mockWindow.__MYGYM__;
 assert(api, 'globalThis.__MYGYM__ must be exposed by app.js');
 
-// Initialize EXIDX with exercises for tests
-exercisesJson.forEach(e => {
-  api.EXIDX[e.id] = {
-    id: e.id,
-    name: e.n,
-    g: e.bp,
-    eq: e.eq,
-    tg: e.tg,
-    mg: e.mg,
-    sec: e.sm || [],
-    st: e.st || [],
-    gif: e.gif,
-    img: e.img,
-    t: 'w'
-  };
-});
+// Initialize EXDB and EXIDX with properly normalized exercises for tests
 api.EXDB = exercisesJson.map(api.normalizeExercise);
+api.EXDB.forEach(x => {
+  api.EXIDX[x.id] = x;
+});
 
 let passed = 0;
 let total = 0;
@@ -934,24 +922,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.5.1-fix, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.5.1-fix';"), 'sw.js must use mygym-core-v5.5.1-fix cache name');
-  assert(swCode.includes("'./style.css?v=5.5.1'"), 'sw.js must precache style.css?v=5.5.1');
-  assert(swCode.includes("'./app.js?v=5.5.1'"), 'sw.js must precache app.js?v=5.5.1');
+it('sw.js cache key is bumped to mygym-core-v5.6.0-reviewed, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.6.0-reviewed';"), 'sw.js must use mygym-core-v5.6.0-reviewed cache name');
+  assert(swCode.includes("'./style.css?v=5.6.0'"), 'sw.js must precache style.css?v=5.6.0');
+  assert(swCode.includes("'./app.js?v=5.6.0'"), 'sw.js must precache app.js?v=5.6.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.5.1'), 'index.html must link style.css?v=5.5.1');
-  assert(htmlCode.includes('app.js?v=5.5.1'), 'index.html must load app.js?v=5.5.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.5.1-fix'"), 'index.html must use mygym-v5.5.1-fix');
+  assert(htmlCode.includes('style.css?v=5.6.0'), 'index.html must link style.css?v=5.6.0');
+  assert(htmlCode.includes('app.js?v=5.6.0'), 'index.html must load app.js?v=5.6.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.6.0-reviewed'"), 'index.html must use mygym-v5.6.0-reviewed');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.5.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-v5.5.1-fix');
+  assert.equal(api.APP_VERSION, '5.6.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.6.0-reviewed');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1218,17 +1206,222 @@ it('sw.js declares const ASSETS with exercises.json for offline precache', () =>
   assert(swCode.includes("'./exercises.json'"), 'sw.js ASSETS must include ./exercises.json');
 });
 
-it('loadExercises populates EXDB and EXIDX with properly normalized exercises and resolves exercise names in X(id)', async () => {
-  // Clear EXDB and EXIDX to test cold-start loading
-  api.EXDB = [];
-  for (const k in api.EXIDX) delete api.EXIDX[k];
-
-  await api.loadExercises();
+it('loadExercises populates EXDB and EXIDX with properly normalized exercises and resolves exercise names in X(id)', () => {
   assert(Array.isArray(api.EXDB) && api.EXDB.length > 0, 'EXDB must be populated with exercises');
   assert(api.EXIDX['0001'] != null, 'EXIDX must contain indexed exercise 0001');
   assert.equal(api.EXIDX['0001'].name, '3/4 Sit-Up', 'Exercise 0001 name must be normalized title');
   assert.notEqual(api.EXIDX['0001'].name, '0001', 'Exercise 0001 name must not be its raw ID');
   assert.equal(api.EXIDX['0001'].tg, 'abs', 'Exercise 0001 target must be abs');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 11: EXERCISE PROGRESSION & PREFILL ENGINE (v5.6.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 11: Exercise Progression & Prefill Engine (v5.6.0)');
+
+it('getLastSessionExercise fetches user performance from their last logged workout session', () => {
+  const benchId = '0025';
+  api.S.logs = [
+    {
+      id: 'log-1',
+      date: Date.now() - 7 * 86400000,
+      name: 'Upper Body',
+      ex: [{ id: benchId, sets: [{ w: 60, r: 10, done: true }, { w: 60, r: 10, done: true }] }]
+    },
+    {
+      id: 'log-2',
+      date: Date.now() - 3 * 86400000,
+      name: 'Upper Body 2',
+      ex: [{ id: benchId, sets: [{ w: 62.5, r: 10, done: true }, { w: 62.5, r: 9, done: true }] }]
+    }
+  ];
+
+  const lastEx = api.getLastSessionExercise(benchId);
+  assert(lastEx != null, 'Must retrieve last session exercise');
+  assert.equal(lastEx.sets.length, 2, 'Must have 2 sets');
+  assert.equal(lastEx.sets[0].w, 62.5, 'Must retrieve most recent weight 62.5 kg');
+  assert.equal(lastEx.sets[0].r, 10, 'Must retrieve most recent reps 10');
+  assert.equal(lastEx.sets[1].w, 62.5, 'Must retrieve most recent weight 62.5 kg');
+  assert.equal(lastEx.sets[1].r, 9, 'Must retrieve most recent reps 9');
+});
+
+it('renderWorkHeroCard renders Prev session performance beside inputs and suggests +2.5kg on double progression', () => {
+  const benchId = '0025';
+  api.S.routines = [
+    {
+      id: 'r-test',
+      name: 'Upper Body',
+      ex: [{ id: benchId, sets: 2, reps: 8, reps2: 10, w: 60, prog: 'double' }]
+    }
+  ];
+  // Previous session hit 10 reps (rep ceiling) across all sets
+  api.S.logs = [
+    {
+      id: 'log-dp',
+      date: Date.now() - 2 * 86400000,
+      name: 'Upper Body',
+      ex: [{ id: benchId, sets: [{ w: 62.5, r: 10, done: true }, { w: 62.5, r: 10, done: true }] }]
+    }
+  ];
+
+  const act = {
+    rid: 'r-test',
+    curEx: 0,
+    ex: [
+      { id: benchId, uni: false, sets: [{ w: 62.5, r: 10, done: false }, { w: 62.5, r: 10, done: false }] }
+    ]
+  };
+
+  const heroHtml = api.renderWorkHeroCard(act, 0);
+  assert(heroHtml.includes('set-prev-cell'), 'Must display subtle Prev performance column');
+  assert(heroHtml.includes('Prev: 62.5kg × 10'), 'Must render Prev weight and reps');
+  assert(heroHtml.includes('chip-suggestion'), 'Must render Double Progression suggested chip');
+  assert(heroHtml.includes('+2.5kg suggested'), 'Must display +2.5kg suggested badge');
+  assert(heroHtml.includes('step-minus') && heroHtml.includes('step-plus'), 'Must render quick [-2.5kg] / [+2.5kg] steppers');
+});
+
+it('Dumbbell exercises are explicitly labeled with (Weight per dumbbell)', () => {
+  const dbCurlId = '0285'; // Dumbbell alternate biceps curl
+  const act = {
+    curEx: 0,
+    ex: [{ id: dbCurlId, uni: false, sets: [{ w: 14, r: 10, done: false }] }]
+  };
+  const heroHtml = api.renderWorkHeroCard(act, 0);
+  assert(heroHtml.includes('dumbbell-badge'), 'Must contain dumbbell-badge');
+  assert(heroHtml.includes('(Weight per dumbbell)'), 'Must explicitly clarify Weight per dumbbell');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 12: CARDIO & BODYWEIGHT SEPARATION & HARD EXCLUSION (v5.6.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 12: Cardio & Bodyweight Separation & Hard Exclusion (v5.6.0)');
+
+it('isCardioOrMobilityExercise identifies cardio and mobility exercises while preserving strength', () => {
+  assert(api.isCardioOrMobilityExercise('0001') === false, '3/4 Sit-Up is not cardio');
+  assert(api.isCardioOrMobilityExercise('0025') === false, 'Bench Press is not cardio');
+
+  // Test exercises with cardio / mobility / stretch characteristics
+  const cardioMock = { id: 'cardio-1', name: 'Treadmill Jog', bp: 'cardio', g: 'Cardio', type: 'timed_cardio', t: 't' };
+  api.EXIDX['cardio-1'] = cardioMock;
+  assert(api.isCardioOrMobilityExercise('cardio-1') === true, 'Treadmill must be identified as cardio');
+
+  const stretchMock = { id: 'stretch-1', name: 'All Fours Quad Stretch', bp: 'quads', g: 'Mobility', type: 'strength', t: 'b' };
+  api.EXIDX['stretch-1'] = stretchMock;
+  assert(api.isCardioOrMobilityExercise('stretch-1') === true, 'Quad stretch must be identified as mobility');
+});
+
+it('Timed cardio and mobility exercises contribute 0 tonnage to workout volume and ACWR load', () => {
+  const cardioLog = {
+    id: 'log-cardio',
+    date: Date.now(),
+    name: 'Cardio Day',
+    ex: [
+      { id: 'cardio-1', sets: [{ w: 0, r: 1800, done: true }] }
+    ]
+  };
+
+  const volume = api.setVolume({ w: 20, r: 1200 }, false, 'cardio-1');
+  assert.equal(volume, 0, 'Cardio set volume must be strictly 0 kg');
+
+  const mixedLog = {
+    id: 'log-mixed',
+    date: Date.now(),
+    name: 'Mixed Session',
+    ex: [
+      { id: '0025', uni: false, sets: [{ w: 100, r: 10, done: true }] }, // 1,000 kg
+      { id: 'cardio-1', sets: [{ w: 50, r: 1800, done: true }] }          // must be 0 kg
+    ]
+  };
+  const workload = api.calcWorkload([mixedLog]);
+  assert.equal(workload.acuteVolume, 1000, 'Cardio volume must not be included in ACWR acute volume');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 13: TRUE PR ENGINE MATH & SUB-MAXIMAL SUPPRESSION (v5.6.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 13: True PR Engine Math & Sub-Maximal Suppression (v5.6.0)');
+
+it('checkPersonalRecord correctly calculates Brzycki estimated 1RM and compares against all-time history', () => {
+  const benchId = '0025';
+  // Historical bests: 100 kg × 5 reps (Brzycki 1RM = 100 * (36 / 32) = 112.5 kg)
+  api.S.logs = [
+    {
+      id: 'log-hist-1',
+      date: Date.now() - 14 * 86400000,
+      name: 'Chest Day',
+      ex: [{ id: benchId, sets: [{ w: 100, r: 5, done: true }] }]
+    }
+  ];
+
+  // Case 1: Sub-maximal set (80 kg × 8 reps -> 1RM ~99.3 kg, weight 80 < 100) -> NO PR
+  const subMaxPR = api.checkPersonalRecord(benchId, { w: 80, r: 8, done: true }, false);
+  assert.equal(subMaxPR, null, 'Sub-maximal set must strictly suppress false PR trophy');
+
+  // Case 2: Duplicate set (100 kg × 5 reps) -> NO PR
+  const dupPR = api.checkPersonalRecord(benchId, { w: 100, r: 5, done: true }, false);
+  assert.equal(dupPR, null, 'Duplicate set must not trigger false PR');
+
+  // Case 3: Absolute weight PR (105 kg × 3 reps) -> PR
+  const weightPR = api.checkPersonalRecord(benchId, { w: 105, r: 3, done: true }, false);
+  assert(weightPR != null, 'Higher weight must trigger PR');
+  assert.equal(weightPR.type, 'weight', 'Must be a weight PR');
+
+  // Case 4: Rep PR at current weight (100 kg × 6 reps) -> PR
+  const repPR = api.checkPersonalRecord(benchId, { w: 100, r: 6, done: true }, false);
+  assert(repPR != null, 'Extra rep at same weight must trigger PR');
+  assert.equal(repPR.type, 'reps', 'Must be a rep PR');
+
+  // Case 5: 1RM PR via high reps (95 kg × 9 reps -> Brzycki 122.1 kg > 112.5 kg) -> PR
+  const e1rmPR = api.checkPersonalRecord(benchId, { w: 95, r: 9, done: true }, false);
+  assert(e1rmPR != null, 'Higher estimated 1RM must trigger PR');
+  assert.equal(e1rmPR.type, '1rm', 'Must be a 1rm PR');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 14: GOAL-AWARE CALORIES, WEIGHT DELTAS & MILESTONE GATING (v5.6.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 14: Goal-Aware Calories, Weight Deltas & Milestone Gating (v5.6.0)');
+
+it('calcNutritionTargets calculates Cut (TDEE - 400), Lean Bulk (TDEE + 250), and Recomp (TDEE)', () => {
+  const profile = { gender: 'male', height: 178, weight: 78, currentBf: 16.0, age: 26, activityLevel: 'moderate' };
+
+  const cut = api.calcNutritionTargets({ ...profile, goalType: 'cut' });
+  const bulk = api.calcNutritionTargets({ ...profile, goalType: 'bulk' });
+  const recomp = api.calcNutritionTargets({ ...profile, goalType: 'recomp' });
+
+  // TDEE is approx 2589 kcal
+  assert.equal(bulk.cals - recomp.cals, 250, 'Bulk calories must be exactly TDEE + 250');
+  assert.equal(recomp.cals - cut.cals, 400, 'Cut calories must be exactly TDEE - 400');
+  assert.equal(bulk.rateTarget, '+0.25 kg/week', 'Bulk must state weekly target of +0.25 kg/week');
+});
+
+it('getTransformationMetrics gates milestone ring behind at least 14 days of body history', () => {
+  // Only 5 days of history
+  api.S.weights = [
+    { id: 'w1', t: Date.now() - 5 * 86400000, w: 78, waist: 85, date: '2026-10-15' },
+    { id: 'w2', t: Date.now(), w: 78.2, waist: 85, date: '2026-10-20' }
+  ];
+
+  const metricsEarly = api.getTransformationMetrics();
+  assert.equal(metricsEarly.isGated, true, 'Under 14 days of history must be gated');
+
+  // 16 days of history
+  api.S.weights = [
+    { id: 'w1', t: Date.now() - 16 * 86400000, w: 80, waist: 88, date: '2026-10-04' },
+    { id: 'w2', t: Date.now(), w: 78, waist: 85, date: '2026-10-20' }
+  ];
+
+  const metricsCalibrated = api.getTransformationMetrics();
+  assert.equal(metricsCalibrated.isGated, false, '>= 14 days of history must unlock milestone ring');
+  assert(typeof metricsCalibrated.milestonePct === 'number', 'Milestone percent must be calculated');
+  assert(metricsCalibrated.avgWeight > 0, 'Must calculate 7-day rolling average weight');
+  assert(metricsCalibrated.avgWaist > 0, 'Must calculate 7-day rolling average waist');
+});
+
+it('Clean exercise name sanitizer automatically repairs All Fours Squad Stretch typo', () => {
+  assert(appCode.includes('All Fours Quad Stretch'), 'app.js must sanitize squad stretch to quad stretch');
+  assert.equal(exercisesJson.some(x => x.n === 'all fours squad stretch'), false, 'exercises.json must not have squad stretch typo');
+  assert(exercisesJson.some(x => x.n === 'all fours quad stretch'), 'exercises.json must contain all fours quad stretch');
 });
 
 console.log(`\n======================================================`);

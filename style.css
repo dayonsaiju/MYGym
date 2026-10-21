@@ -3496,6 +3496,196 @@ textarea.note:focus {
   gap: 8px;
 }
 
+/* =============================================================================
+   v5.6.0 Core Overhaul & Ergonomics
+   ============================================================================= */
+
+/* Exercise Progression & Prefill Engine */
+.set-prev-cell {
+  width: 78px;
+  min-width: 60px;
+  font-size: 11px;
+  color: var(--t2);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
+.set-prev-hdr {
+  font-size: 11px;
+  color: var(--t2);
+}
+
+.set-input-wrap.has-steppers {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.step-btn {
+  background: var(--c2);
+  border: 0.5px solid var(--bd);
+  color: var(--t1);
+  border-radius: 6px;
+  padding: 2px 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  flex: none;
+  height: 32px;
+  min-width: 24px;
+  transition: background-color 0.1s ease;
+}
+
+.step-btn:active {
+  background: var(--ac);
+  color: #FFFFFF;
+}
+
+.chip-suggestion {
+  background: rgba(48, 209, 88, 0.18) !important;
+  color: var(--gn) !important;
+  border: 1px solid rgba(48, 209, 88, 0.4) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer;
+  animation: pulse-suggestion 2s infinite ease-in-out;
+}
+
+@keyframes pulse-suggestion {
+  0%, 100% { opacity: 0.9; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.02); }
+}
+
+.dumbbell-badge {
+  background: rgba(255, 159, 10, 0.15) !important;
+  color: var(--am) !important;
+  border: 1px solid rgba(255, 159, 10, 0.3) !important;
+  font-weight: 600 !important;
+}
+
+/* Compact / Collapsible Exercise Demo GIF */
+.work-hero-media.compact {
+  max-height: 140px;
+  margin: 10px 0 8px;
+  transition: max-height 0.25s ease, opacity 0.2s ease, margin 0.2s ease;
+}
+
+.work-hero-media.compact.collapsed {
+  max-height: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Tap-to-Explain Jargon Micro-Sheets */
+.jargon-micro-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--c2);
+  border: 0.5px solid var(--bd);
+  color: var(--ac);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  vertical-align: middle;
+  margin-left: 2px;
+}
+
+.jargon-sheet {
+  padding: 4px 0;
+}
+
+.jargon-sheet-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(10, 132, 255, 0.15);
+  color: var(--ac);
+  margin-bottom: 6px;
+}
+
+.jargon-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.jargon-bullet-item {
+  background: var(--c2);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 0.5px solid var(--bd);
+}
+
+/* Safety Confirmation Sheets */
+.confirm-sheet {
+  text-align: center;
+  padding: 8px 0;
+}
+
+.confirm-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+/* Goal-Aware Weight Delta Colors */
+.diff-tag.pos, .diff-tag.bulk-pos {
+  background: rgba(48, 209, 88, 0.15) !important;
+  color: var(--gn) !important;
+}
+
+.diff-tag.neg, .diff-tag.bulk-neg {
+  background: rgba(255, 69, 58, 0.15) !important;
+  color: var(--rd) !important;
+}
+
+.text-green {
+  color: var(--gn) !important;
+}
+
+.text-orange {
+  color: var(--am) !important;
+}
+
+.roadmap-gauge-card.gated {
+  border-color: rgba(255, 159, 10, 0.3);
+  background: rgba(255, 159, 10, 0.05);
+}
+
+/* Responsive Schedule Row */
+@media (max-width: 420px) {
+  .sched-day-row {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .sched-day-header {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+  .sched-day-picker {
+    flex: 1;
+    min-width: 170px;
+  }
+}
+
+
 
 
 
