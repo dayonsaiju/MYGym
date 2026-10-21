@@ -1,11 +1,11 @@
-const C = 'mygym-core-v5.6.0-reviewed';
+const C = 'mygym-core-v5.6.1-persist';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=5.6.0',
+  './style.css?v=5.6.1',
   './app.js',
-  './app.js?v=5.6.0',
+  './app.js?v=5.6.1',
   './manifest.json',
   './icon.png',
   './exercises.json',

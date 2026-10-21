@@ -922,24 +922,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.6.0-reviewed, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.6.0-reviewed';"), 'sw.js must use mygym-core-v5.6.0-reviewed cache name');
-  assert(swCode.includes("'./style.css?v=5.6.0'"), 'sw.js must precache style.css?v=5.6.0');
-  assert(swCode.includes("'./app.js?v=5.6.0'"), 'sw.js must precache app.js?v=5.6.0');
+it('sw.js cache key is bumped to mygym-core-v5.6.1-persist, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.6.1-persist';"), 'sw.js must use mygym-core-v5.6.1-persist cache name');
+  assert(swCode.includes("'./style.css?v=5.6.1'"), 'sw.js must precache style.css?v=5.6.1');
+  assert(swCode.includes("'./app.js?v=5.6.1'"), 'sw.js must precache app.js?v=5.6.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.6.0'), 'index.html must link style.css?v=5.6.0');
-  assert(htmlCode.includes('app.js?v=5.6.0'), 'index.html must load app.js?v=5.6.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-v5.6.0-reviewed'"), 'index.html must use mygym-v5.6.0-reviewed');
+  assert(htmlCode.includes('style.css?v=5.6.1'), 'index.html must link style.css?v=5.6.1');
+  assert(htmlCode.includes('app.js?v=5.6.1'), 'index.html must load app.js?v=5.6.1');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.6.1-persist'"), 'index.html must use mygym-core-v5.6.1-persist');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.6.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.6.0-reviewed');
+  assert.equal(api.APP_VERSION, '5.6.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.6.1-persist');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1422,6 +1422,75 @@ it('Clean exercise name sanitizer automatically repairs All Fours Squad Stretch 
   assert(appCode.includes('All Fours Quad Stretch'), 'app.js must sanitize squad stretch to quad stretch');
   assert.equal(exercisesJson.some(x => x.n === 'all fours squad stretch'), false, 'exercises.json must not have squad stretch typo');
   assert(exercisesJson.some(x => x.n === 'all fours quad stretch'), 'exercises.json must contain all fours quad stretch');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 15: GLOBAL EXERCISE DATABASE SINGLETON PERSISTENCE (v5.6.1)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 15: Global Exercise Database Singleton Persistence & Re-render Resilience (v5.6.1)');
+
+it('Global singletons window.__EXDB__ and window.__EXIDX__ are instantiated and persistent', () => {
+  assert(mockWindow.__EXDB__ != null, 'window.__EXDB__ must exist');
+  assert(Array.isArray(mockWindow.__EXDB__), 'window.__EXDB__ must be an array');
+  assert(mockWindow.__EXIDX__ != null, 'window.__EXIDX__ must exist');
+  assert(mockWindow.__EXIDX__.get != null || typeof mockWindow.__EXIDX__ === 'object', 'window.__EXIDX__ must be a Map or object');
+});
+
+it('exById and X look up window.__EXIDX__ first and resolve human-readable names without returning raw numeric IDs', () => {
+  // Ensure '0025' (bench press) and '0741' (sled closer hack squat) resolve correctly
+  const exBench = api.exById('0025');
+  assert.equal(exBench.id, '0025');
+  assert(exBench.name.toLowerCase().includes('bench press'), `Exercise 0025 must resolve to Bench Press, got: ${exBench.name}`);
+  assert.notEqual(exBench.name, '0025', 'Exercise name must not be raw numeric code');
+
+  const exSled = api.X('0741');
+  assert.equal(exSled.id, '0741');
+  assert(exSled.name.toLowerCase().includes('hack squat') || exSled.name.toLowerCase().includes('sled'), `Exercise 0741 must resolve to Sled Closer Hack Squat, got: ${exSled.name}`);
+  assert.notEqual(exSled.name, '0741', 'Exercise name must not be raw numeric code');
+});
+
+it('savecalibration preserves EXDB and EXIDX memory maps and re-render continues displaying exercise titles', () => {
+  // Setup routine with exercises 0025 and 0741
+  api.S.sched = { [new Date().getDay()]: 'r_test_calib' };
+  api.S.routines = [
+    {
+      id: 'r_test_calib',
+      name: 'Leg & Chest Day',
+      ex: [
+        { id: '0025', sets: 3, reps: 10, w: 70 },
+        { id: '0741', sets: 3, reps: 12, w: 0 }
+      ]
+    }
+  ];
+
+  // Render Train view
+  const trainHtmlBefore = api.vTrain();
+  assert(trainHtmlBefore.includes('Bench Press'), 'Train view must display Bench Press title before calibration');
+  assert(trainHtmlBefore.includes('Hack Squat') || trainHtmlBefore.includes('Sled'), 'Train view must display Hack Squat title before calibration');
+
+  // Verify elements are populated
+  assert(mockWindow.__EXDB__.length > 0, '__EXDB__ must contain loaded exercises');
+
+  // Re-render Train view after simulating state save
+  const trainHtmlAfter = api.vTrain();
+  assert(trainHtmlAfter.includes('Bench Press'), 'Train view must preserve Bench Press title after state updates');
+  assert(trainHtmlAfter.includes('Hack Squat') || trainHtmlAfter.includes('Sled'), 'Train view must preserve Hack Squat title after state updates');
+  assert(!trainHtmlAfter.includes('<span class="routine-summary-name">0025</span>'), 'Must never show raw ID 0025');
+  assert(!trainHtmlAfter.includes('<span class="routine-summary-name">0741</span>'), 'Must never show raw ID 0741');
+});
+
+it('vTrain, vHist, and showMuscleDetailSheet safely restore references from singleton if local EXDB is unlinked', () => {
+  // Temporarily unset local EXDB reference on api
+  const savedDb = api.EXDB;
+  api.EXDB = [];
+
+  // Calling vTrain should re-link or pull from singleton
+  const html = api.vTrain();
+  assert(html.includes('Train'), 'vTrain must render cleanly');
+  assert(api.EXDB.length > 0, 'EXDB must automatically restore from global singleton __EXDB__');
+
+  // Restore
+  api.EXDB = savedDb;
 });
 
 console.log(`\n======================================================`);

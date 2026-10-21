@@ -96,8 +96,8 @@ let S = {
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.6.0';
-const SHELL_VERSION = 'mygym-core-v5.6.0-reviewed';
+const APP_VERSION = '5.6.1';
+const SHELL_VERSION = 'mygym-core-v5.6.1-persist';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -133,9 +133,17 @@ const cleanExName = s => {
   return str;
 };
 
-// ---- Air-Gapped Exercise Database ----
-let EXDB = [];
-let EXIDX = {};
+// ---- Air-Gapped Exercise Database & Global Singletons ----
+const _global = typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : global);
+if (typeof window !== 'undefined') {
+  window.__EXDB__ = window.__EXDB__ || [];
+  window.__EXIDX__ = window.__EXIDX__ || new Map();
+}
+_global.__EXDB__ = _global.__EXDB__ || [];
+_global.__EXIDX__ = _global.__EXIDX__ || new Map();
+
+let EXDB = _global.__EXDB__;
+let EXIDX = _global.__EXIDX__;
 
 const mapBodyPartToGroup = bp => {
   const b = String(bp || '').toLowerCase();
@@ -170,15 +178,58 @@ const normalizeExercise = e => {
   };
 };
 
-const X = id => {
+const exById = id => {
   const sid = String(id || '');
-  if (EXIDX[sid]) {
-    const ex = EXIDX[sid];
+  if (!sid) {
+    return { id: '', name: '', g: 'Core', bp: 'waist', eq: 'body weight', tg: '', sec: [], st: [], img: '', gif: '', t: 'w', type: 'strength', u: false };
+  }
+
+  // 1. Check window.__EXIDX__ / _global.__EXIDX__ first so ID lookup never returns raw codes if catalog has been fetched once
+  let ex = null;
+  const gIdx = (typeof window !== 'undefined' && window.__EXIDX__) ? window.__EXIDX__ : _global.__EXIDX__;
+  if (gIdx) {
+    if (typeof gIdx.get === 'function') {
+      ex = gIdx.get(sid);
+    }
+    if (!ex && gIdx[sid]) {
+      ex = gIdx[sid];
+    }
+  }
+
+  // 2. Check local EXIDX
+  if (!ex && EXIDX) {
+    if (typeof EXIDX.get === 'function') {
+      ex = EXIDX.get(sid);
+    }
+    if (!ex && EXIDX[sid]) {
+      ex = EXIDX[sid];
+    }
+  }
+
+  // 3. Fallback: Search window.__EXDB__ / _global.__EXDB__
+  if (!ex) {
+    const gDb = (typeof window !== 'undefined' && window.__EXDB__) ? window.__EXDB__ : (_global.__EXDB__ || EXDB);
+    if (Array.isArray(gDb) && gDb.length > 0) {
+      ex = gDb.find(item => item && String(item.id) === sid);
+      if (ex && gIdx) {
+        if (typeof gIdx.set === 'function') gIdx.set(sid, ex);
+        gIdx[sid] = ex;
+      }
+    }
+  }
+
+  if (ex) {
     if (!ex.type) {
       ex.type = (ex.t === 't' || ex.bp === 'cardio') ? 'timed_cardio' : ((ex.t === 'b' || ex.eq === 'body weight') ? 'bodyweight' : 'strength');
     }
     return ex;
   }
+
+  // Trigger background load if database is empty and loader is available
+  if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
+    loadExercises().catch(() => {});
+  }
+
   return {
     id: sid,
     name: cleanExName(sid),
@@ -195,6 +246,8 @@ const X = id => {
     u: false
   };
 };
+
+const X = exById;
 
 const isCardioOrMobilityExercise = exId => {
   const e = X(exId);
@@ -396,6 +449,14 @@ const mmLog = (l, opts = {}) => {
 };
 
 function showMuscleDetailSheet(muscleKey) {
+  if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
+    if (_global.__EXDB__ && _global.__EXDB__.length > 0) {
+      EXDB = _global.__EXDB__;
+      EXIDX = _global.__EXIDX__;
+    } else {
+      loadExercises().then(() => showMuscleDetailSheet(muscleKey)).catch(() => {});
+    }
+  }
   const drawer = document.getElementById('mm-explore-sheet');
   const muscleInfo = ANATOMY_MUSCLES[muscleKey] || { name: muscleKey };
   const topExercises = getTopExercisesForMuscle(muscleKey, 6);
@@ -1405,8 +1466,15 @@ const EQ_OPTIONS = ['All', 'body weight', 'barbell', 'dumbbell', 'cable', 'lever
 
 // ---- Views ----
 
-// 1. Train View
 const vTrain = () => {
+  if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
+    if (_global.__EXDB__ && _global.__EXDB__.length > 0) {
+      EXDB = _global.__EXDB__;
+      EXIDX = _global.__EXIDX__;
+    } else {
+      loadExercises().then(() => { if (view === 'train') render(); }).catch(() => {});
+    }
+  }
   const todayDay = new Date().getDay();
   const todayRid = S.sched ? (S.sched[todayDay] || '') : '';
   const todayRoutine = todayRid ? S.routines.find(r => r.id === todayRid) : null;
@@ -3558,6 +3626,14 @@ const vWeight = vBody;
 
 // 6. History View (Strictly Dedicated to Past Workout Logs)
 const vHist = () => {
+  if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
+    if (_global.__EXDB__ && _global.__EXDB__.length > 0) {
+      EXDB = _global.__EXDB__;
+      EXIDX = _global.__EXIDX__;
+    } else {
+      loadExercises().then(() => { if (view === 'hist') render(); }).catch(() => {});
+    }
+  }
   const q = (histQuery || '').trim().toLowerCase();
   const uniqueRoutines = ['All', ...new Set(S.logs.map(l => l.name).filter(Boolean))];
 
@@ -3620,7 +3696,22 @@ const vHist = () => {
 };
 
 function render() {
-  const v = $('#v'), y = v.scrollTop;
+  // If EXDB is empty or undefined, sync from singleton or trigger loadExercises() immediately before painting DOM
+  if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
+    if (_global.__EXDB__ && _global.__EXDB__.length > 0) {
+      EXDB = _global.__EXDB__;
+      EXIDX = _global.__EXIDX__;
+    } else {
+      loadExercises().then(() => {
+        const activeContainer = $('#v');
+        if (activeContainer) render();
+      }).catch(err => console.warn('loadExercises trigger in render failed:', err));
+    }
+  }
+
+  const v = $('#v');
+  if (!v) return;
+  const y = v.scrollTop;
   const oldStepper = document.querySelector('.work-stepper-pills');
   const savedStepperScroll = oldStepper ? oldStepper.scrollLeft : null;
 
@@ -4735,6 +4826,14 @@ document.addEventListener('click', e => {
         }
       }
 
+      // Ensure state save does not wipe memory maps before re-rendering vBody() or vTrain()
+      if ((!EXDB || EXDB.length === 0) && _global.__EXDB__ && _global.__EXDB__.length > 0) {
+        EXDB = _global.__EXDB__;
+      }
+      if ((!EXIDX || (typeof EXIDX.size === 'number' && EXIDX.size === 0)) && _global.__EXIDX__) {
+        EXIDX = _global.__EXIDX__;
+      }
+
       save('cfg', 'weights');
       close();
       toast('Physique Roadmap calibrated! 🎯');
@@ -5740,9 +5839,22 @@ async function loadExercises() {
   }
 
   if (Array.isArray(raw) && raw.length > 0) {
-    EXDB = raw.map(normalizeExercise);
-    EXIDX = {};
-    EXDB.forEach(e => { EXIDX[e.id] = e; });
+    const normalized = raw.map(normalizeExercise);
+    _global.__EXDB__ = normalized;
+    if (typeof window !== 'undefined') window.__EXDB__ = normalized;
+    EXDB = normalized;
+
+    const idx = (typeof window !== 'undefined' && window.__EXIDX__) ? window.__EXIDX__ : (_global.__EXIDX__ || new Map());
+    normalized.forEach(e => {
+      if (typeof idx.set === 'function') idx.set(e.id, e);
+      idx[e.id] = e;
+    });
+    _global.__EXIDX__ = idx;
+    if (typeof window !== 'undefined') window.__EXIDX__ = idx;
+    EXIDX = idx;
+  } else if (Array.isArray(_global.__EXDB__) && _global.__EXDB__.length > 0) {
+    EXDB = _global.__EXDB__;
+    EXIDX = _global.__EXIDX__;
   }
   return EXDB;
 }
@@ -5826,7 +5938,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.6.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.6.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -5849,6 +5961,11 @@ if (typeof globalThis !== 'undefined') {
     SHELL_VERSION,
     loadExercises,
     init,
+    render,
+    vTrain,
+    vWork,
+    vHist,
+    renderRoutineSummaryRow,
     calcWorkload,
     checkDeloadStatus,
     getSupersetInfo,
@@ -5869,9 +5986,38 @@ if (typeof globalThis !== 'undefined') {
     startRest,
     stopRest,
     setVolume,
-    EXIDX,
-    get EXDB() { return EXDB; },
-    set EXDB(val) { EXDB = val; },
+    get EXIDX() {
+      if ((!EXIDX || (typeof EXIDX.size === 'number' && EXIDX.size === 0) || (typeof EXIDX === 'object' && Object.keys(EXIDX).length === 0)) && _global.__EXIDX__) {
+        EXIDX = _global.__EXIDX__;
+      }
+      return EXIDX;
+    },
+    set EXIDX(val) {
+      if (val && ((typeof val.size === 'number' && val.size > 0) || (typeof val === 'object' && Object.keys(val).length > 0))) {
+        EXIDX = val;
+        _global.__EXIDX__ = val;
+        if (typeof window !== 'undefined') window.__EXIDX__ = val;
+      } else {
+        EXIDX = val;
+      }
+    },
+    get EXDB() {
+      if ((!EXDB || EXDB.length === 0) && _global.__EXDB__ && _global.__EXDB__.length > 0) {
+        EXDB = _global.__EXDB__;
+      }
+      return EXDB;
+    },
+    set EXDB(val) {
+      if (Array.isArray(val) && val.length > 0) {
+        EXDB = val;
+        _global.__EXDB__ = val;
+        if (typeof window !== 'undefined') window.__EXDB__ = val;
+      } else {
+        EXDB = val;
+      }
+    },
+    exById,
+    X: exById,
     normalizeExercise,
     playRestChime,
     beep,
