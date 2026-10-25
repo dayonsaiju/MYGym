@@ -21,9 +21,19 @@ const ls = {
   },
   set: (k, v) => {
     try {
-      localStorage.setItem('lift_' + k, JSON.stringify(v));
+      if (v === null || v === undefined) {
+        if (typeof localStorage.removeItem === 'function') {
+          try { localStorage.removeItem('lift_' + k); } catch (_) {}
+          try { localStorage.removeItem(k); } catch (_) {}
+        }
+        localStorage.setItem('lift_' + k, JSON.stringify(null));
+        memStore.delete(k);
+      } else {
+        localStorage.setItem('lift_' + k, JSON.stringify(v));
+      }
     } catch {
-      memStore.set(k, v);
+      if (v === null || v === undefined) memStore.delete(k);
+      else memStore.set(k, v);
     }
   }
 };
@@ -73,7 +83,15 @@ const put = async (k, v) => {
     return await new Promise(res => {
       try {
         const t = d.transaction('kv', 'readwrite');
-        t.objectStore('kv').put(v, k);
+        if (v === null || v === undefined) {
+          t.objectStore('kv').delete(k);
+        } else {
+          let val = v;
+          try {
+            val = JSON.parse(JSON.stringify(v));
+          } catch (_) {}
+          t.objectStore('kv').put(val, k);
+        }
         t.oncomplete = () => res();
         t.onerror = () => res();
         t.onabort = () => res();
@@ -97,8 +115,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '5.8.0';
-const SHELL_VERSION = 'mygym-core-v5.8.0-stable';
+const APP_VERSION = '5.8.1';
+const SHELL_VERSION = 'mygym-core-v5.8.1-finishfix';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -120,7 +138,19 @@ const fmtDur = ms => {
   return `${h}:${min}:${sec}`;
 };
 
-const save = (...k) => Promise.all(k.map(x => put(x, S[x])));
+const save = (...args) => {
+  if (args.length === 2 && typeof args[0] === 'string') {
+    const [k, v] = args;
+    if (k in S) S[k] = v;
+    return put(k, v);
+  }
+  return Promise.all(args.map(x => {
+    if (typeof x === 'string') {
+      return put(x, S[x]);
+    }
+    return Promise.resolve();
+  }));
+};
 
 // Clean & sanitize exercise names (fix corrupted degree encodings, typos and title-casing)
 const cleanExName = s => {
@@ -180,81 +210,105 @@ const normalizeExercise = e => {
 };
 
 const exById = id => {
-  const sid = String(id || '');
-  if (!sid) {
-    return { id: '', name: '', g: 'Core', bp: 'waist', eq: 'body weight', tg: '', sec: [], st: [], img: '', gif: '', t: 'w', type: 'strength', u: false };
-  }
+  try {
+    let sid = '';
+    if (id && typeof id === 'object' && id.id) {
+      sid = String(id.id);
+    } else {
+      sid = String(id || '');
+    }
+    if (!sid) {
+      return { id: '', name: '', g: 'Core', bp: 'waist', eq: 'body weight', tg: '', sec: [], st: [], img: '', gif: '', t: 'w', type: 'strength', u: false };
+    }
 
-  // 1. Check window.__EXIDX__ / _global.__EXIDX__ first so ID lookup never returns raw codes if catalog has been fetched once
-  let ex = null;
-  const gIdx = (typeof window !== 'undefined' && window.__EXIDX__) ? window.__EXIDX__ : _global.__EXIDX__;
-  if (gIdx) {
-    if (typeof gIdx.get === 'function') {
-      ex = gIdx.get(sid);
+    // 1. Check window.__EXIDX__ / _global.__EXIDX__ first so ID lookup never returns raw codes if catalog has been fetched once
+    let ex = null;
+    const gIdx = (typeof window !== 'undefined' && window.__EXIDX__) ? window.__EXIDX__ : _global.__EXIDX__;
+    if (gIdx) {
+      if (typeof gIdx.get === 'function') {
+        ex = gIdx.get(sid);
+      }
+      if (!ex && gIdx[sid]) {
+        ex = gIdx[sid];
+      }
     }
-    if (!ex && gIdx[sid]) {
-      ex = gIdx[sid];
-    }
-  }
 
-  // 2. Check local EXIDX
-  if (!ex && EXIDX) {
-    if (typeof EXIDX.get === 'function') {
-      ex = EXIDX.get(sid);
+    // 2. Check local EXIDX
+    if (!ex && EXIDX) {
+      if (typeof EXIDX.get === 'function') {
+        ex = EXIDX.get(sid);
+      }
+      if (!ex && EXIDX[sid]) {
+        ex = EXIDX[sid];
+      }
     }
-    if (!ex && EXIDX[sid]) {
-      ex = EXIDX[sid];
-    }
-  }
 
-  // 3. Fallback: Search window.__EXDB__ / _global.__EXDB__
-  if (!ex) {
-    const gDb = (typeof window !== 'undefined' && window.__EXDB__) ? window.__EXDB__ : (_global.__EXDB__ || EXDB);
-    if (Array.isArray(gDb) && gDb.length > 0) {
-      ex = gDb.find(item => item && String(item.id) === sid);
+    // 3. Fallback: Search window.__EXDB__ / _global.__EXDB__
+    if (!ex) {
+      const gDb = (typeof window !== 'undefined' && window.__EXDB__) ? window.__EXDB__ : (_global.__EXDB__ || EXDB);
+      if (Array.isArray(gDb) && gDb.length > 0) {
+        ex = gDb.find(item => item && String(item.id) === sid);
+        if (ex && gIdx) {
+          if (typeof gIdx.set === 'function') gIdx.set(sid, ex);
+          gIdx[sid] = ex;
+        }
+      }
+    }
+
+    // 4. Check custom exercises in S.customExercises
+    if (!ex && Array.isArray(S?.customExercises)) {
+      ex = S.customExercises.find(item => item && String(item.id) === sid);
       if (ex && gIdx) {
         if (typeof gIdx.set === 'function') gIdx.set(sid, ex);
         gIdx[sid] = ex;
       }
     }
-  }
 
-  // 4. Check custom exercises in S.customExercises
-  if (!ex && Array.isArray(S.customExercises)) {
-    ex = S.customExercises.find(item => item && String(item.id) === sid);
-    if (ex && gIdx) {
-      if (typeof gIdx.set === 'function') gIdx.set(sid, ex);
-      gIdx[sid] = ex;
+    if (ex) {
+      if (!ex.type) {
+        ex.type = (ex.t === 't' || ex.bp === 'cardio') ? 'timed_cardio' : ((ex.t === 'b' || ex.eq === 'body weight') ? 'bodyweight' : 'strength');
+      }
+      return ex;
     }
-  }
 
-  if (ex) {
-    if (!ex.type) {
-      ex.type = (ex.t === 't' || ex.bp === 'cardio') ? 'timed_cardio' : ((ex.t === 'b' || ex.eq === 'body weight') ? 'bodyweight' : 'strength');
+    // Trigger background load if database is empty and loader is available
+    if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
+      try { loadExercises().catch(() => {}); } catch (_) {}
     }
-    return ex;
-  }
 
-  // Trigger background load if database is empty and loader is available
-  if ((!EXDB || EXDB.length === 0) && typeof loadExercises === 'function') {
-    loadExercises().catch(() => {});
+    return {
+      id: sid,
+      name: cleanExName(sid),
+      g: 'Core',
+      bp: 'waist',
+      eq: 'body weight',
+      tg: '',
+      sec: [],
+      st: [],
+      img: '',
+      gif: '',
+      t: 'w',
+      type: 'strength',
+      u: false
+    };
+  } catch (err) {
+    console.warn('exById error for', id, err);
+    return {
+      id: String(id || ''),
+      name: cleanExName(String(id || 'Exercise')),
+      g: 'Core',
+      bp: 'waist',
+      eq: 'body weight',
+      tg: '',
+      sec: [],
+      st: [],
+      img: '',
+      gif: '',
+      t: 'w',
+      type: 'strength',
+      u: false
+    };
   }
-
-  return {
-    id: sid,
-    name: cleanExName(sid),
-    g: 'Core',
-    bp: 'waist',
-    eq: 'body weight',
-    tg: '',
-    sec: [],
-    st: [],
-    img: '',
-    gif: '',
-    t: 'w',
-    type: 'strength',
-    u: false
-  };
 };
 
 const X = exById;
@@ -801,19 +855,19 @@ function prog(rx, sets) {
   rx.inc = Number(rx.inc) || 2.5;
   rx.w = Number(rx.w) || 0;
   rx.stalls = Number(rx.stalls) || 0;
-  rx.sets = Number(rx.sets) || 3;
+  const targetSets = Array.isArray(rx.sets) ? rx.sets.length : (Number(rx.sets) || 3);
   rx.reps = Number(rx.reps) || 5;
   rx.reps2 = Math.max(rx.reps, Number(rx.reps2) || rx.reps);
   rx.cur = Number(rx.cur) || rx.reps;
 
   const need = rx.prog === 'double' ? rx.cur : rx.reps;
-  const d = sets.filter(s => s && (s.done || (s.sideL && s.sideR)));
+  const d = (Array.isArray(sets) ? sets : []).filter(s => s && (s.done || (s.sideL && s.sideR)));
   const R = n => Math.round(n / 2.5) * 2.5;
-  const ok = d.length >= rx.sets && d.every(s => (Number(s.r) || 0) >= need);
+  const ok = d.length >= targetSets && d.every(s => (Number(s.r) || 0) >= need);
 
   // Check RIR signals across completed sets
   const setsWithRir = d.filter(s => s.rir != null);
-  const allHighRir = setsWithRir.length >= rx.sets && setsWithRir.every(s => Number(s.rir) >= 2);
+  const allHighRir = setsWithRir.length >= targetSets && setsWithRir.every(s => Number(s.rir) >= 2);
   const hadFailure = d.some(s => Number(s.rir) === 0 || Number(s.rpe) >= 10);
 
   if (ok) {
@@ -1257,10 +1311,20 @@ const modal = (h, opts = {}) => {
   $('#m').innerHTML = `<div class="sheet">${showX}${h}</div>`;
   $('#m').hidden = false;
 };
-const close = () => {
-  $('#m').hidden = true;
-  $('#m').innerHTML = '';
+const closeModal = () => {
+  const m = $('#m');
+  if (m) {
+    m.hidden = true;
+    m.innerHTML = '';
+  }
 };
+const close = closeModal;
+if (typeof window !== 'undefined') {
+  window.closeModal = closeModal;
+  window.close = closeModal;
+}
+_global.closeModal = closeModal;
+_global.close = closeModal;
 const toast = (m, u) => {
   const t = $('#toast');
   U = u;
@@ -2030,9 +2094,22 @@ const vTrain = () => {
     </div>
   `;
 
+  const pastWorkoutBannerHtml = `
+    <div class="card past-workout-banner" style="margin-bottom:12px;padding:12px 14px">
+      <div class="row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <b style="font-size:14px">📅 Log Past / Missed Workout</b>
+          <div class="t2 sm" style="margin-top:2px">Forgot to log or worked out yesterday? Backdate a completed session.</div>
+        </div>
+        <button class="btn s sm-btn" data-a="openpastworkout" style="white-space:nowrap">+ Log Past / Missed Workout</button>
+      </div>
+    </div>
+  `;
+
   return viewHeader('Train') +
     renderStreakBadge() +
     resumeBannerHtml +
+    pastWorkoutBannerHtml +
 
     // Active Deload Banner at top (subtle & actionable if deload is ongoing)
     (S.deload && S.deload.active ? `
@@ -3132,6 +3209,7 @@ function vWork() {
       </div>
       <div class="work-top-actions">
         <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
+        <button class="btn sm-btn chip-success" data-a="forcefinish" title="Emergency Direct Finish: bypass confirmation and save immediately">⚡ Force Finish &amp; Save</button>
         <button class="btn sm-btn" data-a="promptfin">Finish</button>
         <button class="btn s sm-btn red" data-a="promptcancel">✕</button>
       </div>
@@ -3325,8 +3403,10 @@ function vCal() {
           ${assignedRoutine && isToday && !S.act ? `<button class="btn s sched-start-btn" data-a="start" data-id="${esc(assignedRoutine.id)}">Start</button>` : ''}
         </div>`;
       }).join('') +
+    `<div class="row" style="margin:16px 0 8px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">` +
+      `<h2 style="margin:0">${esc(selDateDisplay)}</h2>` +
+      `<button class="btn s sm-btn" data-a="openpastworkout" data-date="${esc(calSelectedDate)}">+ Log Past / Missed Workout</button>` +
     `</div>` +
-    `<h2>${esc(selDateDisplay)}</h2>` +
     (selLogs.length ? selLogs.map(l => `
       <div class="card">
         <div class="row"><b>${esc(l.name)}</b><span class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume</span></div>
@@ -5126,250 +5206,494 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 
 // ---- Finish Workout ----
 function finishWorkout() {
-  const a = S.act;
-  if (!a) return;
+  try {
+    const a = S.act;
+    if (!a) {
+      closeModal();
+      return;
+    }
 
-  // Auto-complete sets if none explicitly marked done, so clicking Finish never hangs or fails silently
-  const hasCompletedSet = a.ex.some(x => x.sets.some(s => s.done || (x.uni && (s.sideL || s.sideR))));
-  if (!hasCompletedSet) {
-    let autoCompletedAny = false;
-    a.ex.forEach(x => {
-      x.sets.forEach(s => {
-        if ((Number(s.w) > 0 || Number(s.r) > 0) && !autoCompletedAny) {
-          s.done = true;
-          autoCompletedAny = true;
+    // Auto-complete sets if none explicitly marked done, so clicking Finish never hangs or fails silently
+    const exercises = Array.isArray(a.ex) ? a.ex : [];
+    const hasCompletedSet = exercises.some(x => Array.isArray(x.sets) && x.sets.some(s => s && (s.done || (x.uni && (s.sideL || s.sideR)))));
+    if (!hasCompletedSet) {
+      let autoCompletedAny = false;
+      exercises.forEach(x => {
+        if (Array.isArray(x.sets)) {
+          x.sets.forEach(s => {
+            if (s && (Number(s.w) > 0 || Number(s.r) > 0) && !autoCompletedAny) {
+              s.done = true;
+              autoCompletedAny = true;
+            }
+          });
+        }
+      });
+      if (!autoCompletedAny && exercises.length && Array.isArray(exercises[0].sets) && exercises[0].sets.length) {
+        if (exercises[0].sets[0]) {
+          exercises[0].sets[0].done = true;
+          if (!Number(exercises[0].sets[0].r)) exercises[0].sets[0].r = 10;
+        }
+      }
+    }
+
+    const ex = exercises.map(x => ({
+      id: x.id,
+      note: x.note || '',
+      uni: !!x.uni,
+      sets: (Array.isArray(x.sets) ? x.sets : []).filter(s => s && (s.done || (x.uni && (s.sideL || s.sideR)))).map(s => {
+        const rirVal = s.rir != null && s.rir !== '' ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
+        const isDone = s.done || (x.uni && s.sideL && s.sideR);
+        return {
+          w: Math.max(0, Number(s.w) || 0),
+          r: Math.max(0, Number(s.r) || 0),
+          rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
+          rir: rirVal,
+          uni: !!x.uni,
+          sideL: !!s.sideL,
+          sideR: !!s.sideR,
+          done: !!isDone
+        };
+      })
+    })).filter(x => x.sets.length > 0);
+
+    if (!ex.length) {
+      closeModal();
+      return toast('Complete at least one set first');
+    }
+
+    // Detect PRs achieved during active session
+    const sessionPRs = [];
+    ex.forEach(x => {
+      const e = X(x.id);
+      (x.sets || []).forEach((s, idx) => {
+        try {
+          const pr = checkSetPR(x.id, s, x.uni);
+          if (pr) {
+            sessionPRs.push({
+              exName: e?.name || cleanExName(x.id),
+              setIdx: idx + 1,
+              type: pr.type,
+              desc: pr.desc,
+              w: s.w,
+              r: s.r
+            });
+          }
+        } catch (prErr) {
+          console.warn('PR check error:', prErr);
         }
       });
     });
-    if (!autoCompletedAny && a.ex.length && a.ex[0].sets.length) {
-      a.ex[0].sets[0].done = true;
-      if (!Number(a.ex[0].sets[0].r)) a.ex[0].sets[0].r = 10;
+
+    const r = Array.isArray(S.routines) ? S.routines.find(rt => rt && rt.id === a.rid) : null;
+    const notes = [];
+    if (r && Array.isArray(r.ex)) {
+      lastRoutineSyncBackup = {
+        rid: r.id,
+        backup: r.ex.map(rx => ({
+          id: rx.id,
+          sets: Array.isArray(rx.sets) ? rx.sets.map(s => ({ ...s })) : rx.sets
+        })),
+        appliedEx: ex
+      };
+
+      // By default (checked), update routine base weights with today's completed weights
+      ex.forEach(completedEx => {
+        const rx = r.ex.find(q => q && String(q.id) === String(completedEx.id));
+        if (rx && Array.isArray(rx.sets)) {
+          completedEx.sets.forEach((s, idx) => {
+            if (rx.sets[idx] && s.w > 0) {
+              rx.sets[idx].w = s.w;
+            }
+          });
+        }
+      });
+
+      exercises.forEach(x => {
+        const rx = r.ex.find(q => q && String(q.id) === String(x.id));
+        if (rx) {
+          if (x.note !== undefined) rx.note = x.note;
+          if (x.uni !== undefined) rx.uni = x.uni;
+          if (Array.isArray(x.sets) && x.sets.some(s => s && (s.done || s.sideL || s.sideR))) {
+            try {
+              const pRes = prog(rx, x.sets);
+              if (pRes) notes.push((X(x.id)?.name || cleanExName(x.id)) + ': ' + pRes);
+            } catch (pErr) {
+              console.warn('prog error:', pErr);
+            }
+          }
+        }
+      });
+    }
+
+    // RIR & Fatigue Session Summary
+    const allLoggedSets = ex.flatMap(x => x.sets || []);
+    const setsWithRir = allLoggedSets.filter(s => s.rir != null);
+    let rirSummaryHtml = '';
+    if (setsWithRir.length) {
+      const sumRir = setsWithRir.reduce((acc, s) => acc + s.rir, 0);
+      const avgRir = Math.round((sumRir / setsWithRir.length) * 10) / 10;
+      let zoneTitle = '';
+      let zoneColor = 'var(--gn)';
+      if (avgRir <= 1.0) {
+        zoneTitle = 'High Strain / Peaking Zone';
+        zoneColor = 'var(--rd)';
+      } else if (avgRir <= 2.5) {
+        zoneTitle = 'Optimal Hypertrophy Zone';
+        zoneColor = 'var(--gn)';
+      } else {
+        zoneTitle = 'Submaximal / Recovery Zone';
+        zoneColor = 'var(--bl)';
+      }
+      rirSummaryHtml = `<div class="row" style="margin-top:6px"><b>Fatigue & Intensity:</b> <span style="font-weight:600;color:${zoneColor}">${zoneTitle}: Avg RIR ${avgRir}</span></div>`;
+    }
+
+    const failSetsCount = allLoggedSets.filter(s => s.rir === 0 || s.rpe >= 10).length;
+    const failureHtml = failSetsCount > 0 ? `<div class="row" style="margin-top:6px"><b>High Fatigue Sets:</b> <span style="color:var(--rd)">💥 ${failSetsCount} set(s) taken to Failure (RIR 0)</span></div>` : '';
+
+    const isDeload = !!a.isDeload;
+    const deloadHtml = isDeload ? `<div class="row" style="margin-top:6px"><b>Protocol:</b> <span style="color:var(--gn)">Deload Recovery Session (-50% target sets)</span></div>` : '';
+
+    // Compare vs Last Session of same routine or previous log
+    S.logs = S.logs || [];
+    const prevLog = S.logs.filter(l => l && l.name === a.name).at(-1) || S.logs.at(-1);
+    const curVol = ex.reduce((sum, x) => sum + (x.sets || []).reduce((sSum, s) => sSum + ((Number(s.w) || 0) * (Number(s.r) || 0) * (x.uni ? 2 : 1)), 0), 0);
+    let volDeltaHtml = '';
+    if (prevLog) {
+      const prevVol = vol(prevLog);
+      if (prevVol > 0) {
+        const dVol = curVol - prevVol;
+        const pctVol = Math.round((dVol / prevVol) * 1000) / 10;
+        if (dVol > 0) {
+          volDeltaHtml = `<span class="delta-pos">+${dVol} kg (+${pctVol}%) vs last session</span>`;
+        } else if (dVol < 0) {
+          volDeltaHtml = `<span class="delta-neg">${dVol} kg (${pctVol}%) vs last session</span>`;
+        } else {
+          volDeltaHtml = `<span class="delta-flat">0 kg (0%) vs last session</span>`;
+        }
+      }
+    }
+
+    const t0 = a.t0 || (Date.now() - 3600000);
+    const curDur = Math.max(1000, Date.now() - t0);
+    const curDurMin = Math.round(curDur / 60000);
+    let durDeltaHtml = '';
+    if (prevLog && prevLog.dur) {
+      const prevDurMin = Math.round(prevLog.dur / 60000);
+      const diffDur = curDurMin - prevDurMin;
+      durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
+    }
+
+    const totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
+    let setsDeltaHtml = '';
+    if (prevLog && Array.isArray(prevLog.ex)) {
+      const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + (Array.isArray(x.sets) ? x.sets.length : 0), 0);
+      const diffSets = totalSetsCount - prevSetsCount;
+      setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
+    }
+
+    const completedWorkout = {
+      id: uid(),
+      date: Date.now(),
+      name: a.name || 'Workout',
+      dur: curDur,
+      ex,
+      isDeload
+    };
+
+    // Ensure S.logs is initialized and properly push the completed workout object: S.logs.unshift(completedWorkout);
+    S.logs = S.logs || [];
+    S.logs.push(completedWorkout);
+    S.act = null;
+    ls.set('act', null);
+    try { localStorage.removeItem('act'); } catch (_) {}
+    try { localStorage.removeItem('lift_act'); } catch (_) {}
+
+    // Calculate micro-progress increment (+0.3% to +0.5% based on workout volume and consistency)
+    const baseInc = 0.3;
+    const volBonus = curVol >= 3500 ? 0.1 : 0;
+    const streakBonus = streak() >= 2 ? 0.1 : 0;
+    const microInc = Math.min(0.5, Math.round((baseInc + volBonus + streakBonus) * 10) / 10);
+
+    if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(S.cfg.bodyModel);
+    S.cfg.physique.microProgressBonus = Math.round(((S.cfg.physique.microProgressBonus || 0) + microInc) * 10) / 10;
+
+    save('logs', S.logs);
+    save('act', null);
+    save('routines');
+    save('cfg');
+    stopRest();
+    wl?.release?.();
+
+    closeModal();
+
+    modal(`<h2>Workout Complete! 🏆</h2>
+      <div class="transformation-celebration-banner">
+        <span class="tcb-fire">🔥</span>
+        <div class="tcb-body">
+          <div class="tcb-title">Transformation Progress: +${microInc}% today!</div>
+          <div class="tcb-sub">1 workout closer to your goal physique 🔥</div>
+        </div>
+      </div>
+      ${mmLog(completedWorkout)}
+      <div class="card" style="margin:12px 0;padding:12px">
+        <div class="row">
+          <b>Total Volume:</b>
+          <div style="text-align:right">
+            <span>${curVol} kg</span>
+            ${volDeltaHtml ? `<br>${volDeltaHtml}` : ''}
+          </div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <b>Duration:</b>
+          <span>${curDurMin} min${durDeltaHtml}</span>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <b>Completed Exercises:</b>
+          <span>${completedWorkout.ex.length}</span>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <b>Completed Sets:</b>
+          <span>${totalSetsCount}${setsDeltaHtml}</span>
+        </div>
+        ${rirSummaryHtml}
+        ${failureHtml}
+        ${deloadHtml}
+        <div class="row" style="margin-top:8px">
+          <b>Active Streak:</b>
+          <span>${streak()} days 🔥</span>
+        </div>
+      </div>
+      ${r ? `
+        <div class="card" style="margin:12px 0;padding:12px">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600">
+            <input type="checkbox" id="sync-routine-weights-toggle" data-a="togglesyncweights" checked style="width:20px;height:20px;accent-color:var(--ac)">
+            <span>Update routine base weights with today's completed weights</span>
+          </label>
+        </div>
+      ` : ''}
+      ${sessionPRs.length ? `
+        <h2 style="color:var(--accent-achievement);display:flex;align-items:center;gap:6px">
+          <span>🏆</span> New Personal Records!
+        </h2>
+        <div style="margin-bottom:12px">
+          ${sessionPRs.map(p => `
+            <div class="pr-trophy-card">
+              <div class="pr-trophy-icon">🏆</div>
+              <div class="pr-trophy-content">
+                <div class="pr-trophy-title">${esc(p.exName)} · Set ${p.setIdx}</div>
+                <div class="pr-trophy-desc">${esc(p.desc)} (${p.w > 0 ? p.w + ' kg × ' : ''}${p.r} reps)</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+      ${notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''}
+    `);
+    view = 'train';
+    render();
+  } catch (err) {
+    console.error('finishWorkout error:', err);
+    if (typeof alert === 'function') {
+      alert('Save error: ' + err.message);
     }
   }
+}
 
-  const ex = a.ex.map(x => ({
-    id: x.id,
-    note: x.note || '',
-    uni: !!x.uni,
-    sets: x.sets.filter(s => s.done || (x.uni && (s.sideL || s.sideR))).map(s => {
-      const rirVal = s.rir != null && s.rir !== '' ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
-      const isDone = s.done || (x.uni && s.sideL && s.sideR);
-      return {
-        w: Number(s.w) || 0,
-        r: Number(s.r) || 0,
-        rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
-        rir: rirVal,
-        uni: !!x.uni,
-        sideL: !!s.sideL,
-        sideR: !!s.sideR,
-        done: !!isDone
-      };
-    })
-  })).filter(x => x.sets.length);
+// ---- Log Past / Missed Workout Engine (Backdated Logging) ----
+let pastWorkout = null;
 
-  if (!ex.length) {
-    close();
-    return toast('Complete at least one set first');
-  }
+function openPastWorkoutModal(defaultDate) {
+  const yest = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const targetDate = defaultDate || (view === 'cal' && calSelectedDate ? calSelectedDate : yest);
 
-  // Detect PRs achieved during active session
-  const sessionPRs = [];
-  ex.forEach(x => {
-    const e = X(x.id);
-    x.sets.forEach((s, idx) => {
-      const pr = checkSetPR(x.id, s, x.uni);
-      if (pr) {
-        sessionPRs.push({
-          exName: e.name,
-          setIdx: idx + 1,
-          type: pr.type,
-          desc: pr.desc,
-          w: s.w,
-          r: s.r
-        });
+  const defaultRoutine = (Array.isArray(S.routines) && S.routines.length) ? S.routines[0] : null;
+  pastWorkout = {
+    date: targetDate,
+    name: defaultRoutine ? defaultRoutine.name : 'Custom Past Workout',
+    routineId: defaultRoutine ? defaultRoutine.id : 'custom',
+    dur: 45,
+    ex: defaultRoutine ? defaultRoutine.ex.map(rx => ({
+      id: rx.id,
+      note: rx.note || '',
+      uni: !!rx.uni,
+      sets: Array.isArray(rx.sets) && rx.sets.length
+        ? rx.sets.map(s => ({ w: Number(s.w) || 0, r: Number(s.r) || 8 }))
+        : [
+            { w: Number(rx.w) || 0, r: Number(rx.reps) || 8 },
+            { w: Number(rx.w) || 0, r: Number(rx.reps) || 8 },
+            { w: Number(rx.w) || 0, r: Number(rx.reps) || 8 }
+          ]
+    })) : [
+      {
+        id: '0025',
+        note: '',
+        uni: false,
+        sets: [{ w: 60, r: 10 }, { w: 60, r: 10 }, { w: 60, r: 10 }]
       }
+    ]
+  };
+
+  renderPastWorkoutModal();
+}
+
+function renderPastWorkoutModal() {
+  if (!pastWorkout) return;
+  const p = pastWorkout;
+
+  modal(`
+    <div class="past-workout-sheet" style="max-height:85vh;display:flex;flex-direction:column">
+      <div style="flex:none">
+        <h2 style="display:flex;align-items:center;gap:8px">
+          <span>📅</span> Log Past / Missed Workout
+        </h2>
+        <p class="t2 sm" style="margin-top:2px;margin-bottom:12px">
+          Backdate a completed workout to maintain your streak, tonnage, and weekly muscle volume.
+        </p>
+
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px">
+          <label style="font-size:12px;font-weight:600">
+            Workout Date
+            <input type="date" id="past-workout-date" data-f="pastdate" class="txt" value="${esc(p.date)}" max="${new Date().toISOString().slice(0, 10)}" style="margin-top:4px;padding:8px">
+          </label>
+          <label style="font-size:12px;font-weight:600">
+            Duration (min)
+            <input type="number" id="past-workout-dur" data-f="pastdur" class="txt" value="${p.dur || 45}" min="5" max="360" style="margin-top:4px;padding:8px">
+          </label>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Routine Template / Workout Source</label>
+          <select id="past-workout-routine" data-f="pastroutine" class="txt" style="padding:8px;width:100%">
+            ${(S.routines || []).map(r => `
+              <option value="${esc(r.id)}" ${p.routineId === r.id ? 'selected' : ''}>Routine: ${esc(r.name)} (${r.ex.length} ex)</option>
+            `).join('')}
+            <option value="custom" ${p.routineId === 'custom' ? 'selected' : ''}>⚡ Build Custom Workout</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Workout Name</label>
+          <input type="text" id="past-workout-name" data-f="pastname" class="txt" value="${esc(p.name)}" placeholder="e.g. Push Hypertrophy, Upper Body" style="padding:8px;width:100%">
+        </div>
+
+        <div class="row" style="margin-bottom:8px">
+          <b>Completed Exercises (${p.ex.length}):</b>
+          <button class="btn s sm-btn" data-a="pastaddex" style="font-size:11px;padding:4px 8px">${ic('plus', 14)} Add Exercise</button>
+        </div>
+      </div>
+
+      <div id="past-workout-ex-list" style="overflow-y:auto;flex:1;padding-right:2px;margin-bottom:14px">
+        ${p.ex.map((x, xIdx) => {
+          const exInfo = X(x.id);
+          return `
+            <div class="card" style="margin-bottom:10px;padding:10px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)">
+              <div class="row" style="margin-bottom:8px">
+                <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+                  <span style="font-weight:700;color:var(--ac);font-size:14px">${xIdx + 1}.</span>
+                  <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(exInfo.name)}</div>
+                    <div class="t2 sm">${esc(exInfo.tg || exInfo.g)} · ${esc(exInfo.eq)}</div>
+                  </div>
+                </div>
+                <button class="btn s sm-btn red" data-a="pastrmex" data-x="${xIdx}" title="Remove Exercise" style="font-size:11px;padding:2px 8px">✕</button>
+              </div>
+
+              <!-- Set headers -->
+              <div style="display:grid;grid-template-columns:36px 1fr 1fr 32px;gap:6px;align-items:center;margin-bottom:4px;font-size:11px;font-weight:600;color:var(--t2);text-align:center">
+                <span>SET</span>
+                <span>KG</span>
+                <span>REPS</span>
+                <span></span>
+              </div>
+
+              <!-- Set rows -->
+              ${x.sets.map((s, sIdx) => `
+                <div style="display:grid;grid-template-columns:36px 1fr 1fr 32px;gap:6px;align-items:center;margin-bottom:6px">
+                  <span style="font-weight:700;font-size:12px;text-align:center;color:var(--t2)">${sIdx + 1}</span>
+                  <input type="number" inputmode="decimal" class="txt" data-f="pastsetw" data-x="${xIdx}" data-s="${sIdx}" value="${s.w != null ? s.w : 0}" step="0.5" style="padding:6px;text-align:center;font-weight:600;height:34px">
+                  <input type="number" inputmode="numeric" class="txt" data-f="pastsetr" data-x="${xIdx}" data-s="${sIdx}" value="${s.r != null ? s.r : 8}" min="1" max="999" style="padding:6px;text-align:center;font-weight:600;height:34px">
+                  <button class="btn s sm-btn red" data-a="pastrmset" data-x="${xIdx}" data-s="${sIdx}" ${x.sets.length <= 1 ? 'disabled style="opacity:0.25"' : ''} style="padding:0;height:34px;width:32px;line-height:34px;text-align:center">✕</button>
+                </div>
+              `).join('')}
+
+              <div class="row" style="margin-top:6px">
+                <button class="btn s sm-btn" data-a="pastaddset" data-x="${xIdx}" style="font-size:11px;padding:3px 10px">${ic('plus', 12)} Add Set</button>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div style="flex:none">
+        <button class="btn finish-save-btn" data-a="savepastworkout" style="width:100%;margin-bottom:8px">Save to History 💾</button>
+        <button class="btn s outline" data-a="closemodal" style="width:100%">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+function savePastWorkout() {
+  if (!pastWorkout) return;
+  const p = pastWorkout;
+
+  // Sync latest values from DOM if present
+  const dateInput = $('#past-workout-date');
+  if (dateInput && dateInput.value) p.date = dateInput.value;
+  const durInput = $('#past-workout-dur');
+  if (durInput && durInput.value) p.dur = Number(durInput.value) || 45;
+  const nameInput = $('#past-workout-name');
+  if (nameInput && nameInput.value) p.name = nameInput.value;
+
+  // Read all set inputs from DOM
+  p.ex.forEach((x, xIdx) => {
+    x.sets.forEach((s, sIdx) => {
+      const wEl = document.querySelector(`input[data-f="pastsetw"][data-x="${xIdx}"][data-s="${sIdx}"]`);
+      if (wEl) s.w = Math.max(0, Number(wEl.value) || 0);
+      const rEl = document.querySelector(`input[data-f="pastsetr"][data-x="${xIdx}"][data-s="${sIdx}"]`);
+      if (rEl) s.r = Math.max(0, Number(rEl.value) || 0);
     });
   });
 
-  const r = S.routines.find(r => r.id === a.rid);
-  const notes = [];
-  if (r) {
-    lastRoutineSyncBackup = {
-      rid: r.id,
-      backup: r.ex.map(rx => ({
-        id: rx.id,
-        sets: (rx.sets || []).map(s => ({ ...s }))
-      })),
-      appliedEx: ex
-    };
+  const validEx = p.ex.map(x => ({
+    id: x.id,
+    note: x.note || '',
+    uni: !!x.uni,
+    sets: (x.sets || []).map(s => ({
+      w: Math.max(0, Number(s.w) || 0),
+      r: Math.max(0, Number(s.r) || 0),
+      done: true
+    })).filter(s => s.w > 0 || s.r > 0 || true)
+  })).filter(x => x.sets.length > 0);
 
-    // By default (checked), update routine base weights with today's completed weights
-    ex.forEach(completedEx => {
-      const rx = r.ex.find(q => String(q.id) === String(completedEx.id));
-      if (rx && rx.sets) {
-        completedEx.sets.forEach((s, idx) => {
-          if (rx.sets[idx] && s.w > 0) {
-            rx.sets[idx].w = s.w;
-          }
-        });
-      }
-    });
-
-    a.ex.forEach(x => {
-      const rx = r.ex.find(q => String(q.id) === String(x.id));
-      if (rx) {
-        if (x.note !== undefined) rx.note = x.note;
-        if (x.uni !== undefined) rx.uni = x.uni;
-        if (x.sets.some(s => s.done || s.sideL || s.sideR)) notes.push(X(x.id).name + ': ' + prog(rx, x.sets));
-      }
-    });
+  if (!validEx.length) {
+    toast('Add at least one exercise with completed sets');
+    return;
   }
 
-  // RIR & Fatigue Session Summary
-  const allLoggedSets = ex.flatMap(x => x.sets);
-  const setsWithRir = allLoggedSets.filter(s => s.rir != null);
-  let rirSummaryHtml = '';
-  if (setsWithRir.length) {
-    const sumRir = setsWithRir.reduce((acc, s) => acc + s.rir, 0);
-    const avgRir = Math.round((sumRir / setsWithRir.length) * 10) / 10;
-    let zoneTitle = '';
-    let zoneColor = 'var(--gn)';
-    if (avgRir <= 1.0) {
-      zoneTitle = 'High Strain / Peaking Zone';
-      zoneColor = 'var(--rd)';
-    } else if (avgRir <= 2.5) {
-      zoneTitle = 'Optimal Hypertrophy Zone';
-      zoneColor = 'var(--gn)';
-    } else {
-      zoneTitle = 'Submaximal / Recovery Zone';
-      zoneColor = 'var(--bl)';
-    }
-    rirSummaryHtml = `<div class="row" style="margin-top:6px"><b>Fatigue & Intensity:</b> <span style="font-weight:600;color:${zoneColor}">${zoneTitle}: Avg RIR ${avgRir}</span></div>`;
-  }
+  const dateStr = p.date || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const workoutTimestamp = new Date(dateStr + 'T12:00:00').getTime();
+  const durMs = Math.max(5, Number(p.dur) || 45) * 60000;
+  const workoutName = (p.name || 'Backdated Workout').trim();
 
-  const failSetsCount = allLoggedSets.filter(s => s.rir === 0 || s.rpe >= 10).length;
-  const failureHtml = failSetsCount > 0 ? `<div class="row" style="margin-top:6px"><b>High Fatigue Sets:</b> <span style="color:var(--rd)">💥 ${failSetsCount} set(s) taken to Failure (RIR 0)</span></div>` : '';
+  const completedLog = {
+    id: uid(),
+    date: workoutTimestamp,
+    name: workoutName,
+    dur: durMs,
+    ex: validEx,
+    isDeload: false,
+    backdated: true
+  };
 
-  const isDeload = !!a.isDeload;
-  const deloadHtml = isDeload ? `<div class="row" style="margin-top:6px"><b>Protocol:</b> <span style="color:var(--gn)">Deload Recovery Session (-50% target sets)</span></div>` : '';
+  S.logs = S.logs || [];
+  S.logs.push(completedLog);
+  // Sort chronologically so calendar, tonnage and weekly frequency calculate accurately
+  S.logs.sort((a, b) => (Number(a.date) || 0) - (Number(b.date) || 0));
 
-  // Compare vs Last Session of same routine or previous log
-  const prevLog = S.logs.filter(l => l.name === a.name).at(-1) || S.logs.at(-1);
-  const curVol = ex.reduce((sum, x) => sum + x.sets.reduce((sSum, s) => sSum + (s.w * s.r * (x.uni ? 2 : 1)), 0), 0);
-  let volDeltaHtml = '';
-  if (prevLog) {
-    const prevVol = vol(prevLog);
-    if (prevVol > 0) {
-      const dVol = curVol - prevVol;
-      const pctVol = Math.round((dVol / prevVol) * 1000) / 10;
-      if (dVol > 0) {
-        volDeltaHtml = `<span class="delta-pos">+${dVol} kg (+${pctVol}%) vs last session</span>`;
-      } else if (dVol < 0) {
-        volDeltaHtml = `<span class="delta-neg">${dVol} kg (${pctVol}%) vs last session</span>`;
-      } else {
-        volDeltaHtml = `<span class="delta-flat">0 kg (0%) vs last session</span>`;
-      }
-    }
-  }
-
-  const curDurMin = Math.round((Date.now() - a.t0) / 60000);
-  let durDeltaHtml = '';
-  if (prevLog && prevLog.dur) {
-    const prevDurMin = Math.round(prevLog.dur / 60000);
-    const diffDur = curDurMin - prevDurMin;
-    durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
-  }
-
-  const totalSetsCount = ex.reduce((acc, x) => acc + x.sets.length, 0);
-  let setsDeltaHtml = '';
-  if (prevLog) {
-    const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + x.sets.length, 0);
-    const diffSets = totalSetsCount - prevSetsCount;
-    setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
-  }
-
-  const log = { id: uid(), date: Date.now(), name: a.name, dur: Date.now() - a.t0, ex, isDeload };
-  S.logs.push(log);
-  S.act = null;
-  ls.set('act', null);
-
-  // Calculate micro-progress increment (+0.3% to +0.5% based on workout volume and consistency)
-  const baseInc = 0.3;
-  const volBonus = curVol >= 3500 ? 0.1 : 0;
-  const streakBonus = streak() >= 2 ? 0.1 : 0;
-  const microInc = Math.min(0.5, Math.round((baseInc + volBonus + streakBonus) * 10) / 10);
-
-  if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(S.cfg.bodyModel);
-  S.cfg.physique.microProgressBonus = Math.round(((S.cfg.physique.microProgressBonus || 0) + microInc) * 10) / 10;
-
-  save('logs', 'act', 'routines', 'cfg');
-  stopRest();
-  wl?.release?.();
-
-  modal(`<h2>Workout Complete! 🏆</h2>
-    <div class="transformation-celebration-banner">
-      <span class="tcb-fire">🔥</span>
-      <div class="tcb-body">
-        <div class="tcb-title">Transformation Progress: +${microInc}% today!</div>
-        <div class="tcb-sub">1 workout closer to your goal physique 🔥</div>
-      </div>
-    </div>
-    ${mmLog(log)}
-    <div class="card" style="margin:12px 0;padding:12px">
-      <div class="row">
-        <b>Total Volume:</b>
-        <div style="text-align:right">
-          <span>${curVol} kg</span>
-          ${volDeltaHtml ? `<br>${volDeltaHtml}` : ''}
-        </div>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <b>Duration:</b>
-        <span>${curDurMin} min${durDeltaHtml}</span>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <b>Completed Exercises:</b>
-        <span>${log.ex.length}</span>
-      </div>
-      <div class="row" style="margin-top:8px">
-        <b>Completed Sets:</b>
-        <span>${totalSetsCount}${setsDeltaHtml}</span>
-      </div>
-      ${rirSummaryHtml}
-      ${failureHtml}
-      ${deloadHtml}
-      <div class="row" style="margin-top:8px">
-        <b>Active Streak:</b>
-        <span>${streak()} days 🔥</span>
-      </div>
-    </div>
-    ${r ? `
-      <div class="card" style="margin:12px 0;padding:12px">
-        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600">
-          <input type="checkbox" id="sync-routine-weights-toggle" data-a="togglesyncweights" checked style="width:20px;height:20px;accent-color:var(--ac)">
-          <span>Update routine base weights with today's completed weights</span>
-        </label>
-      </div>
-    ` : ''}
-    ${sessionPRs.length ? `
-      <h2 style="color:var(--accent-achievement);display:flex;align-items:center;gap:6px">
-        <span>🏆</span> New Personal Records!
-      </h2>
-      <div style="margin-bottom:12px">
-        ${sessionPRs.map(p => `
-          <div class="pr-trophy-card">
-            <div class="pr-trophy-icon">🏆</div>
-            <div class="pr-trophy-content">
-              <div class="pr-trophy-title">${esc(p.exName)} · Set ${p.setIdx}</div>
-              <div class="pr-trophy-desc">${esc(p.desc)} (${p.w > 0 ? p.w + ' kg × ' : ''}${p.r} reps)</div>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    ` : ''}
-    ${notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''}
-  `);
-  view = 'train';
+  save('logs', S.logs);
+  pastWorkout = null;
+  closeModal();
+  toast(`Saved "${workoutName}" for ${dateStr} to History! 🏆`);
   render();
 }
 
@@ -5377,9 +5701,13 @@ const finish = finishWorkout;
 if (typeof window !== 'undefined') {
   window.finishWorkout = finishWorkout;
   window.finish = finishWorkout;
+  window.openPastWorkoutModal = openPastWorkoutModal;
+  window.savePastWorkout = savePastWorkout;
 }
 _global.finishWorkout = finishWorkout;
 _global.finish = finishWorkout;
+_global.openPastWorkoutModal = openPastWorkoutModal;
+_global.savePastWorkout = savePastWorkout;
 
 // ---- Event Listeners ----
 document.addEventListener('click', e => {
@@ -6195,12 +6523,62 @@ document.addEventListener('click', e => {
       }
       return;
     }
+    case 'forcefinish':
     case 'commit-finish':
     case 'confirmfin':
     case 'savefin':
     case 'fin': {
-      close();
+      closeModal();
       finishWorkout();
+      return;
+    }
+    case 'openpastworkout': {
+      openPastWorkoutModal(t.dataset.date);
+      return;
+    }
+    case 'pastaddset': {
+      const xIdx = parseInt(t.dataset.x, 10);
+      if (pastWorkout && pastWorkout.ex && pastWorkout.ex[xIdx]) {
+        const last = pastWorkout.ex[xIdx].sets.at(-1);
+        pastWorkout.ex[xIdx].sets.push({ w: last ? last.w : 20, r: last ? last.r : 10 });
+        renderPastWorkoutModal();
+      }
+      return;
+    }
+    case 'pastrmset': {
+      const xIdx = parseInt(t.dataset.x, 10);
+      const sIdx = parseInt(t.dataset.s, 10);
+      if (pastWorkout && pastWorkout.ex && pastWorkout.ex[xIdx] && pastWorkout.ex[xIdx].sets && pastWorkout.ex[xIdx].sets.length > 1) {
+        pastWorkout.ex[xIdx].sets.splice(sIdx, 1);
+        renderPastWorkoutModal();
+      }
+      return;
+    }
+    case 'pastrmex': {
+      const xIdx = parseInt(t.dataset.x, 10);
+      if (pastWorkout && pastWorkout.ex) {
+        pastWorkout.ex.splice(xIdx, 1);
+        renderPastWorkoutModal();
+      }
+      return;
+    }
+    case 'pastaddex': {
+      P = exId => {
+        if (pastWorkout) {
+          pastWorkout.ex.push({
+            id: exId,
+            note: '',
+            uni: isUnilateralExercise(X(exId).name),
+            sets: [{ w: 20, r: 10 }, { w: 20, r: 10 }, { w: 20, r: 10 }]
+          });
+          renderPastWorkoutModal();
+        }
+      };
+      showExercisePicker('Add Exercise to Past Workout');
+      return;
+    }
+    case 'savepastworkout': {
+      savePastWorkout();
       return;
     }
     case 'opencustomex': {
@@ -6444,6 +6822,61 @@ const handleFieldUpdate = t => {
     save('sched');
     render();
     toast('Split schedule updated');
+    return;
+  }
+
+  if (f === 'pastdate' && pastWorkout) {
+    pastWorkout.date = t.value;
+    return;
+  }
+  if (f === 'pastdur' && pastWorkout) {
+    pastWorkout.dur = Number(t.value) || 45;
+    return;
+  }
+  if (f === 'pastroutine' && pastWorkout) {
+    const rid = t.value;
+    if (rid === 'custom') {
+      pastWorkout.routineId = 'custom';
+    } else {
+      const r = S.routines.find(rt => rt && rt.id === rid);
+      if (r) {
+        pastWorkout.routineId = r.id;
+        pastWorkout.name = r.name;
+        pastWorkout.ex = (r.ex || []).map(rx => ({
+          id: rx.id,
+          note: rx.note || '',
+          uni: !!rx.uni,
+          sets: Array.isArray(rx.sets) && rx.sets.length
+            ? rx.sets.map(s => ({ w: Number(s.w) || 0, r: Number(s.r) || 8 }))
+            : [
+                { w: Number(rx.w) || 0, r: Number(rx.reps) || 8 },
+                { w: Number(rx.w) || 0, r: Number(rx.reps) || 8 },
+                { w: Number(rx.w) || 0, r: Number(rx.reps) || 8 }
+              ]
+        }));
+      }
+    }
+    renderPastWorkoutModal();
+    return;
+  }
+  if (f === 'pastname' && pastWorkout) {
+    pastWorkout.name = t.value;
+    return;
+  }
+  if (f === 'pastsetw' && pastWorkout) {
+    const xIdx = parseInt(t.dataset.x, 10);
+    const sIdx = parseInt(t.dataset.s, 10);
+    if (pastWorkout.ex && pastWorkout.ex[xIdx] && pastWorkout.ex[xIdx].sets && pastWorkout.ex[xIdx].sets[sIdx]) {
+      pastWorkout.ex[xIdx].sets[sIdx].w = Number(t.value) || 0;
+    }
+    return;
+  }
+  if (f === 'pastsetr' && pastWorkout) {
+    const xIdx = parseInt(t.dataset.x, 10);
+    const sIdx = parseInt(t.dataset.s, 10);
+    if (pastWorkout.ex && pastWorkout.ex[xIdx] && pastWorkout.ex[xIdx].sets && pastWorkout.ex[xIdx].sets[sIdx]) {
+      pastWorkout.ex[xIdx].sets[sIdx].r = Number(t.value) || 0;
+    }
     return;
   }
 
@@ -6788,7 +7221,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.8.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.8.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -6815,8 +7248,12 @@ if (typeof globalThis !== 'undefined') {
     vTrain,
     vWork,
     vHist,
+    vCal,
     finishWorkout,
     finish: finishWorkout,
+    closeModal,
+    openPastWorkoutModal,
+    savePastWorkout,
     calcWeeklyMuscleFrequency,
     renderWeeklyMuscleFrequencyCard,
     WEEKLY_FREQ_TARGETS,

@@ -202,7 +202,8 @@ const mockWindow = {
   localStorage: {
     _data: {},
     getItem(k) { return this._data[k] ?? null; },
-    setItem(k, v) { this._data[k] = String(v); }
+    setItem(k, v) { this._data[k] = String(v); },
+    removeItem(k) { delete this._data[k]; }
   },
   navigator: {
     _lastVibrate: null,
@@ -922,24 +923,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.8.0-stable, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.8.0-stable';"), 'sw.js must use mygym-core-v5.8.0-stable cache name');
-  assert(swCode.includes("'./style.css?v=5.8.0'"), 'sw.js must precache style.css?v=5.8.0');
-  assert(swCode.includes("'./app.js?v=5.8.0'"), 'sw.js must precache app.js?v=5.8.0');
+it('sw.js cache key is bumped to mygym-core-v5.8.1-finishfix, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.8.1-finishfix';"), 'sw.js must use mygym-core-v5.8.1-finishfix cache name');
+  assert(swCode.includes("'./style.css?v=5.8.1'"), 'sw.js must precache style.css?v=5.8.1');
+  assert(swCode.includes("'./app.js?v=5.8.1'"), 'sw.js must precache app.js?v=5.8.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.8.0'), 'index.html must link style.css?v=5.8.0');
-  assert(htmlCode.includes('app.js?v=5.8.0'), 'index.html must load app.js?v=5.8.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.8.0-stable'"), 'index.html must use mygym-core-v5.8.0-stable');
+  assert(htmlCode.includes('style.css?v=5.8.1'), 'index.html must link style.css?v=5.8.1');
+  assert(htmlCode.includes('app.js?v=5.8.1'), 'index.html must load app.js?v=5.8.1');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.8.1-finishfix'"), 'index.html must use mygym-core-v5.8.1-finishfix');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.8.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.8.0-stable');
+  assert.equal(api.APP_VERSION, '5.8.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.8.1-finishfix');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1891,8 +1892,90 @@ it('Gamified achievements calculate and unlock badges correctly (First Workout, 
   assert(cardHtml.includes('Tonnage Titan (10,000 kg)'), 'Card must render Tonnage Titan');
 });
 
+// -----------------------------------------------------------------------------
+// TEST SUITE 18: FINISH CRASH HOTFIX & PAST WORKOUT LOGGING (v5.8.1)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 18: Finish Workout Crash Hotfix & Past Workout Logging (v5.8.1)');
+
+it('finishWorkout wraps body in try-catch and cleans up active workout and modal state', () => {
+  assert(appCode.includes("try {\n    const a = S.act;") || appCode.includes("try {") && appCode.includes("finishWorkout error:"), 'finishWorkout must wrap body in try-catch');
+  assert(appCode.includes("console.error('finishWorkout error:', err);"), 'finishWorkout must log errors');
+  assert(appCode.includes("closeModal();"), 'finishWorkout must close modal');
+  assert(appCode.includes("localStorage.removeItem('act')"), 'finishWorkout must explicitly remove act from localStorage');
+});
+
+it('Active workout top-bar includes emergency [⚡ Force Finish & Save] action', () => {
+  const testAct = {
+    id: 'test_top_force_fin',
+    name: 'Morning Push Session',
+    t0: Date.now() - 3600000,
+    curEx: 0,
+    ex: [{ id: '0025', sets: [{ w: 60, r: 10, done: true }] }]
+  };
+  api.S.act = testAct;
+  const workHtml = api.vWork();
+  assert(workHtml.includes('data-a="forcefinish"'), 'work-top-bar must include data-a="forcefinish"');
+  assert(workHtml.includes('Force Finish'), 'work-top-bar must have Force Finish text');
+
+  // Verify click listener handles case 'forcefinish':
+  assert(appCode.includes("case 'forcefinish':"), "click listener must handle case 'forcefinish':");
+});
+
+it('Train tab and Calendar tab render "+ Log Past / Missed Workout" buttons', () => {
+  const trainHtml = api.vTrain();
+  assert(trainHtml.includes('+ Log Past / Missed Workout'), 'Train tab must render + Log Past / Missed Workout');
+  assert(trainHtml.includes('data-a="openpastworkout"'), 'Train tab must use data-a="openpastworkout"');
+
+  const calHtml = api.vCal();
+  assert(calHtml.includes('+ Log Past / Missed Workout'), 'Calendar tab must render + Log Past / Missed Workout');
+  assert(calHtml.includes('data-a="openpastworkout"'), 'Calendar tab must use data-a="openpastworkout"');
+});
+
+it('openPastWorkoutModal initializes state and savePastWorkout commits backdated log with correct date and tonnage', () => {
+  const prevLogsCount = api.S.logs.length;
+  const backdateStr = '2026-10-20'; // 5 days ago
+
+  api.openPastWorkoutModal(backdateStr);
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('Log Past / Missed Workout'), 'Modal must render past workout header');
+  assert(mHtml.includes('Save to History'), 'Modal must have Save to History button');
+  assert(mHtml.includes('data-a="savepastworkout"'), 'Modal must use data-a="savepastworkout"');
+
+  // Execute savePastWorkout directly
+  api.savePastWorkout();
+
+  assert.equal(api.S.logs.length, prevLogsCount + 1, 'Past workout must be committed to S.logs');
+  const foundBackdate = api.S.logs.find(l => new Date(l.date).toISOString().slice(0, 10) === backdateStr);
+  assert(foundBackdate, 'Log with backdated timestamp must exist in S.logs');
+  assert(foundBackdate.ex.length > 0, 'Past log must contain exercises');
+  assert(foundBackdate.dur > 0, 'Past log must have positive duration');
+});
+
+it('save() persists both single key-value save(k, v) and multi-key save(k1, k2) properly', () => {
+  api.save('act', null);
+  assert.equal(api.S.act, null);
+
+  const testLogs = [{ id: 'test_persist', date: Date.now(), name: 'Persist Test', ex: [] }];
+  api.save('logs', testLogs);
+  assert.equal(api.S.logs, testLogs);
+});
+
+it('exById never throws on null, undefined, or missing exercise IDs', () => {
+  const exNull = api.exById(null);
+  assert.equal(typeof exNull, 'object');
+  assert.equal(typeof exNull.name, 'string');
+
+  const exObj = api.exById({ id: '0025' });
+  assert.equal(exObj.id, '0025');
+
+  const exNonexistent = api.exById('999999_nonexistent');
+  assert.equal(typeof exNonexistent, 'object');
+  assert.equal(exNonexistent.id, '999999_nonexistent');
+});
+
 console.log(`\n======================================================`);
 console.log(`ALL ${passed}/${total} ASSERTION TESTS PASSED SUCCESSFULLY! (100%)`);
 console.log(`======================================================\n`);
 process.exit(0);
+
 

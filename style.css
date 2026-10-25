@@ -4346,4 +4346,22 @@ textarea.note:focus {
   margin-top: 2px;
 }
 
-
+/* ==========================================================================
+   v5.8.1 PAST WORKOUT & FORCE FINISH ENHANCEMENTS
+   ========================================================================== */
+.past-workout-sheet {
+  text-align: left;
+}
+.past-workout-sheet input[type="date"] {
+  color-scheme: dark;
+}
+.past-workout-sheet select {
+  background: var(--c2);
+  color: var(--t1);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+.work-top-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
