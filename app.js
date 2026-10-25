@@ -92,12 +92,12 @@ let S = {
   weights: [],
   cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5, bodyModel: 'male', physique: null },
   sched: {},
-  act: null,
+  act: ls.get('act') || null,
   deload: { active: false, startedAt: null, lastDeloadDate: null }
 };
 
-const APP_VERSION = '5.6.1';
-const SHELL_VERSION = 'mygym-core-v5.6.1-persist';
+const APP_VERSION = '5.7.0';
+const SHELL_VERSION = 'mygym-core-v5.7.0-flow';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1464,6 +1464,328 @@ let calSelectedDate = new Date().toISOString().slice(0, 10);
 const BP_CATEGORIES = ['All', 'Chest', 'Back', 'Arms', 'Legs', 'Shoulders', 'Core', 'Cardio'];
 const EQ_OPTIONS = ['All', 'body weight', 'barbell', 'dumbbell', 'cable', 'leverage machine', 'weighted', 'band', 'kettlebell', 'medicine ball', 'smith machine'];
 
+// ---- Sub-Muscle Classification Definitions & Matcher ----
+const SUB_MUSCLES = {
+  Chest: ['All', 'Upper', 'Mid/Lower'],
+  Back: ['All', 'Lats', 'Upper Back / Traps', 'Lower Back'],
+  Shoulders: ['All', 'Front', 'Lateral', 'Rear'],
+  Arms: ['All', 'Biceps (Long/Short)', 'Triceps', 'Forearms'],
+  Legs: ['All', 'Quads', 'Hamstrings', 'Glutes', 'Calves']
+};
+
+let libSubCategory = 'All';
+let pickSubCategory = 'All';
+
+function matchesSubMuscle(e, cat, sub) {
+  if (!sub || sub === 'All') return true;
+  const n = (e.name || '').toLowerCase();
+  const tg = (e.tg || '').toLowerCase();
+
+  if (cat === 'Chest') {
+    if (sub === 'Upper') return n.includes('incline') || n.includes('upper') || tg.includes('clavicular');
+    if (sub === 'Mid/Lower') return !n.includes('incline') || n.includes('decline') || n.includes('flat') || n.includes('dip');
+  } else if (cat === 'Back') {
+    if (sub === 'Lats') return tg === 'lats' || n.includes('lat') || n.includes('pulldown') || n.includes('pull-up') || n.includes('chin');
+    if (sub === 'Upper Back / Traps') return tg === 'upper back' || tg === 'traps' || n.includes('row') || n.includes('shrug') || n.includes('rear') || n.includes('face pull');
+    if (sub === 'Lower Back') return tg === 'spine' || n.includes('hyperextension') || n.includes('back extension') || n.includes('good morning') || n.includes('deadlift');
+  } else if (cat === 'Shoulders') {
+    if (sub === 'Front') return n.includes('front') || n.includes('overhead') || n.includes('military') || n.includes('press') || n.includes('arnold');
+    if (sub === 'Lateral') return n.includes('lateral') || n.includes('side') || n.includes('upright row');
+    if (sub === 'Rear') return n.includes('rear') || n.includes('reverse') || n.includes('face pull');
+  } else if (cat === 'Arms') {
+    if (sub === 'Biceps (Long/Short)') return tg === 'biceps' || n.includes('curl') || n.includes('bicep') || n.includes('chin-up');
+    if (sub === 'Triceps') return tg === 'triceps' || n.includes('tricep') || n.includes('pushdown') || n.includes('dip') || n.includes('skull') || n.includes('extension');
+    if (sub === 'Forearms') return tg === 'forearms' || n.includes('wrist') || n.includes('grip') || n.includes('forearm') || n.includes('farmer');
+  } else if (cat === 'Legs') {
+    if (sub === 'Quads') return tg === 'quads' || n.includes('squat') || n.includes('leg press') || n.includes('lunge') || n.includes('quad') || (n.includes('extension') && !n.includes('back'));
+    if (sub === 'Hamstrings') return tg === 'hamstrings' || n.includes('hamstring') || n.includes('leg curl') || n.includes('romanian') || n.includes('rdl') || n.includes('stiff');
+    if (sub === 'Glutes') return tg === 'glutes' || n.includes('hip thrust') || n.includes('glute') || n.includes('kickback') || n.includes('abductor') || n.includes('bridge');
+    if (sub === 'Calves') return tg === 'calves' || n.includes('calf') || n.includes('calves') || n.includes('raise');
+  }
+  return true;
+}
+
+function renderLibSubPills() {
+  const subs = SUB_MUSCLES[libCategory];
+  if (!subs || !subs.length) return '';
+  return `<div class="sub-chips" id="lib-sub-chips">${subs.map(s => `<button class="sub-chip ${libSubCategory === s ? 'on' : ''}" data-a="libsubcat" data-sub="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+}
+
+function renderPickSubPills() {
+  const subs = SUB_MUSCLES[pickCategory];
+  if (!subs || !subs.length) return '';
+  return `<div class="sub-chips" id="pick-sub-chips">${subs.map(s => `<button class="sub-chip ${pickSubCategory === s ? 'on' : ''}" data-a="picksubcat" data-sub="${esc(s)}">${esc(s)}</button>`).join('')}</div>`;
+}
+
+// ---- Weekly 2x Muscle Frequency Tracker ----
+const WEEKLY_FREQ_TARGETS = ['Chest', 'Back', 'Quads', 'Hamstrings/Glutes', 'Shoulders', 'Arms', 'Core'];
+
+function getStimulatedMuscleGroups(e) {
+  const groups = new Set();
+  const g = (e.g || '').toLowerCase();
+  const tg = (e.tg || '').toLowerCase();
+  const n = (e.name || '').toLowerCase();
+
+  // Chest
+  if (g === 'chest' || tg === 'pectorals' || n.includes('bench press') || n.includes('chest') || n.includes('fly')) {
+    groups.add('Chest');
+  }
+  // Back
+  if (g === 'back' || ['lats', 'upper back', 'spine', 'traps'].includes(tg) || n.includes('pull') || n.includes('row') || n.includes('lat') || n.includes('deadlift')) {
+    groups.add('Back');
+  }
+  // Quads
+  if (tg === 'quads' || (g === 'legs' && (n.includes('squat') || n.includes('quad') || n.includes('leg press') || (n.includes('extension') && !n.includes('back')) || n.includes('lunge')))) {
+    groups.add('Quads');
+  }
+  // Hamstrings/Glutes
+  if (tg === 'hamstrings' || tg === 'glutes' || (g === 'legs' && (n.includes('curl') || n.includes('deadlift') || n.includes('rdl') || n.includes('hip thrust') || n.includes('glute')))) {
+    groups.add('Hamstrings/Glutes');
+  }
+  // Shoulders
+  if (g === 'shoulders' || tg === 'delts' || n.includes('shoulder') || n.includes('overhead press') || n.includes('lateral raise') || n.includes('military')) {
+    groups.add('Shoulders');
+  }
+  // Arms
+  if (g === 'arms' || ['biceps', 'triceps', 'forearms'].includes(tg) || n.includes('bicep') || n.includes('tricep') || n.includes('curl') || n.includes('pushdown') || n.includes('dip')) {
+    groups.add('Arms');
+  }
+  // Core
+  if (g === 'core' || tg === 'abs' || n.includes('crunch') || n.includes('sit-up') || n.includes('plank') || n.includes('ab')) {
+    groups.add('Core');
+  }
+
+  return groups;
+}
+
+function calcWeeklyMuscleFrequency(logs = S.logs, refDate = Date.now()) {
+  const refTime = refDate instanceof Date ? refDate.getTime() : (typeof refDate === 'number' ? refDate : Date.now());
+  const sevenDaysAgo = refTime - 7 * 86400 * 1000;
+  const recentLogs = (logs || []).filter(l => l && l.date >= sevenDaysAgo && l.date <= refTime);
+  const dayGroups = {};
+  for (const target of WEEKLY_FREQ_TARGETS) {
+    dayGroups[target] = new Set();
+  }
+  for (const log of recentLogs) {
+    const dayKey = dk(log.date);
+    for (const x of (log.ex || [])) {
+      const e = X(x.id);
+      const stimulated = getStimulatedMuscleGroups(e);
+      for (const grp of stimulated) {
+        if (dayGroups[grp]) dayGroups[grp].add(dayKey);
+      }
+    }
+  }
+  const res = WEEKLY_FREQ_TARGETS.map(target => {
+    const count = dayGroups[target] ? dayGroups[target].size : 0;
+    const opt = count >= 2;
+    const partial = count === 1;
+    const pips = opt ? `●● (${count}/2 Opt)` : (partial ? '●○ (1/2)' : '○○ (0/2)');
+    return {
+      muscle: target,
+      count,
+      days: count,
+      target: 2,
+      status: opt ? 'optimal' : (partial ? 'moderate' : 'none'),
+      pips
+    };
+  });
+  // Also attach named properties for dictionary access
+  for (const item of res) {
+    res[item.muscle] = item;
+  }
+  return res;
+}
+
+function renderWeeklyMuscleFrequencyCard(logs = S.logs) {
+  const freqs = calcWeeklyMuscleFrequency(logs);
+  return `
+    <div class="card weekly-freq-card">
+      <div class="weekly-freq-header">
+        <div class="wfh-title">Weekly Muscle Frequency</div>
+        <div class="wfh-target">2x / wk Hypertrophy Target</div>
+      </div>
+      <div class="weekly-freq-grid">
+        ${freqs.map(f => {
+          const pipsText = f.count >= 2 ? '●●' : (f.count === 1 ? '●○' : '○○');
+          const dotClass = f.count >= 2 ? 'dot-green' : (f.count === 1 ? 'dot-amber' : 'dot-muted');
+          const badgeClass = f.status === 'optimal' ? 'tag-green' : (f.status === 'moderate' ? 'tag-amber' : 'tag-muted');
+          const label = f.count >= 2 ? `${f.count}/2 Opt` : `${f.count}/2`;
+          return `
+            <div class="weekly-freq-item">
+              <span class="wfi-name">${f.muscle}</span>
+              <div class="wfi-indicator">
+                <span class="wfi-pip ${dotClass}">${pipsText}</span>
+                <span class="wfi-label ${badgeClass}">(${label})</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ---- Quick / Free Workout Builder ----
+const FREE_WORKOUT_TARGETS = ['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Abs'];
+let freeWorkoutMuscles = ['Chest'];
+let freeWorkoutSelectedEx = new Set();
+
+function isExerciseMatchingMuscle(e, muscle) {
+  const g = (e.g || '').toLowerCase();
+  const tg = (e.tg || '').toLowerCase();
+  const n = (e.name || '').toLowerCase();
+
+  switch (muscle) {
+    case 'Chest':
+      return g === 'chest' || tg === 'pectorals' || n.includes('bench press') || n.includes('chest') || n.includes('fly');
+    case 'Back':
+      return g === 'back' || ['lats', 'upper back', 'spine', 'traps'].includes(tg) || n.includes('pull') || n.includes('row') || n.includes('lat') || n.includes('deadlift');
+    case 'Shoulders':
+      return g === 'shoulders' || tg === 'delts' || n.includes('shoulder') || n.includes('overhead press') || n.includes('lateral raise') || n.includes('military');
+    case 'Quads':
+      return tg === 'quads' || (g === 'legs' && (n.includes('squat') || n.includes('quad') || n.includes('leg press') || (n.includes('extension') && !n.includes('back')) || n.includes('lunge')));
+    case 'Hamstrings':
+      return tg === 'hamstrings' || tg === 'glutes' || (g === 'legs' && (n.includes('curl') || n.includes('deadlift') || n.includes('rdl') || n.includes('hip thrust') || n.includes('glute')));
+    case 'Biceps':
+      return tg === 'biceps' || (g === 'arms' && (n.includes('bicep') || n.includes('curl') || n.includes('chin-up')));
+    case 'Triceps':
+      return tg === 'triceps' || (g === 'arms' && (n.includes('tricep') || n.includes('pushdown') || n.includes('dip') || n.includes('skull') || n.includes('extension')));
+    case 'Abs':
+      return tg === 'abs' || g === 'core' || n.includes('crunch') || n.includes('sit-up') || n.includes('plank') || n.includes('ab');
+    default:
+      return false;
+  }
+}
+
+function isCompoundMovement(e) {
+  const n = (e.name || '').toLowerCase();
+  const eq = (e.eq || '').toLowerCase();
+  if (n.includes('bench press') || n.includes('squat') || n.includes('deadlift') || n.includes('overhead press') ||
+      n.includes('military press') || n.includes('barbell row') || n.includes('dumbbell row') || n.includes('pull-up') ||
+      n.includes('chin-up') || n.includes('dip') || n.includes('leg press') || n.includes('lunges') || n.includes('hip thrust')) {
+    return true;
+  }
+  return eq.includes('barbell') && (n.includes('press') || n.includes('row') || n.includes('squat'));
+}
+
+function getFreeWorkoutExercises(selectedMuscles = freeWorkoutMuscles) {
+  if (!selectedMuscles || !selectedMuscles.length) return [];
+  const matches = EXDB.filter(e => {
+    return selectedMuscles.some(m => isExerciseMatchingMuscle(e, m));
+  });
+
+  matches.sort((a, b) => {
+    const aComp = isCompoundMovement(a) ? 1 : 0;
+    const bComp = isCompoundMovement(b) ? 1 : 0;
+    if (aComp !== bComp) return bComp - aComp;
+    const eqRank = { barbell: 5, dumbbell: 4, cable: 3, 'leverage machine': 2, 'body weight': 1 };
+    const aRank = eqRank[a.eq] || 0;
+    const bRank = eqRank[b.eq] || 0;
+    return bRank - aRank;
+  });
+
+  return matches;
+}
+
+function renderFreeWorkoutExerciseRows(exercises) {
+  if (!exercises.length) {
+    return '<p class="t2" style="padding:24px;text-align:center">No matching exercises found for selected muscle groups</p>';
+  }
+  return exercises.slice(0, 35).map(e => {
+    const checked = freeWorkoutSelectedEx.has(e.id);
+    const compound = isCompoundMovement(e);
+    return `
+      <div class="free-ex-row ${checked ? 'selected' : ''}" data-a="togglefreeex" data-id="${esc(e.id)}">
+        <input type="checkbox" class="free-ex-chk" ${checked ? 'checked' : ''} tabindex="-1">
+        <img class="ex-thumb" src="./media/${esc(e.img || e.gif)}" alt="${esc(e.name)}" loading="lazy" onerror="this.style.display='none'">
+        <div class="ex-info">
+          <div class="ex-name">${esc(e.name)}</div>
+          <div class="ex-meta">
+            <span class="free-ex-type-pill ${compound ? 'compound' : 'isolation'}">${compound ? 'Compound' : 'Isolation'}</span>
+            ${esc(e.tg || e.g)} · ${esc(e.eq)}
+          </div>
+        </div>
+        <button class="chip ex-preview-btn" data-a="pickpreview" data-id="${esc(e.id)}" title="Preview Exercise">ℹ️</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function showFreeWorkoutBuilderModal() {
+  if (!freeWorkoutMuscles.length) freeWorkoutMuscles = ['Chest'];
+  const matching = getFreeWorkoutExercises(freeWorkoutMuscles);
+  if (freeWorkoutSelectedEx.size === 0 && matching.length) {
+    matching.slice(0, 3).forEach(e => freeWorkoutSelectedEx.add(e.id));
+  }
+
+  modal(`
+    <div class="free-builder-sheet">
+      <div class="free-builder-header">
+        <h2>⚡ Build Custom Session</h2>
+        <p class="t2 sm" style="margin-top:2px;margin-bottom:10px">Target specific muscles for today's workout without saving a routine.</p>
+      </div>
+
+      <div class="free-targets-label">Target Muscles:</div>
+      <div class="chips free-target-chips" style="margin-bottom:12px">
+        ${FREE_WORKOUT_TARGETS.map(m => `
+          <button class="chip free-chip ${freeWorkoutMuscles.includes(m) ? 'on' : ''}" data-a="togglefreemuscle" data-muscle="${m}">${m}</button>
+        `).join('')}
+      </div>
+
+      <div class="row" style="margin-bottom:8px">
+        <span class="t2 sm" id="free-matches-count"><b>${matching.length}</b> exercises found (${freeWorkoutSelectedEx.size} selected)</span>
+        <button class="btn s sm-btn" data-a="clearfreesel" style="font-size:11px;padding:2px 8px">Clear</button>
+      </div>
+
+      <div id="free-ex-list" class="card" style="max-height:46vh;overflow-y:auto;padding:0 10px;margin-bottom:14px">
+        ${renderFreeWorkoutExerciseRows(matching)}
+      </div>
+
+      <div class="free-builder-actions">
+        <button class="btn free-start-btn" data-a="startfreesession">
+          ⚡ Start Session (${freeWorkoutSelectedEx.size} Exercises)
+        </button>
+        <button class="btn s outline" data-a="closemodal">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+function startFreeWorkout(selectedIds) {
+  const ids = Array.isArray(selectedIds) ? selectedIds : [...freeWorkoutSelectedEx];
+  if (!ids.length) {
+    toast('Select at least one exercise to start session');
+    return;
+  }
+  const ex = ids.map(id => {
+    const isUni = isUnilateralExercise(X(id).name);
+    return {
+      id,
+      ss: false,
+      uni: isUni,
+      note: getLastExerciseNote(id),
+      sets: newSets(id)
+    };
+  });
+
+  const muscleNames = freeWorkoutMuscles.length ? freeWorkoutMuscles.join('/') : 'Custom';
+  S.act = {
+    id: uid(),
+    name: `Free: ${muscleNames}`,
+    t0: Date.now(),
+    curEx: 0,
+    ex
+  };
+  ls.set('act', S.act);
+  save('act');
+  close();
+  view = 'work';
+  wake();
+  toast('⚡ Free workout session started!');
+  render();
+}
+
 // ---- Views ----
 
 const vTrain = () => {
@@ -1484,9 +1806,34 @@ const vTrain = () => {
   const deloadInfo = checkDeloadStatus(S.logs);
   const muscleVolumes = getWeeklyMuscleVolumes(S.logs);
 
+  const allActiveSets = S.act && Array.isArray(S.act.ex) ? S.act.ex.flatMap(x => x.sets || []) : [];
+  const doneActiveSets = allActiveSets.filter(s => s && (s.done || s.sideL || s.sideR)).length;
+  const resumeBannerHtml = S.act ? `
+    <div class="active-session-resume-banner" data-a="tab" data-k="work">
+      <div class="asrb-icon">⚡</div>
+      <div class="asrb-text">
+        <div class="asrb-title">⚡ Resume Active Workout</div>
+        <div class="asrb-sub">${esc(S.act.name || 'Active Session')} · ${doneActiveSets}/${allActiveSets.length} sets logged</div>
+      </div>
+      <button class="btn asrb-btn" data-a="tab" data-k="work">Resume →</button>
+    </div>
+  ` : '';
+
+  const freeWorkoutBannerHtml = `
+    <div class="card free-workout-banner" style="margin-bottom:12px;padding:12px 14px">
+      <div class="row">
+        <div>
+          <b style="font-size:14px">⚡ On-The-Fly Workout</b>
+          <div class="t2 sm" style="margin-top:2px">Target specific muscles today without saving a template</div>
+        </div>
+        <button class="btn btn-free-workout sm-btn" data-a="openfreeworkout" style="min-height:36px;padding:0 14px">+ Start Free Workout</button>
+      </div>
+    </div>
+  `;
+
   return viewHeader('Train') +
     renderStreakBadge() +
-    (S.act ? `<button class="btn" data-a="tab" data-k="work" style="margin-bottom:12px">⚡ Resume Workout: ${esc(S.act.name)}</button>` : '') +
+    resumeBannerHtml +
 
     // Active Deload Banner at top (subtle & actionable if deload is ongoing)
     (S.deload && S.deload.active ? `
@@ -1501,6 +1848,12 @@ const vTrain = () => {
         </div>
       </div>
     ` : '') +
+
+    // Minimal Apple-style Weekly 2x Muscle Frequency Card
+    renderWeeklyMuscleFrequencyCard(S.logs) +
+
+    // Free Workout Secondary Action Banner
+    freeWorkoutBannerHtml +
 
     // Today's Split Banner Prominently at Top (One-Tap Start)
     (todayRoutine && !S.act ? `
@@ -1553,14 +1906,14 @@ const vTrain = () => {
         <p class="t2 sm">Build custom routines to track progressive overload automatically.</p>
         <div class="row g" style="margin-top:14px">
           <button class="btn" data-a="edit">${ic('plus', 16)} Create Routine</button>
-          <button class="btn s" data-a="start">Quick Empty Workout</button>
+          <button class="btn s" data-a="openfreeworkout">+ Free Workout</button>
         </div>
       </div>
     `) +
     (S.routines.length ? `
       <div class="row g" style="margin-top:8px;margin-bottom:8px">
         <button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button>
-        <button class="btn s" data-a="start">Empty workout</button>
+        <button class="btn s" data-a="openfreeworkout">+ Free workout</button>
       </div>
     ` : '') +
 
@@ -2214,13 +2567,10 @@ function renderWorkHeroCard(a, curIdx) {
 
       <!-- PRIMARY VIEWPORT ELEMENT: Sets & Reps Logger Table above the fold -->
       <div class="work-sets-container">
-        <div class="set-header-row">
-          <span style="width:34px;text-align:center">Set</span>
-          <span class="set-prev-hdr" style="width:78px;text-align:center">Prev</span>
-          <span style="flex:1.2;text-align:center">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Duration' : 'Weight (kg)'}</span>
-          <span style="flex:1;text-align:center">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Target (s)' : 'Reps'}</span>
-          <span style="width:58px;text-align:center">RIR <button class="jargon-micro-btn" data-a="explainjargon" data-term="rir" title="Explain RIR">?</button></span>
-          <span style="width:${currentEx.uni ? '84px' : '40px'};text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
+        <div class="set-header-row" style="display:flex;justify-content:space-between;padding:0 8px 4px;font-size:11px;font-weight:600;color:var(--t2)">
+          <span style="width:36px;text-align:center">Set</span>
+          <span style="flex:1;padding-left:6px">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Duration (sec)' : 'Load & Reps'}</span>
+          <span style="width:44px;text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
         </div>
         ${currentEx.sets.map((s, j) => {
           const prevS = prevEx?.sets?.[j];
@@ -2235,44 +2585,58 @@ function renderWorkHeroCard(a, curIdx) {
             }
           }
 
-          const r = (f, v, u) => {
-            if (f === 'w' && exInfo.type !== 'timed_cardio' && exInfo.t !== 't') {
-              return `<div class="set-input-wrap has-steppers ${isBarbell ? 'has-plate-btn' : ''}">
-                <button class="step-btn step-minus" data-a="stepw" data-i="${curIdx}" data-j="${j}" data-delta="-2.5" title="-2.5 kg">-2.5</button>
-                <input type="number" inputmode="decimal" data-f="w" data-i="${curIdx}" data-j="${j}" value="${v}">
-                <span class="u">${u}</span>
-                <button class="step-btn step-plus" data-a="stepw" data-i="${curIdx}" data-j="${j}" data-delta="2.5" title="+2.5 kg">+2.5</button>
-                ${isBarbell ? `<button class="plate-calc-btn" data-a="openplatecalc" data-w="${s.w || 20}" data-name="${esc(exInfo.name)}" title="Plate Calculator">${ic('disc', 14)}</button>` : ''}
-              </div>`;
-            }
-            return `<div class="set-input-wrap">
-              <input type="number" inputmode="${f === 'r' ? 'numeric' : 'decimal'}" data-f="${f}" data-i="${curIdx}" data-j="${j}" value="${v}">
-              <span class="u">${u}</span>
-            </div>`;
-          };
-
           const isFail = s.rir === 0 || s.rpe >= 10;
           const isSet = s.rir != null || (s.rpe != null && s.rpe !== '');
           const rirText = s.rir != null ? (s.rir === 0 ? '0 💥' : (s.rir >= 3 ? '3+' : s.rir)) : (s.rpe != null && s.rpe !== '' ? (10 - +s.rpe) : 'RIR');
           const isSetDone = s.done || (currentEx.uni && s.sideL && s.sideR);
           const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
 
-          return `<div class="set ${s.done ? 'd' : ''}" data-i="${curIdx}" data-j="${j}">
-            <button class="n" data-a="done" data-i="${curIdx}" data-j="${j}">
-              ${j + 1}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆 PR!</span>` : ''}
-            </button>
-            <span class="set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</span>
-            ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? '' : r('w', s.w, (exInfo.type === 'bodyweight' || exInfo.t === 'b') ? '+kg' : 'kg')}
-            ${r('r', s.r, (exInfo.type === 'timed_cardio' || exInfo.t === 't') ? 'sec' : 'reps')}
-            <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve / Intensity">${rirText}</button>
-            ${currentEx.uni ? `
-              <div class="uni-ck-group">
-                <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
-                <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
+          return `<div class="set set-row${s.done ? ' d' : ''}" data-i="${curIdx}" data-j="${j}">
+            <!-- Col 1: Compact Set # Badge -->
+            <div class="set-col set-col-num">
+              <button class="n set-num-badge" data-a="done" data-i="${curIdx}" data-j="${j}">
+                ${j + 1}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆</span>` : ''}
+              </button>
+            </div>
+
+            <!-- Col 2: Micro-label & Weight x Reps Inputs -->
+            <div class="set-col set-col-main">
+              <div class="set-prev-microlabel set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</div>
+              <div class="set-inputs-row">
+                ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? `
+                  <div class="set-input-box">
+                    <input type="number" inputmode="numeric" data-f="r" data-i="${curIdx}" data-j="${j}" value="${s.r}" class="set-val-input" placeholder="0">
+                    <span class="set-unit">sec</span>
+                  </div>
+                ` : `
+                  <div class="set-input-box set-w-box ${isBarbell ? 'has-plate-btn' : ''}">
+                    <button class="step-btn btn-step step-minus" data-a="stepw" data-i="${curIdx}" data-j="${j}" data-delta="-2.5" title="-2.5 kg">-2.5</button>
+                    <input type="number" inputmode="decimal" data-f="w" data-i="${curIdx}" data-j="${j}" value="${s.w}" class="set-val-input" placeholder="0">
+                    <span class="set-unit">${(exInfo.type === 'bodyweight' || exInfo.t === 'b') ? '+kg' : 'kg'}</span>
+                    <button class="step-btn btn-step step-plus" data-a="stepw" data-i="${curIdx}" data-j="${j}" data-delta="2.5" title="+2.5 kg">+2.5</button>
+                    ${isBarbell ? `<button class="plate-calc-btn" data-a="openplatecalc" data-w="${s.w || 20}" data-name="${esc(exInfo.name)}" title="Plate Calculator">${ic('disc', 14)}</button>` : ''}
+                  </div>
+                  <span class="set-times-sep">×</span>
+                  <div class="set-input-box set-r-box">
+                    <input type="number" inputmode="numeric" data-f="r" data-i="${curIdx}" data-j="${j}" value="${s.r}" class="set-val-input" placeholder="0">
+                    <span class="set-unit">reps</span>
+                  </div>
+                `}
+                <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve">${rirText}</button>
               </div>
-            ` : `
-              <button class="ck ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}">${ic('chk', 18)}</button>
-            `}
+            </div>
+
+            <!-- Col 3: Crisp 44x44px iOS Circular Done Button -->
+            <div class="set-col set-col-done">
+              ${currentEx.uni ? `
+                <div class="uni-ck-group">
+                  <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
+                  <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
+                </div>
+              ` : `
+                <button class="ck set-done-btn ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}" title="Mark Set Done">${ic('chk', 20)}</button>
+              `}
+            </div>
           </div>`;
         }).join('')}
       </div>
@@ -2298,6 +2662,7 @@ function renderWorkHeroCard(a, curIdx) {
           : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">🔗 Link Superset</button>`
         }
         <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
+        <button class="chip chip-danger" data-a="removecursessionex" data-i="${curIdx}" title="Remove from today's workout without changing routine">✕ Remove from Today's Session</button>
       </div>
     </div>
   `;
@@ -2603,6 +2968,7 @@ const filterExercises = () => {
   const q = libQuery.trim().toLowerCase();
   return EXDB.filter(e => {
     if (libCategory !== 'All' && e.g !== libCategory) return false;
+    if (libCategory !== 'All' && libSubCategory !== 'All' && !matchesSubMuscle(e, libCategory, libSubCategory)) return false;
     if (libEquipment !== 'All' && e.eq !== libEquipment) return false;
     if (q) {
       const matchName = e.name.toLowerCase().includes(q);
@@ -2660,6 +3026,7 @@ function vLib() {
   return viewHeader('Library') +
     `<input id="lib-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="libsearch" value="${esc(libQuery)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">` +
     `<div class="chips">${BP_CATEGORIES.map(c => `<button class="chip ${libCategory === c ? 'on' : ''}" data-a="libcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div>` +
+    `<div id="lib-sub-chips-wrap">${renderLibSubPills()}</div>` +
     `<div class="row" style="margin-bottom:12px"><label class="t2 sm" style="flex:1">Equipment:<select data-f="libeq">${EQ_OPTIONS.map(eq => `<option value="${esc(eq)}" ${libEquipment === eq ? 'selected' : ''}>${esc(eq.toUpperCase())}</option>`).join('')}</select></label><span id="ex-count" class="t2 sm" style="align-self:flex-end;margin-bottom:10px">${filtered.length} exercises</span></div>` +
     `<div id="ex-list" class="card" style="padding:0 12px">${renderExRows(visible)}</div>` +
     `<div id="ex-more-container">${visible.length < filtered.length ? `<button class="btn s" data-a="libmore">Load more (${filtered.length - visible.length} remaining)</button>` : ''}</div>`;
@@ -3551,6 +3918,7 @@ function vBody() {
 
   return viewHeader('Body & Transformation') +
     roadmapHtml +
+    renderWeeklyMuscleFrequencyCard(S.logs) +
     `<h2>Measurement Trends</h2>` +
     `<div class="stat-grid">` +
       `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
@@ -3844,6 +4212,7 @@ const renderPickResults = () => {
   const q = (pickQuery || '').trim().toLowerCase();
   const filtered = EXDB.filter(e => {
     if (pickCategory !== 'All' && e.g !== pickCategory) return false;
+    if (pickCategory !== 'All' && pickSubCategory !== 'All' && !matchesSubMuscle(e, pickCategory, pickSubCategory)) return false;
     if (q) {
       return e.name.toLowerCase().includes(q) || e.tg.toLowerCase().includes(q) || e.eq.toLowerCase().includes(q);
     }
@@ -3875,11 +4244,13 @@ function showExercisePicker(title = 'Add Exercise') {
   currentPickerTitle = title;
   pickQuery = '';
   pickCategory = 'All';
+  pickSubCategory = 'All';
   modal(`<h2>${esc(title)}</h2>
     <input id="pick-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="picksearch" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
     <div class="chips" style="margin-bottom:8px">
       ${BP_CATEGORIES.map(c => `<button class="chip ${pickCategory === c ? 'on' : ''}" data-a="pickcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
     </div>
+    <div id="pick-sub-chips-wrap">${renderPickSubPills()}</div>
     <div id="pick-list" class="card" style="max-height:55vh;overflow-y:auto;padding:0 12px">
       ${renderPickResults()}
     </div>
@@ -4454,7 +4825,7 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 }
 
 // ---- Finish Workout ----
-function finish() {
+function finishWorkout() {
   const a = S.act;
   if (!a) return;
   const ex = a.ex.map(x => ({
@@ -4598,6 +4969,7 @@ function finish() {
   const log = { id: uid(), date: Date.now(), name: a.name, dur: Date.now() - a.t0, ex, isDeload };
   S.logs.push(log);
   S.act = null;
+  ls.set('act', null);
 
   // Calculate micro-progress increment (+0.3% to +0.5% based on workout volume and consistency)
   const baseInc = 0.3;
@@ -4679,6 +5051,14 @@ function finish() {
   render();
 }
 
+const finish = finishWorkout;
+if (typeof window !== 'undefined') {
+  window.finishWorkout = finishWorkout;
+  window.finish = finishWorkout;
+}
+_global.finishWorkout = finishWorkout;
+_global.finish = finishWorkout;
+
 // ---- Event Listeners ----
 document.addEventListener('click', e => {
   unlock();
@@ -4713,10 +5093,21 @@ document.addEventListener('click', e => {
     // Library category and pagination
     case 'libcat': {
       libCategory = t.dataset.cat;
+      libSubCategory = 'All';
       libPageSize = 40;
       document.querySelectorAll('.chips button[data-a="libcat"]').forEach(btn => {
         btn.classList.toggle('on', btn.dataset.cat === libCategory);
       });
+      const subWrap = $('#lib-sub-chips-wrap');
+      if (subWrap) subWrap.innerHTML = renderLibSubPills();
+      updateLibResults();
+      return;
+    }
+    case 'libsubcat': {
+      libSubCategory = t.dataset.subcat || 'All';
+      libPageSize = 40;
+      const subWrap = $('#lib-sub-chips-wrap');
+      if (subWrap) subWrap.innerHTML = renderLibSubPills();
       updateLibResults();
       return;
     }
@@ -5102,6 +5493,7 @@ document.addEventListener('click', e => {
       return;
     }
     case 'done': {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
       const x = S.act?.ex[i], s = x?.sets[j];
       if (!s) return;
       if (x.uni) {
@@ -5109,6 +5501,7 @@ document.addEventListener('click', e => {
           s.done = false;
           s.sideL = false;
           s.sideR = false;
+          ls.set('act', S.act);
           save('act');
           switchWorkExercise(i, false);
           return;
@@ -5116,6 +5509,7 @@ document.addEventListener('click', e => {
           s.done = true;
           s.sideL = true;
           s.sideR = true;
+          ls.set('act', S.act);
           save('act');
           handleSetCompleted(i, j, s, x);
           return;
@@ -5123,6 +5517,7 @@ document.addEventListener('click', e => {
       } else {
         const wasDone = s.done;
         s.done = !s.done;
+        ls.set('act', S.act);
         save('act');
         if (!wasDone && s.done) {
           handleSetCompleted(i, j, s, x);
@@ -5156,16 +5551,19 @@ document.addEventListener('click', e => {
             save('routines');
           }
         }
+        ls.set('act', S.act);
         save('act');
       }
       break;
     }
     case 'donel': {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
       const x = S.act?.ex[i], s = x?.sets[j];
       if (!s) return;
       s.sideL = !s.sideL;
       const wasDone = s.done;
       s.done = !!(s.sideL && s.sideR);
+      ls.set('act', S.act);
       save('act');
       if (!wasDone && s.done) {
         handleSetCompleted(i, j, s, x);
@@ -5176,11 +5574,13 @@ document.addEventListener('click', e => {
       }
     }
     case 'doner': {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(20);
       const x = S.act?.ex[i], s = x?.sets[j];
       if (!s) return;
       s.sideR = !s.sideR;
       const wasDone = s.done;
       s.done = !!(s.sideL && s.sideR);
+      ls.set('act', S.act);
       save('act');
       if (!wasDone && s.done) {
         handleSetCompleted(i, j, s, x);
@@ -5237,6 +5637,7 @@ document.addEventListener('click', e => {
       if (!x) return;
       const prev = x.sets.at(-1) || { w: 0, r: X(x.id).t === 't' ? 30 : 8, rpe: '', rir: null };
       x.sets.push({ ...prev, done: false, sideL: false, sideR: false, rir: null, rpe: '' });
+      ls.set('act', S.act);
       save('act');
       break;
     }
@@ -5244,6 +5645,7 @@ document.addEventListener('click', e => {
       const x = S.act?.ex[i];
       if (x && x.sets.length > 1) {
         x.sets.pop();
+        ls.set('act', S.act);
         save('act');
         break;
       }
@@ -5344,9 +5746,20 @@ document.addEventListener('click', e => {
     }
     case 'pickcat': {
       pickCategory = t.dataset.cat;
+      pickSubCategory = 'All';
       document.querySelectorAll('.chips button[data-a="pickcat"]').forEach(btn => {
         btn.classList.toggle('on', btn.dataset.cat === pickCategory);
       });
+      const subWrap = $('#pick-sub-chips-wrap');
+      if (subWrap) subWrap.innerHTML = renderPickSubPills();
+      const pickList = $('#pick-list');
+      if (pickList) pickList.innerHTML = renderPickResults();
+      return;
+    }
+    case 'picksubcat': {
+      pickSubCategory = t.dataset.subcat || 'All';
+      const subWrap = $('#pick-sub-chips-wrap');
+      if (subWrap) subWrap.innerHTML = renderPickSubPills();
       const pickList = $('#pick-list');
       if (pickList) pickList.innerHTML = renderPickResults();
       return;
@@ -5358,6 +5771,7 @@ document.addEventListener('click', e => {
       const curW = parseFloat(s.w) || 0;
       const newW = Math.max(0, Math.round((curW + delta) * 10) / 10);
       s.w = newW;
+      ls.set('act', S.act);
       save('act');
       const inp = document.querySelector(`input[data-f="w"][data-i="${i}"][data-j="${j}"]`);
       if (inp) inp.value = newW;
@@ -5379,6 +5793,7 @@ document.addEventListener('click', e => {
       x.sets.forEach(s => {
         s.w = Math.max(0, Math.round(((parseFloat(s.w) || 0) + inc) * 10) / 10);
       });
+      ls.set('act', S.act);
       save('act');
       toast(`Applied +${inc}kg Double Progression! ⚡`);
       switchWorkExercise(i, false);
@@ -5394,7 +5809,7 @@ document.addEventListener('click', e => {
           <div class="confirm-icon">🏁</div>
           <h2>Finish and Save Workout?</h2>
           <p class="t2" style="margin-bottom:16px">All completed sets, reps, and PRs will be logged to your history.</p>
-          <button class="btn" data-a="fin" style="margin-bottom:8px">Finish & Log Workout 🏆</button>
+          <button class="btn finish-save-btn" data-a="confirmfin" data-test="confirmfin" style="margin-bottom:8px">Finish & Log Workout 🏆</button>
           <button class="btn s" data-a="closemodal">Continue Logging</button>
         </div>
       `);
@@ -5414,6 +5829,7 @@ document.addEventListener('click', e => {
     }
     case 'confirmdiscard': {
       S.act = null;
+      ls.set('act', null);
       save('act');
       stopRest();
       close();
@@ -5457,8 +5873,106 @@ document.addEventListener('click', e => {
       }
       return;
     }
-    case 'fin': finish(); return;
-    case 'cancel': if (confirm('Discard this workout?')) { S.act = null; save('act'); stopRest(); view = 'train'; } break;
+    case 'confirmfin':
+    case 'savefin':
+    case 'fin': {
+      finishWorkout();
+      return;
+    }
+    case 'removecursessionex': {
+      if (!S.act || !Array.isArray(S.act.ex)) return;
+      const exIdx = parseInt(t.dataset.i ?? S.act.curEx, 10);
+      if (isNaN(exIdx) || exIdx < 0 || exIdx >= S.act.ex.length) return;
+      if (S.act.ex.length <= 1) {
+        toast('Cannot remove only remaining exercise. Discard workout instead.');
+        return;
+      }
+      const exObj = X(S.act.ex[exIdx].id);
+      const exName = exObj ? exObj.name : 'Exercise';
+      S.act.ex.splice(exIdx, 1);
+      if (S.act.curEx >= S.act.ex.length) {
+        S.act.curEx = Math.max(0, S.act.ex.length - 1);
+      }
+      ls.set('act', S.act);
+      save('act');
+      toast(`Removed ${exName} from today's session`);
+      render();
+      return;
+    }
+    case 'resumesession': {
+      if (S.act) {
+        view = 'work';
+        render();
+      }
+      return;
+    }
+    case 'openfreeworkout': {
+      showFreeWorkoutBuilderModal();
+      return;
+    }
+    case 'togglefreemuscle': {
+      const m = t.dataset.muscle;
+      if (!m) return;
+      const idx = freeWorkoutMuscles.indexOf(m);
+      if (idx >= 0) {
+        if (freeWorkoutMuscles.length > 1) {
+          freeWorkoutMuscles.splice(idx, 1);
+        } else {
+          toast('Select at least one muscle group');
+          return;
+        }
+      } else {
+        freeWorkoutMuscles.push(m);
+      }
+      showFreeWorkoutBuilderModal();
+      return;
+    }
+    case 'togglefreeex': {
+      const exId = t.dataset.id;
+      if (!exId) return;
+      if (freeWorkoutSelectedEx.has(exId)) {
+        freeWorkoutSelectedEx.delete(exId);
+      } else {
+        freeWorkoutSelectedEx.add(exId);
+      }
+      const row = t.closest('.free-ex-row');
+      if (row) {
+        row.classList.toggle('selected', freeWorkoutSelectedEx.has(exId));
+        const chk = row.querySelector('.free-ex-chk');
+        if (chk) chk.checked = freeWorkoutSelectedEx.has(exId);
+      }
+      const countEl = $('#free-matches-count');
+      const startBtn = $('.free-start-btn');
+      const matchingCount = getFreeWorkoutExercises(freeWorkoutMuscles).length;
+      if (countEl) countEl.innerHTML = `<b>${matchingCount}</b> exercises found (${freeWorkoutSelectedEx.size} selected)`;
+      if (startBtn) startBtn.textContent = `⚡ Start Session (${freeWorkoutSelectedEx.size} Exercises)`;
+      return;
+    }
+    case 'clearfreesel': {
+      freeWorkoutSelectedEx.clear();
+      const listEl = $('#free-ex-list');
+      const matching = getFreeWorkoutExercises(freeWorkoutMuscles);
+      if (listEl) listEl.innerHTML = renderFreeWorkoutExerciseRows(matching);
+      const countEl = $('#free-matches-count');
+      const startBtn = $('.free-start-btn');
+      if (countEl) countEl.innerHTML = `<b>${matching.length}</b> exercises found (0 selected)`;
+      if (startBtn) startBtn.textContent = `⚡ Start Session (0 Exercises)`;
+      return;
+    }
+    case 'startfreesession': {
+      startFreeWorkout();
+      return;
+    }
+    case 'cancel':
+      if (confirm('Discard this workout?')) {
+        S.act = null;
+        ls.set('act', null);
+        save('act');
+        stopRest();
+        view = 'train';
+        render();
+      }
+      return;
     case 'hist': {
       const l = S.logs.find(l => String(l.id) === String(id));
       if (!l) return;
@@ -5673,6 +6187,7 @@ const handleFieldUpdate = t => {
         s[f] = parseFloat(t.value) || 0;
       }
     }
+    ls.set('act', S.act);
     save('act');
   }
 
@@ -5938,7 +6453,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.6.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.7.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -5965,6 +6480,20 @@ if (typeof globalThis !== 'undefined') {
     vTrain,
     vWork,
     vHist,
+    finishWorkout,
+    finish: finishWorkout,
+    calcWeeklyMuscleFrequency,
+    renderWeeklyMuscleFrequencyCard,
+    WEEKLY_FREQ_TARGETS,
+    getFreeWorkoutExercises,
+    showFreeWorkoutBuilderModal,
+    startFreeWorkout,
+    FREE_WORKOUT_TARGETS,
+    matchesSubMuscle,
+    SUB_MUSCLES,
+    ls,
+    put,
+    save,
     renderRoutineSummaryRow,
     calcWorkload,
     checkDeloadStatus,

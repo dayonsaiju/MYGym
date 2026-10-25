@@ -922,24 +922,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.6.1-persist, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.6.1-persist';"), 'sw.js must use mygym-core-v5.6.1-persist cache name');
-  assert(swCode.includes("'./style.css?v=5.6.1'"), 'sw.js must precache style.css?v=5.6.1');
-  assert(swCode.includes("'./app.js?v=5.6.1'"), 'sw.js must precache app.js?v=5.6.1');
+it('sw.js cache key is bumped to mygym-core-v5.7.0-flow, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.7.0-flow';"), 'sw.js must use mygym-core-v5.7.0-flow cache name');
+  assert(swCode.includes("'./style.css?v=5.7.0'"), 'sw.js must precache style.css?v=5.7.0');
+  assert(swCode.includes("'./app.js?v=5.7.0'"), 'sw.js must precache app.js?v=5.7.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.6.1'), 'index.html must link style.css?v=5.6.1');
-  assert(htmlCode.includes('app.js?v=5.6.1'), 'index.html must load app.js?v=5.6.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.6.1-persist'"), 'index.html must use mygym-core-v5.6.1-persist');
+  assert(htmlCode.includes('style.css?v=5.7.0'), 'index.html must link style.css?v=5.7.0');
+  assert(htmlCode.includes('app.js?v=5.7.0'), 'index.html must load app.js?v=5.7.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.7.0-flow'"), 'index.html must use mygym-core-v5.7.0-flow');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.6.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.6.1-persist');
+  assert.equal(api.APP_VERSION, '5.7.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.7.0-flow');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1491,6 +1491,229 @@ it('vTrain, vHist, and showMuscleDetailSheet safely restore references from sing
 
   // Restore
   api.EXDB = savedDb;
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 16: MOBILE-FIRST LOGGING, FREE WORKOUT BUILDER & 2X MUSCLE FREQUENCY (v5.7.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 16: Mobile-First Logging, Free Workout Builder, 2x Muscle Frequency & Hotfixes');
+
+it('Finish modal save button triggers finishWorkout() directly and transitions to history', () => {
+  // Setup active workout session with completed sets
+  const initialLogsCount = api.S.logs.length;
+  api.S.act = {
+    id: 'test_act_fin',
+    name: 'Upper Body Blast',
+    t0: Date.now() - 3600000,
+    curEx: 0,
+    ex: [
+      {
+        id: '0025',
+        sets: [
+          { w: 80, r: 10, done: true },
+          { w: 80, r: 8, done: true }
+        ]
+      }
+    ]
+  };
+  api.ls.set('act', api.S.act);
+
+  // Trigger finishWorkout directly
+  api.finishWorkout();
+
+  // Assert session transitioned to history
+  assert.equal(api.S.act, null, 'Active workout state must be cleared');
+  assert.equal(api.ls.get('act'), null, 'localStorage act must be explicitly cleared');
+  assert.equal(api.S.logs.length, initialLogsCount + 1, 'Workout must be appended to S.logs');
+  const logged = api.S.logs[api.S.logs.length - 1];
+  assert.equal(logged.name, 'Upper Body Blast', 'Logged workout name must match');
+  assert.equal(logged.ex.length, 1, 'Logged workout must have 1 completed exercise');
+  assert.equal(logged.ex[0].sets.length, 2, 'Logged exercise must have 2 sets');
+});
+
+it('Continuous auto-save persists active workout state and Train tab displays "⚡ Resume Active Workout" banner', () => {
+  // Set active session in state and localStorage
+  api.S.act = {
+    id: 'test_resume_act',
+    name: 'Push Hypertrophy',
+    t0: Date.now() - 1800000,
+    curEx: 0,
+    ex: [
+      {
+        id: '0025',
+        sets: [
+          { w: 75, r: 10, done: true },
+          { w: 75, r: 9, done: false }
+        ]
+      }
+    ]
+  };
+  api.ls.set('act', api.S.act);
+
+  // Train view must display Resume Active Workout floating banner
+  const trainHtml = api.vTrain();
+  assert(trainHtml.includes('⚡ Resume Active Workout'), 'Train view must display "⚡ Resume Active Workout" banner');
+  assert(trainHtml.includes('Push Hypertrophy'), 'Banner must display active workout name');
+  assert(trainHtml.includes('1/2 sets logged'), 'Banner must reflect logged sets count');
+
+  // Verify modal styling guarantees z-index 10000 and touch-action
+  assert(cssCode.includes('z-index: 10000'), 'style.css #m must have z-index: 10000');
+  assert(cssCode.includes('touch-action: manipulation'), 'style.css #m must have touch-action: manipulation');
+});
+
+it('Session-only exercise removal action removes from S.act.ex without mutating underlying routine', () => {
+  // Setup routine in S.routines
+  const routineId = 'r_template_protected';
+  api.S.routines = [
+    {
+      id: routineId,
+      name: 'Full Body Routine',
+      ex: [
+        { id: '0025', sets: 3, reps: 8, w: 70 },
+        { id: '0741', sets: 3, reps: 10, w: 90 }
+      ]
+    }
+  ];
+
+  // Start active workout from routine
+  api.S.act = {
+    id: 'act_session_remove',
+    rid: routineId,
+    name: 'Full Body Routine',
+    t0: Date.now(),
+    curEx: 0,
+    ex: [
+      { id: '0025', sets: [{ w: 70, r: 8, done: true }] },
+      { id: '0741', sets: [{ w: 90, r: 10, done: false }] }
+    ]
+  };
+
+  // Remove first exercise from active session only
+  api.S.act.ex.splice(0, 1);
+  assert.equal(api.S.act.ex.length, 1, 'Active session must now have 1 exercise');
+  assert.equal(api.S.act.ex[0].id, '0741', 'Remaining active exercise must be 0741');
+
+  // Underlying routine template MUST remain completely unmutated
+  const routine = api.S.routines.find(r => r.id === routineId);
+  assert.equal(routine.ex.length, 2, 'Routine template MUST NOT lose its exercise');
+  assert.equal(routine.ex[0].id, '0025', 'Routine template must preserve 0025');
+  assert.equal(routine.ex[1].id, '0741', 'Routine template must preserve 0741');
+});
+
+it('Quick/Free Workout Builder filters matching movements and dynamically boots ad-hoc session', () => {
+  // Target Chest and Shoulders
+  const exercises = api.getFreeWorkoutExercises(['Chest', 'Shoulders']);
+  assert(exercises.length > 0, 'Must return matching exercises for Chest & Shoulders');
+
+  // Verify compound ranking prioritization
+  const firstEx = exercises[0];
+  assert(firstEx.name, 'Exercise must have a name');
+
+  // Start free workout with selected IDs
+  const selectedIds = [exercises[0].id, exercises[1].id];
+  api.startFreeWorkout(selectedIds);
+
+  assert(api.S.act != null, 'Active workout session must be booted');
+  assert(api.S.act.name.includes('Free:'), 'Workout name must be prefixed with Free:');
+  assert.equal(api.S.act.ex.length, 2, 'Session must contain the 2 selected exercises');
+  assert.equal(api.S.act.rid, undefined, 'Free session must not require a saved routine ID');
+
+  // Clean up
+  api.S.act = null;
+  api.ls.set('act', null);
+});
+
+it('Weekly 2x Muscle Frequency Engine tracks distinct session days in rolling 7-day period', () => {
+  const now = Date.now();
+  const dayMs = 86400000;
+
+  // Mock logs over rolling 7 days:
+  // Day 1: Chest (0025)
+  // Day 3: Chest (0025) -> Chest reaches 2/2 Opt
+  // Day 4: Back (0007)  -> Back reaches 1/2
+  const mockLogs = [
+    {
+      id: 'log1',
+      date: now - dayMs * 1,
+      name: 'Chest Day',
+      ex: [{ id: '0025', sets: [{ w: 80, r: 8, done: true }] }]
+    },
+    {
+      id: 'log2',
+      date: now - dayMs * 3,
+      name: 'Chest Day 2',
+      ex: [{ id: '0025', sets: [{ w: 82.5, r: 8, done: true }] }]
+    },
+    {
+      id: 'log3',
+      date: now - dayMs * 4,
+      name: 'Back Day',
+      ex: [{ id: '0007', sets: [{ w: 60, r: 10, done: true }] }] // 0007 is alternate lateral pulldown (lats/back)
+    }
+  ];
+
+  const freq = api.calcWeeklyMuscleFrequency(mockLogs, new Date(now));
+  assert(freq['Chest'], 'Chest must be tracked');
+  assert.equal(freq['Chest'].days, 2, 'Chest must have 2 distinct session days');
+  assert.equal(freq['Chest'].target, 2, 'Chest target must be 2');
+  assert.equal(freq['Chest'].status, 'optimal', 'Chest >=2 sessions must be optimal');
+
+  assert(freq['Back'], 'Back must be tracked');
+  assert.equal(freq['Back'].days, 1, 'Back must have 1 distinct session day');
+  assert.equal(freq['Back'].status, 'moderate', 'Back 1 session must be moderate');
+
+  // Render weekly frequency card HTML
+  const cardHtml = api.renderWeeklyMuscleFrequencyCard(mockLogs);
+  assert(cardHtml.includes('Weekly Muscle Frequency'), 'Card must have title');
+  assert(cardHtml.includes('Chest'), 'Card must list Chest');
+  assert(cardHtml.includes('Back'), 'Card must list Back');
+  assert(cardHtml.includes('●●'), 'Card must render dual-pips for completed target');
+  assert(cardHtml.includes('dot-green'), 'Optimal target must have dot-green class');
+});
+
+it('Sub-muscle classification correctly maps anatomy pills in exercise picker and library', () => {
+  // Test Chest sub-muscle mapping
+  const inclineBench = { name: 'Incline Barbell Bench Press', tg: 'pectorals', g: 'Chest' };
+  const flatBench = { name: 'Barbell Bench Press', tg: 'pectorals', g: 'Chest' };
+
+  assert(api.matchesSubMuscle(inclineBench, 'Chest', 'Upper'), 'Incline press must match Upper Chest');
+  assert(api.matchesSubMuscle(flatBench, 'Chest', 'Mid/Lower'), 'Flat bench press must match Mid/Lower Chest');
+
+  // Test Shoulder sub-muscle mapping
+  const frontRaise = { name: 'Dumbbell Front Raise', tg: 'delts', g: 'Shoulders' };
+  const lateralRaise = { name: 'Dumbbell Lateral Raise', tg: 'delts', g: 'Shoulders' };
+  const rearFly = { name: 'Dumbbell Rear Lateral Raise', tg: 'delts', g: 'Shoulders' };
+
+  assert(api.matchesSubMuscle(frontRaise, 'Shoulders', 'Front'), 'Front raise must match Front delts');
+  assert(api.matchesSubMuscle(lateralRaise, 'Shoulders', 'Lateral'), 'Lateral raise must match Lateral delts');
+  assert(api.matchesSubMuscle(rearFly, 'Shoulders', 'Rear'), 'Rear fly must match Rear delts');
+});
+
+it('Active Set Logging Row (.set-row) implements clean 3-column mobile-first layout', () => {
+  // Setup active workout
+  const testAct = {
+    id: 'test_hero_row',
+    name: 'Arm Day',
+    t0: Date.now(),
+    curEx: 0,
+    ex: [
+      {
+        id: '0025',
+        sets: [{ w: 80, r: 10, done: false }]
+      }
+    ]
+  };
+
+  const cardHtml = api.renderWorkHeroCard(testAct, 0);
+  assert(cardHtml.includes('set-row'), 'Set row must have class set-row');
+  assert(cardHtml.includes('set-col-num'), 'Must have Column 1: set-col-num');
+  assert(cardHtml.includes('set-col-main'), 'Must have Column 2: set-col-main');
+  assert(cardHtml.includes('set-col-done'), 'Must have Column 3: set-col-done');
+  assert(cardHtml.includes('set-prev-microlabel'), 'Must have muted micro-label above inputs');
+  assert(cardHtml.includes('set-val-input'), 'Must have generous touch inputs');
+  assert(cardHtml.includes('btn-step'), 'Must have micro-steppers');
+  assert(cardHtml.includes('set-done-btn'), 'Must have circular done check button');
+  assert(cardHtml.includes('data-a="removecursessionex"'), 'Must have session-only remove action button');
 });
 
 console.log(`\n======================================================`);
