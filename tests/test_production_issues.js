@@ -922,24 +922,24 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.7.0-flow, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.7.0-flow';"), 'sw.js must use mygym-core-v5.7.0-flow cache name');
-  assert(swCode.includes("'./style.css?v=5.7.0'"), 'sw.js must precache style.css?v=5.7.0');
-  assert(swCode.includes("'./app.js?v=5.7.0'"), 'sw.js must precache app.js?v=5.7.0');
+it('sw.js cache key is bumped to mygym-core-v5.8.0-stable, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.8.0-stable';"), 'sw.js must use mygym-core-v5.8.0-stable cache name');
+  assert(swCode.includes("'./style.css?v=5.8.0'"), 'sw.js must precache style.css?v=5.8.0');
+  assert(swCode.includes("'./app.js?v=5.8.0'"), 'sw.js must precache app.js?v=5.8.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.7.0'), 'index.html must link style.css?v=5.7.0');
-  assert(htmlCode.includes('app.js?v=5.7.0'), 'index.html must load app.js?v=5.7.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.7.0-flow'"), 'index.html must use mygym-core-v5.7.0-flow');
+  assert(htmlCode.includes('style.css?v=5.8.0'), 'index.html must link style.css?v=5.8.0');
+  assert(htmlCode.includes('app.js?v=5.8.0'), 'index.html must load app.js?v=5.8.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.8.0-stable'"), 'index.html must use mygym-core-v5.8.0-stable');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.7.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.7.0-flow');
+  assert.equal(api.APP_VERSION, '5.8.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.8.0-stable');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1714,6 +1714,181 @@ it('Active Set Logging Row (.set-row) implements clean 3-column mobile-first lay
   assert(cardHtml.includes('btn-step'), 'Must have micro-steppers');
   assert(cardHtml.includes('set-done-btn'), 'Must have circular done check button');
   assert(cardHtml.includes('data-a="removecursessionex"'), 'Must have session-only remove action button');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 17: FINISH MODAL FIX, TRAIN REDESIGN & CUSTOM EXERCISES (v5.8.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 17: Finish Modal Fix, Train Screen Redesign, Custom Exercises & Gamification (v5.8.0)');
+
+it('Finish confirmation modal button has data-a="commit-finish" and executing it completes workout and clears active state', () => {
+  // Setup active workout
+  api.S.act = {
+    id: 'test_commit_fin',
+    name: 'Evening Push Session',
+    t0: Date.now() - 3600000,
+    curEx: 0,
+    ex: [
+      {
+        id: '0025',
+        sets: [{ w: 75, r: 8, done: true }]
+      }
+    ]
+  };
+  api.ls.set('act', api.S.act);
+
+  // Check promptfin modal contains data-a="commit-finish"
+  assert(appCode.includes('data-a="commit-finish"'), 'Confirmation modal must use data-a="commit-finish"');
+
+  // Verify document click listener handles case 'commit-finish':
+  assert(appCode.includes("case 'commit-finish':"), "app.js click listener must handle case 'commit-finish'");
+
+  // Execute finishWorkout directly
+  const prevLogsCount = api.S.logs.length;
+  api.finishWorkout();
+
+  // Verify S.act is cleared
+  assert.equal(api.S.act, null, 'S.act must be null after finish');
+  assert.equal(api.ls.get('act'), null, 'localStorage act must be null after finish');
+  assert.equal(api.S.logs.length, prevLogsCount + 1, 'Workout log must be saved to history');
+  const lastLog = api.S.logs.at(-1);
+  assert.equal(lastLog.name, 'Evening Push Session');
+});
+
+it('Active workout hero toolbar includes Quick Finish button data-a="commit-finish"', () => {
+  const testAct = {
+    id: 'test_quick_finish',
+    name: 'Upper Hypertrophy',
+    t0: Date.now(),
+    curEx: 0,
+    ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }]
+  };
+  const cardHtml = api.renderWorkHeroCard(testAct, 0);
+  assert(cardHtml.includes('data-a="commit-finish"'), 'Work hero card must include data-a="commit-finish" button');
+  assert(cardHtml.includes('Quick Finish'), 'Button must display Quick Finish');
+});
+
+it('Custom Exercise creation persists to S.customExercises, merges with EXDB/EXIDX, and resolves via exById', () => {
+  const customId = 'cust_test_incline_hammer';
+  const customEx = {
+    id: customId,
+    name: 'Incline Hammer Chest Press',
+    g: 'Chest',
+    bp: 'chest',
+    eq: 'machine',
+    tg: 'pectorals',
+    sec: ['triceps'],
+    st: [],
+    img: '',
+    gif: '',
+    t: 'w',
+    type: 'strength',
+    u: false,
+    notes: 'Focus on peak contraction',
+    isCustom: true
+  };
+
+  if (!Array.isArray(api.S.customExercises)) api.S.customExercises = [];
+  api.S.customExercises.push(customEx);
+  api.mergeCustomExercises();
+
+  // Verify custom exercise resolves in exById
+  const resolved = api.exById(customId);
+  assert(resolved, 'Custom exercise must resolve via exById');
+  assert.equal(resolved.name, 'Incline Hammer Chest Press');
+  assert.equal(resolved.g, 'Chest');
+  assert.equal(resolved.isCustom, true);
+
+  // Verify custom exercise is in EXDB
+  const foundInDb = api.EXDB.find(e => e.id === customId);
+  assert(foundInDb, 'Custom exercise must be merged into EXDB');
+});
+
+it('Smart alias search matches across synonyms (lat pulldown, incline press, rdl) and offers 1-tap custom exercise creation on 0 results', () => {
+  // Test lat pulldown matching pulldown exercises
+  const testEx1 = { name: 'Cable Pulldown', tg: 'lats', g: 'Back', eq: 'cable' };
+  assert(api.matchesExerciseSearch(testEx1, 'lat pulldown'), 'lat pulldown must match Cable Pulldown');
+
+  // Test incline press matching incline bench
+  const testEx2 = { name: 'Barbell Incline Bench Press', tg: 'pectorals', g: 'Chest', eq: 'barbell' };
+  assert(api.matchesExerciseSearch(testEx2, 'incline press'), 'incline press must match Barbell Incline Bench Press');
+
+  // Test empty search state renders 1-tap create button
+  const emptyQuery = 'NonExistentExerciseXYZ';
+  const pickResultsHtml = `<div class="empty-search-card">
+    <button class="btn sm-btn" data-a="opencustomex" data-name="${emptyQuery}">+ Create "${emptyQuery}" as Custom Exercise</button>
+  </div>`;
+  assert(pickResultsHtml.includes('opencustomex'), 'Empty search must render opencustomex action');
+  assert(pickResultsHtml.includes('Create'), 'Empty search must render Create button');
+});
+
+it('Train screen layout renders Today Split hero card, compact routines accordion, and no horizontal overflow on resume banner', () => {
+  // Test resume banner CSS properties
+  assert(cssCode.includes('.active-session-resume-banner'), 'style.css must style .active-session-resume-banner');
+  assert(cssCode.includes('overflow: hidden'), 'Resume banner must enforce overflow: hidden');
+  assert(cssCode.includes('box-sizing: border-box'), 'Resume banner must use box-sizing: border-box');
+  assert(cssCode.includes('.asrb-btn'), 'style.css must style .asrb-btn');
+  assert(cssCode.includes('flex-shrink: 0'), '.asrb-btn must have flex-shrink: 0');
+
+  // Test Train screen HTML structure
+  api.S.sched = { [new Date().getDay()]: 'r_today_test' };
+  api.S.routines = [
+    {
+      id: 'r_today_test',
+      name: 'Heavy Push Day',
+      ex: [{ id: '0025', sets: [{ w: 100, r: 5, done: false }] }]
+    },
+    {
+      id: 'r_other_1',
+      name: 'Pull & Back Day',
+      ex: [{ id: '0027', sets: [{ w: 70, r: 8, done: false }] }]
+    }
+  ];
+
+  const trainHtml = api.vTrain();
+  assert(trainHtml.includes("today-split-hero"), 'Train view must render Today Split hero card');
+  assert(trainHtml.includes("Heavy Push Day"), 'Hero card must render routine name');
+  assert(trainHtml.includes("routines-accordion"), 'Other routines must be in routines-accordion');
+  assert(trainHtml.includes("All Routines (2)"), 'Accordion must display All Routines count');
+});
+
+it('Gamified achievements calculate and unlock badges correctly (First Workout, Consistency Streak, Tonnage Titan, PR Crusher)', () => {
+  const mockLogs = [
+    {
+      id: 'l1',
+      date: Date.now() - 2 * 86400000,
+      name: 'Day 1',
+      ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] // 1000 kg
+    },
+    {
+      id: 'l2',
+      date: Date.now() - 86400000,
+      name: 'Day 2',
+      ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] // 1000 kg
+    },
+    {
+      id: 'l3',
+      date: Date.now(),
+      name: 'Day 3',
+      ex: [{ id: '0025', sets: [{ w: 100, r: 100, done: true }] }] // 10,000 kg -> total >= 10,000 kg
+    }
+  ];
+
+  const achievements = api.getAchievementsData(mockLogs);
+  assert.equal(achievements.length, 4, 'Must return 4 core achievements');
+
+  const firstWorkout = achievements.find(a => a.id === 'first_workout');
+  assert(firstWorkout, 'Must have first_workout achievement');
+  assert.equal(firstWorkout.unlocked, true, 'First workout must be unlocked when logs exist');
+
+  const tonnageTitan = achievements.find(a => a.id === 'tonnage_titan');
+  assert(tonnageTitan, 'Must have tonnage_titan achievement');
+  assert.equal(tonnageTitan.unlocked, true, 'Tonnage titan must unlock when total volume >= 10,000 kg');
+
+  const cardHtml = api.renderAchievementsCard(mockLogs);
+  assert(cardHtml.includes('achievements-card'), 'Achievements card must have class achievements-card');
+  assert(cardHtml.includes('First Workout Logged'), 'Card must render First Workout Logged');
+  assert(cardHtml.includes('Tonnage Titan (10,000 kg)'), 'Card must render Tonnage Titan');
 });
 
 console.log(`\n======================================================`);

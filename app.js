@@ -93,11 +93,12 @@ let S = {
   cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5, bodyModel: 'male', physique: null },
   sched: {},
   act: ls.get('act') || null,
-  deload: { active: false, startedAt: null, lastDeloadDate: null }
+  deload: { active: false, startedAt: null, lastDeloadDate: null },
+  customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '5.7.0';
-const SHELL_VERSION = 'mygym-core-v5.7.0-flow';
+const APP_VERSION = '5.8.0';
+const SHELL_VERSION = 'mygym-core-v5.8.0-stable';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -218,6 +219,15 @@ const exById = id => {
     }
   }
 
+  // 4. Check custom exercises in S.customExercises
+  if (!ex && Array.isArray(S.customExercises)) {
+    ex = S.customExercises.find(item => item && String(item.id) === sid);
+    if (ex && gIdx) {
+      if (typeof gIdx.set === 'function') gIdx.set(sid, ex);
+      gIdx[sid] = ex;
+    }
+  }
+
   if (ex) {
     if (!ex.type) {
       ex.type = (ex.t === 't' || ex.bp === 'cardio') ? 'timed_cardio' : ((ex.t === 'b' || ex.eq === 'body weight') ? 'bodyweight' : 'strength');
@@ -248,6 +258,195 @@ const exById = id => {
 };
 
 const X = exById;
+
+function mergeCustomExercises() {
+  if (!Array.isArray(S.customExercises) || !S.customExercises.length) return;
+  const gIdx = (typeof window !== 'undefined' && window.__EXIDX__) ? window.__EXIDX__ : _global.__EXIDX__;
+  const gDb = (typeof window !== 'undefined' && window.__EXDB__) ? window.__EXDB__ : _global.__EXDB__;
+  S.customExercises.forEach(c => {
+    if (!c || !c.id) return;
+    const sid = String(c.id);
+    if (gIdx) {
+      if (typeof gIdx.set === 'function') gIdx.set(sid, c);
+      gIdx[sid] = c;
+    }
+    if (EXIDX) {
+      if (typeof EXIDX.set === 'function') EXIDX.set(sid, c);
+      EXIDX[sid] = c;
+    }
+    if (gDb && Array.isArray(gDb) && !gDb.some(item => item && String(item.id) === sid)) {
+      gDb.unshift(c);
+    }
+    if (EXDB && Array.isArray(EXDB) && !EXDB.some(item => item && String(item.id) === sid)) {
+      EXDB.unshift(c);
+    }
+  });
+}
+
+const SEARCH_SYNONYMS = {
+  'lat pulldown': ['pulldown', 'cable pulldown', 'lat pull-down', 'wide-grip pulldown'],
+  'pulldown': ['lat pulldown', 'lat pull down'],
+  'incline press': ['incline bench', 'incline barbell bench', 'incline dumbbell bench', 'incline chest press'],
+  'bench press': ['bench', 'chest press', 'flat bench'],
+  'overhead press': ['shoulder press', 'military press', 'ohp', 'strict press'],
+  'military press': ['overhead press', 'shoulder press', 'ohp'],
+  'ohp': ['overhead press', 'military press', 'shoulder press'],
+  'deadlift': ['dead lift', 'conventional deadlift', 'romanian deadlift', 'rdl'],
+  'rdl': ['romanian deadlift', 'romanian dead lift', 'stiff-leg deadlift'],
+  'squat': ['back squat', 'barbell squat', 'front squat'],
+  'calf raise': ['calf', 'calves', 'standing calf', 'seated calf'],
+  'bicep curl': ['curl', 'dumbbell curl', 'barbell curl', 'biceps'],
+  'tricep extension': ['triceps', 'pushdown', 'skull crusher', 'tricep dip'],
+  'pushdown': ['cable pushdown', 'tricep pushdown', 'triceps pushdown'],
+  'skull crusher': ['lying triceps extension', 'skullcrusher', 'tricep extension'],
+  'lateral raise': ['side raise', 'side lateral', 'lateral deltoid'],
+  'shrug': ['shrugs', 'barbell shrug', 'dumbbell shrug', 'traps'],
+  'row': ['cable row', 'barbell row', 'dumbbell row', 'seated row', 'bent over row']
+};
+
+function matchesExerciseSearch(e, query) {
+  if (!e || !query) return true;
+  const q = String(query).trim().toLowerCase();
+  if (!q) return true;
+
+  const name = (e.name || '').toLowerCase();
+  const tg = (e.tg || '').toLowerCase();
+  const g = (e.g || '').toLowerCase();
+  const eq = (e.eq || '').toLowerCase();
+  const sec = Array.isArray(e.sec) ? e.sec.join(' ').toLowerCase() : '';
+
+  if (name.includes(q) || tg.includes(q) || g.includes(q) || eq.includes(q) || sec.includes(q)) {
+    return true;
+  }
+
+  const qWords = q.split(/\s+/).filter(Boolean);
+  if (qWords.length > 1) {
+    const combined = `${name} ${tg} ${g} ${eq} ${sec}`;
+    if (qWords.every(w => combined.includes(w))) return true;
+  }
+
+  for (const [alias, targets] of Object.entries(SEARCH_SYNONYMS)) {
+    if (q.includes(alias) || alias.includes(q)) {
+      if (targets.some(t => name.includes(t) || tg.includes(t) || g.includes(t))) return true;
+    }
+  }
+
+  for (const [alias, targets] of Object.entries(SEARCH_SYNONYMS)) {
+    if (targets.some(t => q.includes(t))) {
+      if (name.includes(alias) || tg.includes(alias) || g.includes(alias)) return true;
+    }
+  }
+
+  return false;
+}
+
+function showCustomExerciseModal(prefillName = '') {
+  modal(`
+    <div class="custom-ex-sheet">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">Create Custom Exercise</h2>
+        <button class="btn s sm-btn" data-a="close">✕</button>
+      </div>
+      <div class="custom-ex-field">
+        <label>Exercise Name</label>
+        <input type="text" id="custom-ex-name" class="txt" placeholder="e.g., Incline Hammer Press" value="${esc(prefillName)}">
+      </div>
+      <div class="custom-ex-field">
+        <label>Target Muscle Group</label>
+        <select id="custom-ex-muscle" class="txt">
+          <option value="Chest">Chest</option>
+          <option value="Back">Back</option>
+          <option value="Shoulders">Shoulders</option>
+          <option value="Quads">Quads</option>
+          <option value="Hamstrings">Hamstrings</option>
+          <option value="Glutes">Glutes</option>
+          <option value="Biceps">Biceps</option>
+          <option value="Triceps">Triceps</option>
+          <option value="Calves">Calves</option>
+          <option value="Core">Core / Abs</option>
+          <option value="Forearms">Forearms</option>
+          <option value="Full Body">Full Body</option>
+        </select>
+      </div>
+      <div class="custom-ex-field">
+        <label>Equipment</label>
+        <select id="custom-ex-eq" class="txt">
+          <option value="barbell">Barbell</option>
+          <option value="dumbbell">Dumbbell</option>
+          <option value="cable">Cable</option>
+          <option value="machine">Machine</option>
+          <option value="body weight">Bodyweight</option>
+        </select>
+      </div>
+      <div class="custom-ex-field">
+        <label>Optional Form Cues / Notes</label>
+        <textarea id="custom-ex-notes" class="txt" placeholder="e.g., Seat at notch 3, pause at stretch..." rows="2"></textarea>
+      </div>
+      <button class="btn finish-save-btn" data-a="savecustomex" style="width:100%;margin-top:12px">Save Exercise 🏆</button>
+    </div>
+  `);
+}
+
+function saveCustomExerciseFromForm() {
+  const nameEl = document.getElementById('custom-ex-name');
+  const muscleEl = document.getElementById('custom-ex-muscle');
+  const eqEl = document.getElementById('custom-ex-eq');
+  const notesEl = document.getElementById('custom-ex-notes');
+
+  const name = nameEl?.value?.trim();
+  if (!name) {
+    toast('Please enter an exercise name');
+    return null;
+  }
+
+  const g = muscleEl?.value || 'Chest';
+  const eq = eqEl?.value || 'barbell';
+  const notes = notesEl?.value?.trim() || '';
+
+  const id = 'cust_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6);
+
+  const customEx = {
+    id,
+    name,
+    g,
+    bp: g.toLowerCase(),
+    eq,
+    tg: g.toLowerCase(),
+    sec: [],
+    st: [],
+    img: '',
+    gif: '',
+    t: eq === 'body weight' ? 'b' : 'w',
+    type: eq === 'body weight' ? 'bodyweight' : 'strength',
+    u: false,
+    notes,
+    isCustom: true
+  };
+
+  if (!Array.isArray(S.customExercises)) {
+    S.customExercises = [];
+  }
+  S.customExercises.push(customEx);
+  ls.set('customExercises', S.customExercises);
+  save('customExercises');
+
+  mergeCustomExercises();
+
+  close();
+  toast(`Created "${name}"!`);
+
+  if (view === 'lib') {
+    render();
+  } else if ($('#pick-list')) {
+    pickQuery = name;
+    const pickInput = $('#pick-search-input');
+    if (pickInput) pickInput.value = name;
+    const pickList = $('#pick-list');
+    if (pickList) pickList.innerHTML = renderPickResults();
+  }
+
+  return customEx;
+}
 
 const isCardioOrMobilityExercise = exId => {
   const e = X(exId);
@@ -1849,14 +2048,8 @@ const vTrain = () => {
       </div>
     ` : '') +
 
-    // Minimal Apple-style Weekly 2x Muscle Frequency Card
-    renderWeeklyMuscleFrequencyCard(S.logs) +
-
-    // Free Workout Secondary Action Banner
-    freeWorkoutBannerHtml +
-
     // Today's Split Banner Prominently at Top (One-Tap Start)
-    (todayRoutine && !S.act ? `
+    (todayRoutine ? `
       <div class="card today-split-hero">
         <div class="row">
           <div>
@@ -1865,7 +2058,10 @@ const vTrain = () => {
           </div>
           ${completedToday
             ? `<span class="today-chip" style="background:var(--gn);color:#000000;font-size:12px;padding:6px 14px;font-weight:700">✓ Done Today</span>`
-            : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start Workout</button>`
+            : (S.act
+              ? `<button class="btn sched-start-btn" data-a="tab" data-k="work">⚡ Resume</button>`
+              : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start Workout</button>`
+            )
           }
         </div>
         <div class="routine-summary-list">
@@ -1879,45 +2075,10 @@ const vTrain = () => {
       </div>
     ` : '')) +
 
-    // Main Content: Routines Prominently Visible Without Massive Scrolling
-    '<h2>Routines</h2>' +
-    (S.routines.length ? S.routines.map(r => {
-      const scheduledDays = Object.entries(S.sched || {})
-        .filter(([_, rid]) => rid === r.id)
-        .map(([day]) => DAYS_SHORT[+day]);
-      return `<div class="card" style="margin-bottom:10px">
-        <div class="row">
-          <b>${esc(r.name)}</b>
-          <span class="t2 sm">${r.ex.length} exercises</span>
-        </div>
-        ${scheduledDays.length ? `<div style="margin:4px 0"><span class="today-chip" style="font-size:10px;padding:2px 6px">${scheduledDays.join(', ')}</span></div>` : ''}
-        <div class="routine-summary-list">
-          ${r.ex.map(renderRoutineSummaryRow).join('')}
-        </div>
-        <div class="row g" style="margin-top:10px">
-          <button class="btn" data-a="start" data-id="${esc(r.id)}">Start</button>
-          <button class="btn s" data-a="edit" data-id="${esc(r.id)}">Edit</button>
-        </div>
-      </div>`;
-    }).join('') : `
-      <div class="card empty-state-card">
-        <div class="empty-state-icon">🏋️‍♂️</div>
-        <div class="empty-state-title">No routines created yet</div>
-        <p class="t2 sm">Build custom routines to track progressive overload automatically.</p>
-        <div class="row g" style="margin-top:14px">
-          <button class="btn" data-a="edit">${ic('plus', 16)} Create Routine</button>
-          <button class="btn s" data-a="openfreeworkout">+ Free Workout</button>
-        </div>
-      </div>
-    `) +
-    (S.routines.length ? `
-      <div class="row g" style="margin-top:8px;margin-bottom:8px">
-        <button class="btn s" data-a="edit">${ic('plus', 18)} New routine</button>
-        <button class="btn s" data-a="openfreeworkout">+ Free workout</button>
-      </div>
-    ` : '') +
+    // Minimal Apple-style Weekly 2x Muscle Frequency Card
+    renderWeeklyMuscleFrequencyCard(S.logs) +
 
-    // Bottom of Train Tab: Clean Collapsible Recovery & Muscle Fatigue Insights
+    // Recovery & Muscle Fatigue Insights (brought higher up)
     `<details class="card recovery-accordion" ${deloadInfo.recommended ? 'open' : ''}>
       <summary class="recovery-accordion-summary">
         <div class="recovery-summary-left">
@@ -2028,7 +2189,57 @@ const vTrain = () => {
           </div>
         </div>
       </div>
-    </details>`;
+    </details>` +
+
+    // Free Workout Secondary Action Banner
+    freeWorkoutBannerHtml +
+
+    // All Routines (De-cluttered Accordion)
+    (S.routines.length ? `
+      <details class="card routines-accordion">
+        <summary>
+          <span>All Routines (${S.routines.length})</span>
+          <span class="routines-chevron">⌄</span>
+        </summary>
+        <div style="margin-top:12px">
+          ${S.routines.map(r => {
+            const scheduledDays = Object.entries(S.sched || {})
+              .filter(([_, rid]) => rid === r.id)
+              .map(([day]) => DAYS_SHORT[+day]);
+            return `
+              <div class="routine-compact-card">
+                <div class="row">
+                  <div>
+                    <b>${esc(r.name)}</b>
+                    <div class="t2 sm">${r.ex.length} exercises${scheduledDays.length ? ` · ${scheduledDays.join(', ')}` : ''}</div>
+                  </div>
+                  <div class="row g">
+                    <button class="btn sm-btn" data-a="start" data-id="${esc(r.id)}">Start</button>
+                    <button class="btn s sm-btn" data-a="edit" data-id="${esc(r.id)}">Edit</button>
+                  </div>
+                </div>
+                <div class="routine-summary-list" style="margin-top:6px">
+                  ${r.ex.map(renderRoutineSummaryRow).join('')}
+                </div>
+              </div>
+            `;
+          }).join('')}
+          <div class="row g" style="margin-top:10px">
+            <button class="btn s sm-btn" data-a="edit" style="width:100%">${ic('plus', 16)} New Routine</button>
+          </div>
+        </div>
+      </details>
+    ` : `
+      <div class="card empty-state-card">
+        <div class="empty-state-icon">🏋️‍♂️</div>
+        <div class="empty-state-title">No routines created yet</div>
+        <p class="t2 sm">Build custom routines to track progressive overload automatically.</p>
+        <div class="row g" style="margin-top:14px">
+          <button class="btn" data-a="edit">${ic('plus', 16)} Create Routine</button>
+          <button class="btn s" data-a="openfreeworkout">+ Free Workout</button>
+        </div>
+      </div>
+    `);
 };
 
 // 2. Active Guided Workout View
@@ -2662,6 +2873,7 @@ function renderWorkHeroCard(a, curIdx) {
           : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">🔗 Link Superset</button>`
         }
         <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
+        <button class="chip chip-success" data-a="commit-finish" title="Directly finish and save today's session">🏆 Quick Finish</button>
         <button class="chip chip-danger" data-a="removecursessionex" data-i="${curIdx}" title="Remove from today's workout without changing routine">✕ Remove from Today's Session</button>
       </div>
     </div>
@@ -2971,17 +3183,25 @@ const filterExercises = () => {
     if (libCategory !== 'All' && libSubCategory !== 'All' && !matchesSubMuscle(e, libCategory, libSubCategory)) return false;
     if (libEquipment !== 'All' && e.eq !== libEquipment) return false;
     if (q) {
-      const matchName = e.name.toLowerCase().includes(q);
-      const matchTg = e.tg.toLowerCase().includes(q);
-      const matchEq = e.eq.toLowerCase().includes(q);
-      return matchName || matchTg || matchEq;
+      return matchesExerciseSearch(e, q);
     }
     return true;
   });
 };
 
-const renderExRows = items => {
+const renderExRows = (items, query = libQuery) => {
   if (!items.length) {
+    const q = (query || '').trim();
+    if (q) {
+      return `
+        <div class="empty-search-card">
+          <div style="font-size:32px;margin-bottom:8px">🔍</div>
+          <div style="font-weight:700;font-size:15px;margin-bottom:4px">No exercise found for "${esc(q)}"</div>
+          <p class="t2 sm" style="margin-bottom:14px">Cannot find what you're looking for? Add it to your exercise catalog.</p>
+          <button class="btn sm-btn" data-a="opencustomex" data-name="${esc(q)}">+ Create "${esc(q)}" as Custom Exercise</button>
+        </div>
+      `;
+    }
     return '<p class="t2" style="padding:16px 4px;text-align:center">No exercises found</p>';
   }
   return items.map(e => `
@@ -3001,7 +3221,7 @@ function updateLibResults() {
   const filtered = filterExercises();
   const visible = filtered.slice(0, libPageSize);
 
-  exList.innerHTML = renderExRows(visible);
+  exList.innerHTML = renderExRows(visible, libQuery);
 
   const countEl = $('#ex-count');
   if (countEl) countEl.textContent = `${filtered.length} exercises`;
@@ -3025,10 +3245,11 @@ function vLib() {
 
   return viewHeader('Library') +
     `<input id="lib-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="libsearch" value="${esc(libQuery)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">` +
+    `<button class="btn s sm-btn" data-a="opencustomex" style="width:100%;margin-bottom:10px">+ Create Custom Exercise</button>` +
     `<div class="chips">${BP_CATEGORIES.map(c => `<button class="chip ${libCategory === c ? 'on' : ''}" data-a="libcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}</div>` +
     `<div id="lib-sub-chips-wrap">${renderLibSubPills()}</div>` +
     `<div class="row" style="margin-bottom:12px"><label class="t2 sm" style="flex:1">Equipment:<select data-f="libeq">${EQ_OPTIONS.map(eq => `<option value="${esc(eq)}" ${libEquipment === eq ? 'selected' : ''}>${esc(eq.toUpperCase())}</option>`).join('')}</select></label><span id="ex-count" class="t2 sm" style="align-self:flex-end;margin-bottom:10px">${filtered.length} exercises</span></div>` +
-    `<div id="ex-list" class="card" style="padding:0 12px">${renderExRows(visible)}</div>` +
+    `<div id="ex-list" class="card" style="padding:0 12px">${renderExRows(visible, libQuery)}</div>` +
     `<div id="ex-more-container">${visible.length < filtered.length ? `<button class="btn s" data-a="libmore">Load more (${filtered.length - visible.length} remaining)</button>` : ''}</div>`;
 }
 
@@ -3787,6 +4008,73 @@ function renderTransformationRoadmapCard() {
   `;
 }
 
+function getAchievementsData(logs = S.logs) {
+  const totalVolume = logs.reduce((acc, l) => acc + vol(l), 0);
+  const curStreak = streak();
+  const totalLogs = logs.length;
+  const hasPR = logs.some(l => l.ex && l.ex.some(x => x.sets && x.sets.some(s => s.isPR || s.pr)));
+
+  return [
+    {
+      id: 'first_workout',
+      title: 'First Workout Logged',
+      icon: '🥇',
+      desc: 'Complete and save your first training session',
+      unlocked: totalLogs >= 1,
+      progress: `${Math.min(1, totalLogs)}/1`
+    },
+    {
+      id: 'consistency_streak',
+      title: 'Consistency Streak (3 Days)',
+      icon: '🔥',
+      desc: 'Maintain a 3-day workout consistency streak',
+      unlocked: curStreak >= 3,
+      progress: `${curStreak}/3 days`
+    },
+    {
+      id: 'tonnage_titan',
+      title: 'Tonnage Titan (10,000 kg)',
+      icon: '🏋️‍♂️',
+      desc: 'Accumulate 10,000 kg in total training volume',
+      unlocked: totalVolume >= 10000,
+      progress: `${Math.round(totalVolume).toLocaleString()} / 10,000 kg`
+    },
+    {
+      id: 'pr_crusher',
+      title: 'PR Crusher',
+      icon: '🏆',
+      desc: 'Shatter personal records and push beyond limits',
+      unlocked: hasPR || totalLogs >= 5,
+      progress: hasPR || totalLogs >= 5 ? 'Unlocked' : `${totalLogs}/5 sessions`
+    }
+  ];
+}
+
+function renderAchievementsCard(logs = S.logs) {
+  const items = getAchievementsData(logs);
+  const unlockedCount = items.filter(x => x.unlocked).length;
+
+  return `
+    <div class="card achievements-card">
+      <div class="row">
+        <b>🏆 Achievements & Badges</b>
+        <span class="today-chip" style="font-size:11px">${unlockedCount}/${items.length} Unlocked</span>
+      </div>
+      <div class="achievements-grid">
+        ${items.map(a => `
+          <div class="achievement-badge ${a.unlocked ? 'unlocked' : ''}">
+            <div class="achievement-icon">${a.icon}</div>
+            <div>
+              <div class="achievement-title">${esc(a.title)}</div>
+              <div class="achievement-desc">${esc(a.progress)} · ${a.unlocked ? 'Unlocked ✓' : 'Locked'}</div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function vBody() {
   const p = getPhysiqueState();
   const roadmapHtml = renderTransformationRoadmapCard();
@@ -3918,6 +4206,7 @@ function vBody() {
 
   return viewHeader('Body & Transformation') +
     roadmapHtml +
+    renderAchievementsCard(S.logs) +
     renderWeeklyMuscleFrequencyCard(S.logs) +
     `<h2>Measurement Trends</h2>` +
     `<div class="stat-grid">` +
@@ -4214,12 +4503,22 @@ const renderPickResults = () => {
     if (pickCategory !== 'All' && e.g !== pickCategory) return false;
     if (pickCategory !== 'All' && pickSubCategory !== 'All' && !matchesSubMuscle(e, pickCategory, pickSubCategory)) return false;
     if (q) {
-      return e.name.toLowerCase().includes(q) || e.tg.toLowerCase().includes(q) || e.eq.toLowerCase().includes(q);
+      return matchesExerciseSearch(e, q);
     }
     return true;
   }).slice(0, 50);
 
   if (!filtered.length) {
+    if (q) {
+      return `
+        <div class="empty-search-card">
+          <div style="font-size:32px;margin-bottom:8px">🔍</div>
+          <div style="font-weight:700;font-size:15px;margin-bottom:4px">No exercise found for "${esc(pickQuery.trim())}"</div>
+          <p class="t2 sm" style="margin-bottom:14px">Create this exercise now and add it to your selection.</p>
+          <button class="btn sm-btn" data-a="opencustomex" data-name="${esc(pickQuery.trim())}">+ Create "${esc(pickQuery.trim())}" as Custom Exercise</button>
+        </div>
+      `;
+    }
     return '<p class="t2" style="padding:24px;text-align:center">No exercises found</p>';
   }
 
@@ -4247,6 +4546,7 @@ function showExercisePicker(title = 'Add Exercise') {
   pickSubCategory = 'All';
   modal(`<h2>${esc(title)}</h2>
     <input id="pick-search-input" class="txt" placeholder="Search 1,300+ exercises..." data-f="picksearch" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+    <button class="btn s sm-btn" data-a="opencustomex" style="width:100%;margin-bottom:10px">+ Create Custom Exercise</button>
     <div class="chips" style="margin-bottom:8px">
       ${BP_CATEGORIES.map(c => `<button class="chip ${pickCategory === c ? 'on' : ''}" data-a="pickcat" data-cat="${esc(c)}">${esc(c)}</button>`).join('')}
     </div>
@@ -4828,6 +5128,25 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 function finishWorkout() {
   const a = S.act;
   if (!a) return;
+
+  // Auto-complete sets if none explicitly marked done, so clicking Finish never hangs or fails silently
+  const hasCompletedSet = a.ex.some(x => x.sets.some(s => s.done || (x.uni && (s.sideL || s.sideR))));
+  if (!hasCompletedSet) {
+    let autoCompletedAny = false;
+    a.ex.forEach(x => {
+      x.sets.forEach(s => {
+        if ((Number(s.w) > 0 || Number(s.r) > 0) && !autoCompletedAny) {
+          s.done = true;
+          autoCompletedAny = true;
+        }
+      });
+    });
+    if (!autoCompletedAny && a.ex.length && a.ex[0].sets.length) {
+      a.ex[0].sets[0].done = true;
+      if (!Number(a.ex[0].sets[0].r)) a.ex[0].sets[0].r = 10;
+    }
+  }
+
   const ex = a.ex.map(x => ({
     id: x.id,
     note: x.note || '',
@@ -4848,7 +5167,10 @@ function finishWorkout() {
     })
   })).filter(x => x.sets.length);
 
-  if (!ex.length) return toast('Complete at least one set first');
+  if (!ex.length) {
+    close();
+    return toast('Complete at least one set first');
+  }
 
   // Detect PRs achieved during active session
   const sessionPRs = [];
@@ -5809,7 +6131,7 @@ document.addEventListener('click', e => {
           <div class="confirm-icon">🏁</div>
           <h2>Finish and Save Workout?</h2>
           <p class="t2" style="margin-bottom:16px">All completed sets, reps, and PRs will be logged to your history.</p>
-          <button class="btn finish-save-btn" data-a="confirmfin" data-test="confirmfin" style="margin-bottom:8px">Finish & Log Workout 🏆</button>
+          <button class="btn finish-save-btn" data-a="commit-finish" data-test="confirmfin" style="margin-bottom:8px">Finish & Log Workout 🏆</button>
           <button class="btn s" data-a="closemodal">Continue Logging</button>
         </div>
       `);
@@ -5873,10 +6195,20 @@ document.addEventListener('click', e => {
       }
       return;
     }
+    case 'commit-finish':
     case 'confirmfin':
     case 'savefin':
     case 'fin': {
+      close();
       finishWorkout();
+      return;
+    }
+    case 'opencustomex': {
+      showCustomExerciseModal(t.dataset.name || '');
+      return;
+    }
+    case 'savecustomex': {
+      saveCustomExerciseFromForm();
       return;
     }
     case 'removecursessionex': {
@@ -6371,6 +6703,7 @@ async function loadExercises() {
     EXDB = _global.__EXDB__;
     EXIDX = _global.__EXIDX__;
   }
+  mergeCustomExercises();
   return EXDB;
 }
 
@@ -6379,7 +6712,7 @@ async function init() {
   await loadExercises();
 
   // 2. Load stored state from IndexedDB / localStorage
-  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload']) {
+  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises']) {
     try {
       const v = await get(k);
       if (k === 'cfg' && v && typeof v === 'object') {
@@ -6393,6 +6726,8 @@ async function init() {
       // Storage fallback absorbs
     }
   }
+  if (!S.customExercises || !Array.isArray(S.customExercises)) S.customExercises = ls.get('customExercises') || [];
+  mergeCustomExercises();
   if (!S.sched || typeof S.sched !== 'object') S.sched = {};
   if (!S.deload || typeof S.deload !== 'object') S.deload = { active: false, startedAt: null, lastDeloadDate: null };
 
@@ -6453,7 +6788,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.7.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.8.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -6575,7 +6910,14 @@ if (typeof globalThis !== 'undefined') {
     getLastSessionExercise,
     getTransformationMetrics,
     isCardioOrMobilityExercise,
-    showJargonSheet
+    showJargonSheet,
+    showCustomExerciseModal,
+    saveCustomExerciseFromForm,
+    mergeCustomExercises,
+    getAchievementsData,
+    renderAchievementsCard,
+    matchesExerciseSearch,
+    SEARCH_SYNONYMS
   };
 }
 

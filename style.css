@@ -445,13 +445,13 @@ input[type="checkbox"] {
   align-items: flex-end;
   z-index: 10000;
   touch-action: manipulation;
-  pointer-events: auto;
+  pointer-events: auto !important;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 
 #m[hidden] {
-  display: none;
+  display: none !important;
 }
 
 .sheet {
@@ -463,7 +463,20 @@ input[type="checkbox"] {
   border-radius: 20px 20px 0 0;
   padding: 14px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 16px);
   touch-action: manipulation;
-  pointer-events: auto;
+  pointer-events: auto !important;
+  position: relative;
+  z-index: 10001;
+}
+
+#m .finish-save-btn,
+#m .btn,
+.confirm-sheet button,
+.sheet button {
+  position: relative;
+  z-index: 10002;
+  pointer-events: auto !important;
+  cursor: pointer !important;
+  touch-action: manipulation;
 }
 
 .x {
@@ -893,8 +906,9 @@ input[type="checkbox"] {
 }
 
 .stat-grid {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
   margin: 12px 0;
 }
 
@@ -902,9 +916,13 @@ input[type="checkbox"] {
   background: var(--c1);
   border: 0.5px solid var(--bd);
   border-radius: 14px;
-  padding: 12px;
+  padding: 14px 12px;
   text-align: center;
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 80px;
+  box-sizing: border-box;
 }
 
 .stat-val {
@@ -3871,16 +3889,19 @@ textarea.note:focus {
   box-shadow: 0 2px 10px rgba(10, 132, 255, 0.35);
 }
 
-/* 2. Prominent Active Workout Resume Banner */
+/* 2. Prominent Active Workout Resume Banner (Zero-Overflow Flexbox) */
 .active-session-resume-banner {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   background: linear-gradient(135deg, rgba(10, 132, 255, 0.18), rgba(48, 209, 88, 0.14));
   border: 1.5px solid rgba(10, 132, 255, 0.45);
   border-radius: 16px;
-  padding: 14px 16px;
+  padding: 12px 14px;
   margin-bottom: 14px;
   cursor: pointer;
   touch-action: manipulation;
@@ -3888,37 +3909,49 @@ textarea.note:focus {
 }
 
 .asrb-icon {
-  font-size: 28px;
+  font-size: 24px;
   flex: none;
 }
 
 .asrb-text {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
 }
 
 .asrb-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #FFFFFF;
   letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .asrb-sub {
   font-size: 12px;
   color: var(--t2);
   margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .asrb-btn {
-  flex: none;
+  flex-shrink: 0;
+  flex-grow: 0;
+  width: auto;
+  max-width: 120px;
   min-height: 38px;
-  padding: 0 16px;
+  padding: 0 14px;
   font-size: 13px;
   font-weight: 700;
   background: var(--ac);
   color: #FFFFFF;
   border-radius: 20px;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 /* 3. Session-Only Exercise Removal Button */
@@ -4152,6 +4185,165 @@ textarea.note:focus {
   min-height: 48px;
   box-shadow: 0 4px 14px rgba(48, 209, 88, 0.35);
   touch-action: manipulation;
-  pointer-events: auto;
+  pointer-events: auto !important;
+  cursor: pointer !important;
 }
+
+/* Quick Finish Chip */
+.chip.chip-success {
+  background: rgba(48, 209, 88, 0.15);
+  color: var(--gn);
+  border: 0.5px solid rgba(48, 209, 88, 0.35);
+  font-weight: 700;
+}
+.chip.chip-success:active {
+  background: var(--gn);
+  color: #000000;
+}
+
+/* De-cluttered Train Screen Routines Accordion */
+.routines-accordion {
+  margin-top: 14px;
+  background: var(--c1);
+  border: 0.5px solid var(--bd);
+  border-radius: var(--r-md);
+  padding: 12px 14px;
+}
+.routines-accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 700;
+  font-size: 15px;
+}
+.routines-accordion summary::-webkit-details-marker {
+  display: none;
+}
+.routines-chevron {
+  color: var(--t2);
+  font-size: 16px;
+  transition: transform 0.2s ease;
+}
+.routines-accordion[open] .routines-chevron {
+  transform: rotate(180deg);
+}
+
+.routine-compact-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 0.5px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+
+/* Empty Search State Card */
+.empty-search-card {
+  text-align: center;
+  padding: 24px 16px;
+  margin: 12px 0;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+}
+
+/* Custom Exercise Modal */
+.custom-ex-field {
+  margin-bottom: 12px;
+}
+.custom-ex-field label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--t2);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Gamified Achievements */
+.achievements-card {
+  margin: 14px 0;
+  padding: 14px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.06), rgba(255, 159, 10, 0.04));
+  border: 0.5px solid rgba(255, 215, 0, 0.2);
+  border-radius: var(--r-md);
+}
+.achievements-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.achievements-title {
+  font-weight: 700;
+  font-size: 15px;
+  color: #FFFFFF;
+}
+.achievements-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.achievement-badge {
+  background: rgba(255, 255, 255, 0.03);
+  border: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  overflow: hidden;
+}
+.achievement-badge.unlocked {
+  background: linear-gradient(135deg, rgba(48, 209, 88, 0.12), rgba(10, 132, 255, 0.08));
+  border-color: rgba(48, 209, 88, 0.4);
+}
+.achievement-badge.locked {
+  opacity: 0.6;
+}
+.ach-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.ach-icon {
+  font-size: 22px;
+}
+.ach-status-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.ach-status-tag.unlocked {
+  background: var(--gn);
+  color: #000000;
+}
+.ach-status-tag.locked {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--t2);
+}
+.ach-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FFFFFF;
+  margin-top: 2px;
+}
+.ach-desc {
+  font-size: 10px;
+  color: var(--t2);
+  line-height: 1.3;
+}
+.ach-prog {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--am);
+  margin-top: 2px;
+}
+
 
