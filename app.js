@@ -1,3 +1,7 @@
+const Calc = (typeof window !== 'undefined' && (window.MYGYM_CALC || window.Calc)) ||
+             (typeof globalThis !== 'undefined' && (globalThis.MYGYM_CALC || globalThis.Calc)) ||
+             (typeof require === 'function' ? require('./calc.js') : null) || {};
+
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 9);
 const esc = s => String(s ?? '').replace(/[&<>'"]/g, c => ({
@@ -108,15 +112,28 @@ let S = {
   routines: [],
   logs: [],
   weights: [],
-  cfg: { rest: 90, flash: true, sound: true, vibrate: true, inc: 2.5, bodyModel: 'male', physique: null },
+  cfg: {
+    rest: 90,
+    flash: true,
+    sound: true,
+    vibrate: true,
+    inc: 2.5,
+    bodyModel: 'male',
+    physique: null,
+    dumbbellWeightMode: 'per_hand',
+    weekStartDay: 'mon',
+    includeBodyweightInVolume: false,
+    autoRest: true,
+    unit: 'kg'
+  },
   sched: {},
   act: ls.get('act') || null,
   deload: { active: false, startedAt: null, lastDeloadDate: null },
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '5.8.1';
-const SHELL_VERSION = 'mygym-core-v5.8.1-hotfix';
+const APP_VERSION = '5.9.0';
+const SHELL_VERSION = 'mygym-core-v5.9.0-calc';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -773,17 +790,24 @@ function showMuscleDetailSheet(muscleKey) {
 }
 
 // ---- Math & Progression Engine ----
-const rd = n => Math.round((Number(n) || 0) * 10) / 10;
-const e1 = (w, r) => {
+const rd = Calc.rd || (n => Math.round((Number(n) || 0) * 10) / 10);
+const roundWeight = Calc.roundWeight || ((w, s = 0.01) => Math.round(Number(w) / s) * s);
+const toKg = Calc.toKg || ((v, u = 'kg') => u === 'lbs' ? Calc.lbsToKg(v) : roundWeight(v, 0.01));
+const fromKg = Calc.fromKg || ((v, u = 'kg') => u === 'lbs' ? Calc.kgToLbs(v) : rd(v));
+const toLocalDateKey = Calc.toLocalDateKey || (t => new Date(t).toISOString().slice(0, 10));
+const epley = Calc.epley || ((w, r) => (Number(w) || 0) * (1 + (Number(r) || 0) / 30));
+const e1 = epley;
+const brzycki = Calc.brzycki || ((w, r) => {
   w = Number(w); r = Number(r);
   if (!Number.isFinite(w) || !Number.isFinite(r) || w <= 0 || r <= 0) return 0;
-  return rd(r === 1 ? w : w * (1 + r / 30));
-};
-const br = (w, r) => {
-  w = Number(w); r = Number(r);
-  if (!Number.isFinite(w) || !Number.isFinite(r) || w <= 0 || r <= 0 || r >= 37) return 0;
-  return rd(r === 1 ? w : (w * 36) / (37 - r));
-};
+  if (r === 1) return rd(w);
+  const cappedR = Math.min(10, r);
+  return rd((w * 36) / (37 - cappedR));
+});
+const br = brzycki;
+const estimate1RM = Calc.estimate1RM || brzycki;
+const isWarmupSet = Calc.isWarmupSet || (s => Boolean(s && (s.type === 'W' || s.type === 'warmup' || s.isWarmup)));
+const isSetDone = Calc.isSetDone || ((s, uni) => Boolean(s && (s.done || (uni && s.sideL && s.sideR))));
 
 const scoreSet = (id, s) => {
   const e = X(id);
@@ -815,7 +839,10 @@ const best = id => {
   return b ? scoreSet(id, b) : 0;
 };
 
-const getLastSessionExercise = id => {
+const getLastSessionExercise = (id, beforeTimestamp = Date.now()) => {
+  if (Calc.getPrevPerformance) {
+    return Calc.getPrevPerformance(id, S.logs || [], beforeTimestamp);
+  }
   const sid = String(id || '');
   for (let i = (S.logs || []).length - 1; i >= 0; i--) {
     const l = S.logs[i];
@@ -834,12 +861,13 @@ const lastSet = id => {
   return null;
 };
 
-const dk = t => {
+const dk = Calc.dk || (t => {
   const d = new Date(t);
   return d.getFullYear() * 1e4 + (d.getMonth() + 1) * 100 + d.getDate();
-};
+});
 
 function streak() {
+  if (Calc.calcStreak) return Calc.calcStreak(S.logs || [], Date.now());
   const s = new Set((S.logs || []).map(l => dk(l.date)));
   const d = new Date();
   let n = 0;
@@ -851,7 +879,14 @@ function streak() {
   return n;
 }
 
-function prog(rx, sets) {
+function prog(rx, sets, equipment) {
+  if (Calc.checkDoubleProgression && rx.prog === 'double') {
+    const res = Calc.checkDoubleProgression(rx, sets, equipment, S.cfg?.unit || 'kg');
+    if (res && res.eligible) {
+      rx.w = (Number(rx.w) || 0) + res.suggestedInc;
+      return res.message;
+    }
+  }
   rx.inc = Number(rx.inc) || 2.5;
   rx.w = Number(rx.w) || 0;
   rx.stalls = Number(rx.stalls) || 0;
@@ -1368,6 +1403,10 @@ const getLastExerciseNote = id => {
 };
 
 const setVolume = (s, isUni = false, exId = null) => {
+  if (Calc.calcSetVolume) {
+    const exObj = exId ? X(exId) : null;
+    return Calc.calcSetVolume(s, exObj || { uni: isUni }, S.cfg, S.cfg?.weight || 75);
+  }
   if (exId && isCardioOrMobilityExercise(exId)) return 0;
   const w = Math.max(0, Number(s?.w) || 0);
   const r = Math.max(0, Number(s?.r) || 0);
@@ -1378,21 +1417,29 @@ const setVolume = (s, isUni = false, exId = null) => {
   return w * r * mult;
 };
 
-const vol = l => Math.round((l?.ex || []).reduce((a, x) => {
-  if (isCardioOrMobilityExercise(x.id)) return a;
-  return a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => {
-    const isUni = x.uni || s.uni;
-    const hasBoth = s.done || (s.sideL && s.sideR);
-    const hasOne = s.sideL || s.sideR;
-    const mult = isUni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
-    const w = Math.max(0, Number(s.w) || 0);
-    const r = Math.max(0, Number(s.r) || 0);
-    return b + w * r * mult;
-  }, 0) : 0);
-}, 0));
+const vol = l => {
+  if (Calc.calcWorkoutVolume) {
+    return Calc.calcWorkoutVolume(l, S.cfg, S.cfg?.weight || 75, X);
+  }
+  return Math.round((l?.ex || []).reduce((a, x) => {
+    if (isCardioOrMobilityExercise(x.id)) return a;
+    return a + (Array.isArray(x.sets) ? x.sets.reduce((b, s) => {
+      const isUni = x.uni || s.uni;
+      const hasBoth = s.done || (s.sideL && s.sideR);
+      const hasOne = s.sideL || s.sideR;
+      const mult = isUni ? (hasBoth ? 2 : (hasOne ? 1 : 2)) : 1;
+      const w = Math.max(0, Number(s.w) || 0);
+      const r = Math.max(0, Number(s.r) || 0);
+      return b + w * r * mult;
+    }, 0) : 0);
+  }, 0));
+};
 
 // ---- 100% Offline Deterministic Recovery & ACWR Engine ----
 const calcWorkload = (logs = S.logs) => {
+  if (Calc.calcACWR) {
+    return Calc.calcACWR(logs, Date.now(), S.cfg, S.cfg?.weight || 75, X);
+  }
   const now = Date.now();
   const dayMs = 86400000;
   const acuteCutoff = now - 7 * dayMs;
@@ -1781,47 +1828,38 @@ function renderPickSubPills() {
 }
 
 // ---- Weekly 2x Muscle Frequency Tracker ----
-const WEEKLY_FREQ_TARGETS = ['Chest', 'Back', 'Quads', 'Hamstrings/Glutes', 'Shoulders', 'Arms', 'Core'];
+const WEEKLY_FREQ_TARGETS = (Calc.FULL_MUSCLE_TARGETS) || [
+  'Chest', 'Back', 'Quads', 'Hamstrings', 'Glutes', 'Deltoids', 'Biceps', 'Triceps', 'Calves', 'Forearms', 'Abs', 'Obliques'
+];
 
 function getStimulatedMuscleGroups(e) {
+  if (Calc.getStimulatedMuscleGroups) return Calc.getStimulatedMuscleGroups(e);
   const groups = new Set();
+  if (!e) return groups;
   const g = (e.g || '').toLowerCase();
   const tg = (e.tg || '').toLowerCase();
   const n = (e.name || '').toLowerCase();
 
-  // Chest
-  if (g === 'chest' || tg === 'pectorals' || n.includes('bench press') || n.includes('chest') || n.includes('fly')) {
-    groups.add('Chest');
-  }
-  // Back
-  if (g === 'back' || ['lats', 'upper back', 'spine', 'traps'].includes(tg) || n.includes('pull') || n.includes('row') || n.includes('lat') || n.includes('deadlift')) {
-    groups.add('Back');
-  }
-  // Quads
-  if (tg === 'quads' || (g === 'legs' && (n.includes('squat') || n.includes('quad') || n.includes('leg press') || (n.includes('extension') && !n.includes('back')) || n.includes('lunge')))) {
-    groups.add('Quads');
-  }
-  // Hamstrings/Glutes
-  if (tg === 'hamstrings' || tg === 'glutes' || (g === 'legs' && (n.includes('curl') || n.includes('deadlift') || n.includes('rdl') || n.includes('hip thrust') || n.includes('glute')))) {
-    groups.add('Hamstrings/Glutes');
-  }
-  // Shoulders
-  if (g === 'shoulders' || tg === 'delts' || n.includes('shoulder') || n.includes('overhead press') || n.includes('lateral raise') || n.includes('military')) {
-    groups.add('Shoulders');
-  }
-  // Arms
-  if (g === 'arms' || ['biceps', 'triceps', 'forearms'].includes(tg) || n.includes('bicep') || n.includes('tricep') || n.includes('curl') || n.includes('pushdown') || n.includes('dip')) {
-    groups.add('Arms');
-  }
-  // Core
-  if (g === 'core' || tg === 'abs' || n.includes('crunch') || n.includes('sit-up') || n.includes('plank') || n.includes('ab')) {
-    groups.add('Core');
-  }
+  if (g === 'chest' || tg === 'pectorals' || n.includes('bench press') || n.includes('chest') || n.includes('fly')) groups.add('Chest');
+  if (g === 'back' || ['lats', 'upper back', 'spine', 'traps'].includes(tg) || n.includes('pull') || n.includes('row') || n.includes('lat') || n.includes('deadlift')) groups.add('Back');
+  if (tg === 'quads' || (g === 'legs' && (n.includes('squat') || n.includes('quad') || n.includes('leg press') || (n.includes('extension') && !n.includes('back')) || n.includes('lunge')))) groups.add('Quads');
+  if (tg === 'hamstrings' || (g === 'legs' && (n.includes('leg curl') || n.includes('hamstring') || n.includes('rdl') || n.includes('romanian')))) groups.add('Hamstrings');
+  if (tg === 'glutes' || (g === 'legs' && (n.includes('hip thrust') || n.includes('glute') || n.includes('kickback')))) groups.add('Glutes');
+  if (g === 'shoulders' || tg === 'delts' || n.includes('shoulder') || n.includes('overhead press') || n.includes('lateral raise')) groups.add('Deltoids');
+  if (tg === 'biceps' || n.includes('bicep') || (n.includes('curl') && !n.includes('leg') && !n.includes('hamstring'))) groups.add('Biceps');
+  if (tg === 'triceps' || n.includes('tricep') || n.includes('pushdown') || n.includes('skull crusher')) groups.add('Triceps');
+  if (tg === 'calves' || n.includes('calf') || n.includes('calves')) groups.add('Calves');
+  if (tg === 'forearms' || n.includes('forearm') || n.includes('wrist curl')) groups.add('Forearms');
+  if (g === 'core' || tg === 'abs' || n.includes('crunch') || n.includes('sit-up') || n.includes('plank')) groups.add('Abs');
+  if (tg === 'obliques' || tg === 'serratus anterior' || n.includes('oblique') || n.includes('russian twist')) groups.add('Obliques');
 
   return groups;
 }
 
-function calcWeeklyMuscleFrequency(logs = S.logs, refDate = Date.now()) {
+function calcWeeklyMuscleFrequency(logs = S.logs, refDate = Date.now(), weekStartDay = S.cfg?.weekStartDay || 'mon', options = {}) {
+  if (Calc.calcWeeklyMuscleFrequency) {
+    return Calc.calcWeeklyMuscleFrequency(logs, refDate, weekStartDay, options, X);
+  }
   const refTime = refDate instanceof Date ? refDate.getTime() : (typeof refDate === 'number' ? refDate : Date.now());
   const sevenDaysAgo = refTime - 7 * 86400 * 1000;
   const recentLogs = (logs || []).filter(l => l && l.date >= sevenDaysAgo && l.date <= refTime);
@@ -1853,10 +1891,13 @@ function calcWeeklyMuscleFrequency(logs = S.logs, refDate = Date.now()) {
       pips
     };
   });
-  // Also attach named properties for dictionary access
   for (const item of res) {
     res[item.muscle] = item;
   }
+  res['Shoulders'] = res['Deltoids'];
+  res['Arms'] = res['Biceps'];
+  res['Hamstrings/Glutes'] = res['Hamstrings'];
+  res['Core'] = res['Abs'];
   return res;
 }
 
@@ -5086,6 +5127,22 @@ function showSettingsModal() {
               <option value="female" ${S.cfg.bodyModel === 'female' ? 'selected' : ''}>Female Silhouette</option>
             </select>
           </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Dumbbell Volume Mode</span>
+            <select class="settings-select" data-c="dumbbellWeightMode">
+              <option value="per_hand" ${S.cfg.dumbbellWeightMode !== 'as_logged' ? 'selected' : ''}>Per Hand (×2 volume) [Recommended]</option>
+              <option value="as_logged" ${S.cfg.dumbbellWeightMode === 'as_logged' ? 'selected' : ''}>As Logged (Total Weight)</option>
+            </select>
+          </label>
+          <div class="settings-divider"></div>
+          <label class="settings-row">
+            <span class="settings-label">Week Start Day</span>
+            <select class="settings-select" data-c="weekStartDay">
+              <option value="mon" ${S.cfg.weekStartDay !== 'sun' ? 'selected' : ''}>Monday (00:00)</option>
+              <option value="sun" ${S.cfg.weekStartDay === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
+            </select>
+          </label>
         </div>
       </div>
 
@@ -5574,6 +5631,7 @@ function openPastWorkoutModal(defaultDate) {
   const defaultRoutine = (Array.isArray(S.routines) && S.routines.length) ? S.routines[0] : null;
   pastWorkout = {
     date: targetDate,
+    time: '10:00',
     name: defaultRoutine ? defaultRoutine.name : 'Custom Past Workout',
     routineId: defaultRoutine ? defaultRoutine.id : 'custom',
     dur: 45,
@@ -5604,6 +5662,7 @@ function openPastWorkoutModal(defaultDate) {
 function renderPastWorkoutModal() {
   if (!pastWorkout) return;
   const p = pastWorkout;
+  const curTargetTs = new Date((p.date || new Date().toISOString().slice(0, 10)) + 'T' + (p.time || '10:00') + ':00').getTime();
 
   modal(`
     <div class="past-workout-sheet" style="max-height:85vh;display:flex;flex-direction:column">
@@ -5621,19 +5680,25 @@ function renderPastWorkoutModal() {
             <input type="date" id="past-workout-date" data-f="pastdate" class="txt" value="${esc(p.date)}" max="${new Date().toISOString().slice(0, 10)}" style="margin-top:4px;padding:8px">
           </label>
           <label style="font-size:12px;font-weight:600">
-            Duration (min)
-            <input type="number" id="past-workout-dur" data-f="pastdur" class="txt" value="${p.dur || 45}" min="5" max="360" style="margin-top:4px;padding:8px">
+            Start Time
+            <input type="time" id="past-workout-time" data-f="pasttime" class="txt" value="${esc(p.time || '10:00')}" style="margin-top:4px;padding:8px">
           </label>
         </div>
 
-        <div style="margin-bottom:12px">
-          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Routine Template / Workout Source</label>
-          <select id="past-workout-routine" data-f="pastroutine" class="txt" style="padding:8px;width:100%">
-            ${(S.routines || []).map(r => `
-              <option value="${esc(r.id)}" ${p.routineId === r.id ? 'selected' : ''}>Routine: ${esc(r.name)} (${r.ex.length} ex)</option>
-            `).join('')}
-            <option value="custom" ${p.routineId === 'custom' ? 'selected' : ''}>⚡ Build Custom Workout</option>
-          </select>
+        <div class="grid" style="grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px">
+          <label style="font-size:12px;font-weight:600">
+            Duration (min)
+            <input type="number" id="past-workout-dur" data-f="pastdur" class="txt" value="${p.dur || 45}" min="5" max="360" style="margin-top:4px;padding:8px">
+          </label>
+          <label style="font-size:12px;font-weight:600">
+            Template Source
+            <select id="past-workout-routine" data-f="pastroutine" class="txt" style="margin-top:4px;padding:8px;width:100%">
+              ${(S.routines || []).map(r => `
+                <option value="${esc(r.id)}" ${p.routineId === r.id ? 'selected' : ''}>${esc(r.name)}</option>
+              `).join('')}
+              <option value="custom" ${p.routineId === 'custom' ? 'selected' : ''}>⚡ Custom</option>
+            </select>
+          </label>
         </div>
 
         <div style="margin-bottom:12px">
@@ -5650,13 +5715,18 @@ function renderPastWorkoutModal() {
       <div id="past-workout-ex-list" style="overflow-y:auto;flex:1;padding-right:2px;margin-bottom:14px">
         ${p.ex.map((x, xIdx) => {
           const exInfo = X(x.id);
+          const prevPerf = Calc.getPrevPerformance ? Calc.getPrevPerformance(x.id, S.logs, curTargetTs) : null;
+          const prevStr = prevPerf && prevPerf.lastSet ? `Prev: ${prevPerf.lastSet.w}kg × ${prevPerf.lastSet.r}` : '';
           return `
             <div class="card" style="margin-bottom:10px;padding:10px 12px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08)">
               <div class="row" style="margin-bottom:8px">
                 <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
                   <span style="font-weight:700;color:var(--ac);font-size:14px">${xIdx + 1}.</span>
                   <div style="flex:1;min-width:0">
-                    <div style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(exInfo.name)}</div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                      <span style="font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(exInfo.name)}</span>
+                      ${prevStr ? `<span class="chip" style="font-size:10px;padding:1px 6px;opacity:0.8">${esc(prevStr)}</span>` : ''}
+                    </div>
                     <div class="t2 sm">${esc(exInfo.tg || exInfo.g)} · ${esc(exInfo.eq)}</div>
                   </div>
                 </div>
@@ -5704,6 +5774,8 @@ function savePastWorkout() {
   // Sync latest values from DOM if present
   const dateInput = $('#past-workout-date');
   if (dateInput && dateInput.value) p.date = dateInput.value;
+  const timeInput = $('#past-workout-time');
+  if (timeInput && timeInput.value) p.time = timeInput.value;
   const durInput = $('#past-workout-dur');
   if (durInput && durInput.value) p.dur = Number(durInput.value) || 45;
   const nameInput = $('#past-workout-name');
@@ -5736,23 +5808,35 @@ function savePastWorkout() {
   }
 
   const dateStr = p.date || new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const workoutTimestamp = new Date(dateStr + 'T12:00:00').getTime();
+  const timeStr = p.time || '10:00';
+  const workoutTimestamp = new Date(dateStr + 'T' + timeStr + ':00').getTime();
   const durMs = Math.max(5, Number(p.dur) || 45) * 60000;
   const workoutName = (p.name || 'Backdated Workout').trim();
 
+  // Guard against future dates
+  if (workoutTimestamp > Date.now() + 60000) {
+    toast('Cannot log workouts in the future');
+    return;
+  }
+
   const completedLog = {
-    id: uid(),
+    id: p.id || uid(),
     date: workoutTimestamp,
     name: workoutName,
     dur: durMs,
     ex: validEx,
-    isDeload: false,
+    isDeload: !!p.isDeload,
     backdated: true
   };
 
   S.logs = S.logs || [];
-  S.logs.push(completedLog);
-  // Sort chronologically so calendar, tonnage and weekly frequency calculate accurately
+  const existingIdx = p.id ? S.logs.findIndex(l => String(l.id) === String(p.id)) : -1;
+  if (existingIdx >= 0) {
+    S.logs[existingIdx] = completedLog;
+  } else {
+    S.logs.push(completedLog);
+  }
+  // Sort chronologically ascending
   S.logs.sort((a, b) => (Number(a.date) || 0) - (Number(b.date) || 0));
 
   save('logs', S.logs);
@@ -5762,17 +5846,51 @@ function savePastWorkout() {
   render();
 }
 
+function editPastWorkout(log) {
+  if (!log) return;
+  const d = new Date(Number(log.date) || Date.now());
+  const dateStr = d.toISOString().slice(0, 10);
+  const hours = String(d.getHours()).padStart(2, '0');
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  const timeStr = `${hours}:${mins}`;
+  const durMins = Math.round((Number(log.dur) || 2700000) / 60000);
+
+  pastWorkout = {
+    id: log.id,
+    date: dateStr,
+    time: timeStr,
+    name: log.name || 'Completed Workout',
+    routineId: 'custom',
+    dur: durMins,
+    isDeload: !!log.isDeload,
+    ex: (log.ex || []).map(x => ({
+      id: x.id,
+      note: x.note || '',
+      uni: !!x.uni,
+      sets: (x.sets || []).map(s => ({
+        w: Number(s.w) || 0,
+        r: Number(s.r) || 0,
+        done: s.done !== false
+      }))
+    }))
+  };
+
+  renderPastWorkoutModal();
+}
+
 const finish = finishWorkout;
 if (typeof window !== 'undefined') {
   window.finishWorkout = finishWorkout;
   window.finish = finishWorkout;
   window.openPastWorkoutModal = openPastWorkoutModal;
   window.savePastWorkout = savePastWorkout;
+  window.editPastWorkout = editPastWorkout;
 }
 _global.finishWorkout = finishWorkout;
 _global.finish = finishWorkout;
 _global.openPastWorkoutModal = openPastWorkoutModal;
 _global.savePastWorkout = savePastWorkout;
+_global.editPastWorkout = editPastWorkout;
 
 // ---- Event Listeners ----
 document.addEventListener('click', e => {
@@ -6752,7 +6870,34 @@ document.addEventListener('click', e => {
     case 'hist': {
       const l = S.logs.find(l => String(l.id) === String(id));
       if (!l) return;
-      modal(`<h2>${esc(l.name)}</h2>${mmLog(l)}` + l.ex.map(x => `<div class="card"><b>${esc(X(x.id).name)}</b>${x.sets.map((s, n) => `<div class="t2">${n + 1}. ${Number(s.w) || 0} × ${Number(s.r) || 0}${s.rpe != null && s.rpe !== '' ? ' @ RPE ' + esc(s.rpe) : ''}</div>`).join('')}${x.note ? `<div class="sm">${esc(x.note)}</div>` : ''}</div>`).join(''));
+      modal(`
+        <h2>${esc(l.name)}</h2>
+        ${mmLog(l)}
+        ${l.ex.map(x => `<div class="card"><b>${esc(X(x.id).name)}</b>${x.sets.map((s, n) => `<div class="t2">${n + 1}. ${Number(s.w) || 0} × ${Number(s.r) || 0}${s.rpe != null && s.rpe !== '' ? ' @ RPE ' + esc(s.rpe) : ''}</div>`).join('')}${x.note ? `<div class="sm">${esc(x.note)}</div>` : ''}</div>`).join('')}
+        <div class="row" style="margin-top:16px;gap:8px">
+          <button class="btn s outline" data-a="editpastlog" data-id="${esc(l.id)}" style="flex:1">✏️ Edit Log</button>
+          <button class="btn s red" data-a="deletepastlog" data-id="${esc(l.id)}" style="flex:1">🗑️ Delete</button>
+        </div>
+      `);
+      return;
+    }
+    case 'editpastlog': {
+      const l = S.logs.find(x => String(x.id) === String(id));
+      if (!l) return;
+      closeModal();
+      editPastWorkout(l);
+      return;
+    }
+    case 'deletepastlog': {
+      if (!confirm('Are you sure you want to delete this workout log? This action cannot be undone.')) return;
+      const logIdx = S.logs.findIndex(x => String(x.id) === String(id));
+      if (logIdx >= 0) {
+        const deleted = S.logs.splice(logIdx, 1)[0];
+        save('logs', S.logs);
+        closeModal();
+        toast(`Deleted "${deleted.name || 'workout'}" from History`);
+        render();
+      }
       return;
     }
     case 'edit': {
@@ -6893,6 +7038,10 @@ const handleFieldUpdate = t => {
 
   if (f === 'pastdate' && pastWorkout) {
     pastWorkout.date = t.value;
+    return;
+  }
+  if (f === 'pasttime' && pastWorkout) {
+    pastWorkout.time = t.value;
     return;
   }
   if (f === 'pastdur' && pastWorkout) {
@@ -7076,6 +7225,11 @@ document.addEventListener('change', e => {
       S.cfg.inc = Math.max(0.25, Math.min(50, parseFloat(t.value) || 2.5));
     } else if (t.dataset.c === 'bodyModel') {
       S.cfg.bodyModel = t.value === 'female' ? 'female' : 'male';
+    } else if (t.dataset.c === 'dumbbellWeightMode') {
+      S.cfg.dumbbellWeightMode = t.value === 'as_logged' ? 'as_logged' : 'per_hand';
+    } else if (t.dataset.c === 'weekStartDay') {
+      S.cfg.weekStartDay = t.value === 'sun' ? 'sun' : 'mon';
+      render();
     } else {
       S.cfg[t.dataset.c] = t.type === 'checkbox' ? t.checked : Math.max(5, +t.value || 90);
     }
@@ -7287,7 +7441,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.8.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=5.9.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -7320,6 +7474,8 @@ if (typeof globalThis !== 'undefined') {
     closeModal,
     openPastWorkoutModal,
     savePastWorkout,
+    editPastWorkout,
+    Calc,
     calcWeeklyMuscleFrequency,
     renderWeeklyMuscleFrequencyCard,
     WEEKLY_FREQ_TARGETS,

@@ -4,6 +4,7 @@ import path from 'node:path';
 import vm from 'node:vm';
 
 const rootDir = '/Users/dayonsaiju/Documents/MYGym';
+const calcCode = fs.readFileSync(path.join(rootDir, 'calc.js'), 'utf8');
 const appCode = fs.readFileSync(path.join(rootDir, 'app.js'), 'utf8');
 const swCode = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
 const htmlCode = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -292,9 +293,11 @@ const mockWindow = {
 mockWindow.global = mockWindow;
 mockWindow.globalThis = mockWindow;
 
-// Evaluate app.js in sandbox
-const script = new vm.Script(appCode);
+// Evaluate calc.js and app.js in sandbox
 const context = vm.createContext(mockWindow);
+const calcScript = new vm.Script(calcCode);
+calcScript.runInContext(context);
+const script = new vm.Script(appCode);
 script.runInContext(context);
 
 // Extract exported API
@@ -923,24 +926,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.8.1-hotfix, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.8.1-hotfix';"), 'sw.js must use mygym-core-v5.8.1-hotfix cache name');
-  assert(swCode.includes("'./style.css?v=5.8.1'"), 'sw.js must precache style.css?v=5.8.1');
-  assert(swCode.includes("'./app.js?v=5.8.1'"), 'sw.js must precache app.js?v=5.8.1');
+it('sw.js cache key is bumped to mygym-core-v5.9.0-calc, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.9.0-calc';"), 'sw.js must use mygym-core-v5.9.0-calc cache name');
+  assert(swCode.includes("'./style.css?v=5.9.0'"), 'sw.js must precache style.css?v=5.9.0');
+  assert(swCode.includes("'./app.js?v=5.9.0'"), 'sw.js must precache app.js?v=5.9.0');
+  assert(swCode.includes("'./calc.js?v=5.9.0'"), 'sw.js must precache calc.js?v=5.9.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.8.1'), 'index.html must link style.css?v=5.8.1');
-  assert(htmlCode.includes('app.js?v=5.8.1'), 'index.html must load app.js?v=5.8.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.8.1-hotfix'"), 'index.html must use mygym-core-v5.8.1-hotfix');
+  assert(htmlCode.includes('style.css?v=5.9.0'), 'index.html must link style.css?v=5.9.0');
+  assert(htmlCode.includes('app.js?v=5.9.0'), 'index.html must load app.js?v=5.9.0');
+  assert(htmlCode.includes('calc.js?v=5.9.0'), 'index.html must load calc.js?v=5.9.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.9.0-calc'"), 'index.html must use mygym-core-v5.9.0-calc');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.8.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.8.1-hotfix');
+  assert.equal(api.APP_VERSION, '5.9.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.9.0-calc');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2021,11 +2026,324 @@ it('finishWorkout resilience: fallback saves raw session log if stats calculatio
   }
 });
 
-it('Modal button commit-finish and .finish-save-btn have required CSS attributes in style.css', () => {
-  assert(cssCode.includes('[data-a="commit-finish"]'), 'style.css must target [data-a="commit-finish"]');
-  assert(cssCode.includes('pointer-events: auto !important;'), 'style.css must enforce pointer-events: auto !important');
-  assert(cssCode.includes('touch-action: manipulation'), 'style.css must enforce touch-action: manipulation');
-  assert(cssCode.includes('z-index: 10001'), 'style.css must enforce high z-index for modal finish button');
+// -----------------------------------------------------------------------------
+// TEST SUITE 19: CALCULATION ENGINE AUDIT, PURE CALC.JS & BACKDATED LOGGING (v5.9.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 19: Calculation Engine Audit, Pure Calc.js & Backdated Logging (v5.9.0)');
+
+const Calc = mockWindow.MYGYM_CALC || mockWindow.Calc || api.Calc;
+assert(Calc, 'Calc engine must be accessible via mockWindow.MYGYM_CALC or api.Calc');
+
+it('calc.js is a dedicated pure module without DOM access and exports all core mathematical functions', () => {
+  const exportedFns = [
+    'roundWeight', 'toKg', 'fromKg', 'rd', 'lbsToKg', 'kgToLbs',
+    'toLocalDateKey', 'getStartOfWeek', 'getEndOfWeek',
+    'brzycki', 'epley', 'estimate1RM',
+    'checkPersonalRecord', 'calcSetVolume', 'calcWorkoutVolume', 'vol',
+    'calcACWR', 'calcStreak', 'calcWeeklyMuscleFrequency', 'FULL_MUSCLE_TARGETS',
+    'getPrevPerformance', 'checkDoubleProgression',
+    'calcNavyBodyFat', 'calcBMR', 'calcTDEE', 'calcMacros'
+  ];
+  for (const fn of exportedFns) {
+    assert.equal(typeof Calc[fn], typeof Calc[fn] === 'object' ? 'object' : 'function', `Calc.${fn} must be defined`);
+  }
+
+  // Pure module verification: verify zero document or window references inside factory body
+  assert(!calcCode.includes('document.'), 'calc.js must contain zero DOM document calls');
+  assert(!calcCode.includes('$("#'), 'calc.js must contain zero jQuery or DOM query calls');
+});
+
+it('1RM formulas: Brzycki capped at r=10, Epley above 10, and guards against non-positive inputs', () => {
+  // Input guards
+  assert.equal(Calc.brzycki(0, 10), 0);
+  assert.equal(Calc.brzycki(-10, 5), 0);
+  assert.equal(Calc.brzycki(100, 0), 0);
+  assert.equal(Calc.brzycki(100, -5), 0);
+
+  // 1 rep equals raw weight
+  assert.equal(Calc.brzycki(100, 1), 100);
+  assert.equal(Calc.epley(100, 1), 100);
+  assert.equal(Calc.estimate1RM(100, 1), 100);
+
+  // Capped at 10 reps for Brzycki
+  const b10 = Calc.brzycki(100, 10);
+  const expectedB10 = Math.round((100 * 36 / (37 - 10)) * 10) / 10; // 133.3 kg
+  assert.equal(b10, expectedB10);
+
+  // For r > 10, Brzycki caps at 10
+  assert.equal(Calc.brzycki(100, 15), expectedB10);
+
+  // Epley used for r > 10 in estimate1RM: w * (1 + r/30)
+  const e12 = Calc.estimate1RM(100, 12);
+  const expectedE12 = Math.round(100 * (1 + 12 / 30) * 10) / 10; // 140 kg
+  assert.equal(e12, expectedE12);
+});
+
+it('PR detection evaluates completed strength sets only, strictly excluding current session history', () => {
+  const baseHistory = [
+    {
+      id: 'log_past_1',
+      date: 1000000,
+      ex: [
+        {
+          id: '0025',
+          sets: [
+            { w: 120, r: 1, done: true }, // Max weight 120 kg, Max 1RM 120 kg
+            { w: 100, r: 5, done: true }  // At 100kg, max reps is 5
+          ]
+        }
+      ]
+    }
+  ];
+
+  // Uncompleted set never triggers PR
+  const uncompleted = Calc.checkPersonalRecord('0025', { w: 130, r: 10, done: false }, baseHistory);
+  assert.equal(uncompleted, null);
+
+  // Warmup set never triggers PR
+  const warmup = Calc.checkPersonalRecord('0025', { w: 130, r: 10, done: true, type: 'W' }, baseHistory);
+  assert.equal(warmup, null);
+
+  // Weight PR: 125kg > 120kg
+  const weightPR = Calc.checkPersonalRecord('0025', { w: 125, r: 1, done: true }, baseHistory, false, 'cur_log', 2000000);
+  assert(weightPR && weightPR.isPR);
+  assert.equal(weightPR.type, 'weight');
+  assert.equal(weightPR.newVal, 125);
+
+  // 1RM PR: 110kg x 5 gives 1RM of 123.8kg > 120kg (while weight 110kg < 120kg)
+  const e1rmPR = Calc.checkPersonalRecord('0025', { w: 110, r: 5, done: true }, baseHistory, false, 'cur_log', 2000000);
+  assert(e1rmPR && e1rmPR.isPR);
+  assert.equal(e1rmPR.type, '1rm');
+
+  // Reps PR at weight: 100kg x 6 reps > 5 reps (while 1RM 116.1kg < 120kg and weight 100kg < 120kg)
+  const repsPR = Calc.checkPersonalRecord('0025', { w: 100, r: 6, done: true }, baseHistory, false, 'cur_log', 2000000);
+  assert(repsPR && repsPR.isPR);
+  assert.equal(repsPR.type, 'reps');
+  assert.equal(repsPR.newVal, 6);
+
+  // Strictly excludes current session: if history array includes cur_log, it is excluded from comparison
+  const historyWithCurrent = [
+    ...baseHistory,
+    {
+      id: 'cur_log',
+      date: 2000000,
+      ex: [{ id: '0025', sets: [{ w: 125, r: 1, done: true }] }]
+    }
+  ];
+  const excludedPR = Calc.checkPersonalRecord('0025', { w: 125, r: 1, done: true }, historyWithCurrent, false, 'cur_log', 2000000);
+  assert(excludedPR && excludedPR.isPR, 'Current session must be excluded from baseline history so PR is preserved');
+});
+
+it('Tonnage rules: count only done sets, respect dumbbellWeightMode, bodyweight/assisted math, and cardio 0kg', () => {
+  // Dumbbell volume
+  const dbEx = { id: 'db1', name: 'Dumbbell Bench Press', eq: 'dumbbell' };
+  const dbSet = { w: 20, r: 10, done: true };
+  const notDoneSet = { w: 20, r: 10, done: false };
+
+  // Unfinished set has 0 volume
+  assert.equal(Calc.calcSetVolume(notDoneSet, dbEx), 0);
+
+  // 'per_hand' mode multiplies volume by 2
+  const volPerHand = Calc.calcSetVolume(dbSet, dbEx, { dumbbellWeightMode: 'per_hand' });
+  assert.equal(volPerHand, 400); // 20 * 10 * 2
+
+  // 'as_logged' mode does not multiply volume by 2
+  const volAsLogged = Calc.calcSetVolume(dbSet, dbEx, { dumbbellWeightMode: 'as_logged' });
+  assert.equal(volAsLogged, 200); // 20 * 10 * 1
+
+  // Bodyweight volume = bodyweight + added load
+  const bwEx = { id: 'bw1', name: 'Weighted Pull Up', type: 'bodyweight' };
+  const bwSet = { w: 10, r: 5, done: true }; // 10kg added load
+  const bwVol = Calc.calcSetVolume(bwSet, bwEx, {}, 75);
+  assert.equal(bwVol, (75 + 10) * 5); // 425 kg
+
+  // Assisted volume = max(0, bodyweight - assist load)
+  const asEx = { id: 'as1', name: 'Assisted Dip', type: 'assisted' };
+  const asSet = { w: 25, r: 6, done: true }; // 25kg assistance
+  const asVol = Calc.calcSetVolume(asSet, asEx, {}, 75);
+  assert.equal(asVol, (75 - 25) * 6); // 300 kg
+
+  // Cardio and mobility exercises have 0 tonnage
+  const cardioEx = { id: 'c1', name: 'Treadmill Jog', type: 'timed_cardio' };
+  const mobilityEx = { id: 'm1', name: 'Hip Flexor Stretch', g: 'Mobility' };
+  assert.equal(Calc.calcSetVolume({ w: 0, r: 30, done: true }, cardioEx), 0);
+  assert.equal(Calc.calcSetVolume({ w: 0, r: 15, done: true }, mobilityEx), 0);
+});
+
+it('ACWR engine sorts logs chronologically and calculates acute (7d) and chronic (28d / 4) workload', () => {
+  const now = Date.now();
+  const dayMs = 86400000;
+
+  // Create 14 daily logs (5000 kg each day)
+  const dailyLogs = [];
+  for (let i = 14; i >= 0; i--) {
+    dailyLogs.push({
+      id: 'log_' + i,
+      date: now - i * dayMs,
+      ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }, { w: 100, r: 10, done: true }, { w: 100, r: 10, done: true }, { w: 100, r: 10, done: true }, { w: 100, r: 10, done: true }] }]
+    });
+  }
+
+  // Scramble insertion order to simulate backdated logs
+  const scrambled = [dailyLogs[5], dailyLogs[0], dailyLogs[12], ...dailyLogs.slice(1, 5), ...dailyLogs.slice(6, 12), dailyLogs[13], dailyLogs[14]];
+
+  const acwrScrambled = Calc.calcACWR(scrambled, now);
+  const acwrSorted = Calc.calcACWR(dailyLogs, now);
+
+  assert.equal(acwrScrambled.acuteVolume, acwrSorted.acuteVolume);
+  assert.equal(acwrScrambled.chronicWeeklyAvg, acwrSorted.chronicWeeklyAvg);
+  assert.equal(acwrScrambled.isCalibrating, false);
+  assert(acwrScrambled.acwrNum > 0);
+
+  // Less than 7 workout days or < 14 days of history returns calibrating status
+  const fewLogs = dailyLogs.slice(0, 3);
+  const acwrCalib = Calc.calcACWR(fewLogs, now);
+  assert.equal(acwrCalib.isCalibrating, true);
+  assert.equal(acwrCalib.acwr, 'Calibrating');
+});
+
+it('Streak uses local date keys YYYY-MM-DD preventing timezone and DST drift', () => {
+  const d = new Date(2026, 9, 25, 14, 30); // Oct 25 2026
+  const key = Calc.toLocalDateKey(d);
+  assert.equal(key, '2026-10-25');
+
+  const now = new Date(2026, 9, 25, 12, 0, 0).getTime();
+  const logs = [
+    { date: new Date(2026, 9, 25, 8, 0, 0).getTime() },
+    { date: new Date(2026, 9, 24, 18, 0, 0).getTime() },
+    { date: new Date(2026, 9, 23, 9, 0, 0).getTime() }
+  ];
+  assert.equal(Calc.calcStreak(logs, now), 3);
+});
+
+it('Weekly muscle frequency targets 12 muscles, resets on calendar week boundary, and renders dual-pips', () => {
+  assert.equal(Calc.FULL_MUSCLE_TARGETS.length, 12);
+  assert(Calc.FULL_MUSCLE_TARGETS.includes('Forearms'));
+  assert(Calc.FULL_MUSCLE_TARGETS.includes('Calves'));
+  assert(Calc.FULL_MUSCLE_TARGETS.includes('Abs'));
+  assert(Calc.FULL_MUSCLE_TARGETS.includes('Obliques'));
+
+  const now = new Date('2026-10-21T10:00:00Z').getTime(); // Wednesday
+
+  // Week start day Monday vs Sunday
+  const monStart = Calc.getStartOfWeek(now, 'mon');
+  assert.equal(monStart.getDay(), 1); // Monday
+
+  const sunStart = Calc.getStartOfWeek(now, 'sun');
+  assert.equal(sunStart.getDay(), 0); // Sunday
+
+  // Dual pip rendering: 0/2, 1/2, 2/2 Opt
+  const testLogs = [
+    {
+      date: new Date('2026-10-20T10:00:00Z').getTime(), // Tuesday
+      ex: [{ id: '0025', name: 'Barbell Bench Press', g: 'chest', sets: [{ w: 100, r: 10, done: true }] }]
+    },
+    {
+      date: new Date('2026-10-21T10:00:00Z').getTime(), // Wednesday
+      ex: [{ id: '0025', name: 'Barbell Bench Press', g: 'chest', sets: [{ w: 100, r: 10, done: true }] }]
+    }
+  ];
+
+  const freq = Calc.calcWeeklyMuscleFrequency(testLogs, now, 'mon', { mode: 'calendar' });
+  assert.equal(freq['Chest'].count, 2);
+  assert.equal(freq['Chest'].status, 'optimal');
+  assert(freq['Chest'].pips.includes('●●'));
+
+  assert.equal(freq['Back'].count, 0);
+  assert.equal(freq['Back'].status, 'none');
+  assert(freq['Back'].pips.includes('○○'));
+});
+
+it('Double progression suggests +2.5kg only when all working sets hit the rep ceiling', () => {
+  const rx = { reps: 8, reps2: 12, sets: 3 };
+
+  // All 3 sets hit rep ceiling 12
+  const completedAllCeiling = [
+    { w: 60, r: 12, done: true },
+    { w: 60, r: 12, done: true },
+    { w: 60, r: 12, done: true }
+  ];
+  const prog1 = Calc.checkDoubleProgression(rx, completedAllCeiling, 'barbell', 'kg');
+  assert(prog1 && prog1.eligible);
+  assert.equal(prog1.suggestedInc, 2.5);
+
+  // One set did not hit rep ceiling 12 (only 11 reps)
+  const incompleteCeiling = [
+    { w: 60, r: 12, done: true },
+    { w: 60, r: 11, done: true },
+    { w: 60, r: 12, done: true }
+  ];
+  const prog2 = Calc.checkDoubleProgression(rx, incompleteCeiling, 'barbell', 'kg');
+  assert.equal(prog2, null);
+});
+
+it('US Navy Body Fat % accurately calculates male and female with hip field and validates non-positive inputs', () => {
+  // Male calculation
+  const maleBF = Calc.calcNavyBodyFat('male', 178, 82, 38);
+  assert(typeof maleBF === 'number' && maleBF > 5 && maleBF < 30);
+
+  // Female calculation requires hip
+  const femaleBFWithoutHip = Calc.calcNavyBodyFat('female', 165, 72, 32, 0);
+  assert.equal(femaleBFWithoutHip, null);
+
+  const femaleBFWithHip = Calc.calcNavyBodyFat('female', 165, 72, 32, 95);
+  assert(typeof femaleBFWithHip === 'number' && femaleBFWithHip > 10 && femaleBFWithHip < 40);
+
+  // Invalid inputs (waist <= neck)
+  assert.equal(Calc.calcNavyBodyFat('male', 178, 38, 38), null);
+  assert.equal(Calc.calcNavyBodyFat('male', 178, 35, 38), null);
+});
+
+it('Mifflin-St Jeor computes BMR, TDEE, and clamps carbs at 0 with warning on aggressive deficits', () => {
+  const bmr = Calc.calcBMR('male', 80, 180, 25);
+  assert(bmr > 1500 && bmr < 2200);
+
+  const tdee = Calc.calcTDEE(bmr, 1.45);
+  assert(tdee > bmr);
+
+  // Extreme calorie deficit clamps carbs at 0
+  const macrosLow = Calc.calcMacros(1000, 90, 'cut');
+  assert.equal(macrosLow.carbs, 0);
+  assert(macrosLow.warning && macrosLow.warning.includes('Carbs clamped at 0g'));
+});
+
+it('Backdated workout editing and deletion: editPastWorkout and delete actions work smoothly', () => {
+  const testLogId = 'test_past_log_edit_del';
+  const initialLog = {
+    id: testLogId,
+    date: Date.now() - 172800000,
+    name: 'Past Upper Body Session',
+    dur: 2700000,
+    ex: [{ id: '0025', sets: [{ w: 80, r: 8, done: true }] }]
+  };
+  api.S.logs.push(initialLog);
+  api.save('logs', api.S.logs);
+
+  // 1. Verify app.js template and listeners for edit and delete
+  assert(appCode.includes('data-a="editpastlog"'), 'History modal must include data-a="editpastlog"');
+  assert(appCode.includes('data-a="deletepastlog"'), 'History modal must include data-a="deletepastlog"');
+  assert(appCode.includes("case 'editpastlog':"), "Click listener must handle case 'editpastlog'");
+  assert(appCode.includes("case 'deletepastlog':"), "Click listener must handle case 'deletepastlog'");
+
+  // 2. editPastWorkout loads the session into pastWorkout and renders modal
+  api.editPastWorkout(initialLog);
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('Log Past / Missed Workout'));
+  assert(mHtml.includes('Past Upper Body Session'));
+
+  // 3. savePastWorkout updates the existing log without duplicating it
+  const prevLogsLength = api.S.logs.length;
+  api.savePastWorkout();
+  assert.equal(api.S.logs.length, prevLogsLength, 'Editing existing log must update in-place without duplicating');
+  const updatedLog = api.S.logs.find(l => String(l.id) === String(testLogId));
+  assert(updatedLog, 'Updated log must be retained in S.logs');
+
+  // 4. Delete log action removes it from S.logs
+  const logIdx = api.S.logs.findIndex(l => String(l.id) === String(testLogId));
+  assert(logIdx >= 0);
+  api.S.logs.splice(logIdx, 1);
+  api.save('logs', api.S.logs);
+  assert(!api.S.logs.some(l => String(l.id) === String(testLogId)));
 });
 
 console.log(`\n======================================================`);
