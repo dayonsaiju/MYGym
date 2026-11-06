@@ -1,19 +1,19 @@
-const C = 'mygym-core-v6.1.0-hardened';
+const C = 'mygym-core-v6.1.1-unified';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=6.1.0',
+  './style.css?v=6.1.1',
   './calc.js',
-  './calc.js?v=6.1.0',
+  './calc.js?v=6.1.1',
   './app.js',
-  './app.js?v=6.1.0',
+  './app.js?v=6.1.1',
   './manifest.json',
   './icon.png',
   './exercises.json',
   'exercises.json'
 ];
-const CORE_ASSETS = ASSETS;
+const CORE_ASSETS = Array.from(new Set(ASSETS));
 
 self.addEventListener('install', e => {
   self.skipWaiting();

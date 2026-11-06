@@ -464,7 +464,8 @@ input[type="checkbox"] {
 .sheet {
   background: var(--c1);
   width: 100%;
-  max-height: 90dvh;
+  max-height: 85vh;
+  max-height: 85dvh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: 20px 20px 0 0;
@@ -1129,7 +1130,8 @@ input[type="checkbox"] {
 
 .work-hero-gif {
   width: 100%;
-  height: 220px;
+  aspect-ratio: 16/9;
+  max-height: 25vh;
   object-fit: contain;
   display: block;
   background: #000000;
@@ -3588,7 +3590,7 @@ textarea.note:focus {
   cursor: pointer;
   flex: none;
   min-height: 44px;
-  min-width: 32px;
+  min-width: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3606,7 +3608,7 @@ textarea.note:focus {
 .set-type-btn {
   font-weight: 700;
   border-radius: 8px;
-  min-width: 34px;
+  min-width: 44px;
   min-height: 44px;
   display: flex;
   align-items: center;

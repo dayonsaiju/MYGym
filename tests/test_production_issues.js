@@ -962,26 +962,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.1.0-hardened, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.1.0-hardened';"), 'sw.js must use mygym-core-v6.1.0-hardened cache name');
-  assert(swCode.includes("'./style.css?v=6.1.0'"), 'sw.js must precache style.css?v=6.1.0');
-  assert(swCode.includes("'./app.js?v=6.1.0'"), 'sw.js must precache app.js?v=6.1.0');
-  assert(swCode.includes("'./calc.js?v=6.1.0'"), 'sw.js must precache calc.js?v=6.1.0');
+it('sw.js cache key is bumped to mygym-core-v6.1.1-unified, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.1.1-unified';"), 'sw.js must use mygym-core-v6.1.1-unified cache name');
+  assert(swCode.includes("'./style.css?v=6.1.1'"), 'sw.js must precache style.css?v=6.1.1');
+  assert(swCode.includes("'./app.js?v=6.1.1'"), 'sw.js must precache app.js?v=6.1.1');
+  assert(swCode.includes("'./calc.js?v=6.1.1'"), 'sw.js must precache calc.js?v=6.1.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.1.0'), 'index.html must link style.css?v=6.1.0');
-  assert(htmlCode.includes('app.js?v=6.1.0'), 'index.html must load app.js?v=6.1.0');
-  assert(htmlCode.includes('calc.js?v=6.1.0'), 'index.html must load calc.js?v=6.1.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.1.0-hardened'"), 'index.html must use mygym-core-v6.1.0-hardened');
+  assert(htmlCode.includes('style.css?v=6.1.1'), 'index.html must link style.css?v=6.1.1');
+  assert(htmlCode.includes('app.js?v=6.1.1'), 'index.html must load app.js?v=6.1.1');
+  assert(htmlCode.includes('calc.js?v=6.1.1'), 'index.html must load calc.js?v=6.1.1');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.1.1-unified'"), 'index.html must use mygym-core-v6.1.1-unified');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.1.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.1.0-hardened');
+  assert.equal(api.APP_VERSION, '6.1.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.1.1-unified');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2803,6 +2803,8 @@ it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6
 
   // 3. Test testAIConnection(): empty key alerts user
   keyInput.value = '';
+  mockWindow.localStorage.removeItem('mygym_ai_key');
+  mockWindow.localStorage.removeItem('ai_api_key');
   let alertMsg = null;
   mockWindow.alert = (msg) => { alertMsg = msg; };
   elementsMap['#toast'].innerHTML = '';
@@ -2923,6 +2925,47 @@ it('showExerciseHistoryModal renders all-time stats, last sessions, and empty st
 it('active workout reload guard defers controllerchange reload if active workout exists', () => {
   assert(appCode.includes('window._pendingSWReload'), 'app.js must defer reload when active workout is in progress');
   assert(appCode.includes('Update ready. Will apply after workout.'), 'app.js must notify user of pending update');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 11: FULL-STACK MOBILE ARCHITECTURE & PWA OPTIMIZATION (v6.1.1)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 11: Full-Stack Mobile Architecture, Key Binding & PWA Optimization (v6.1.1)');
+
+it('Settings modal renders direct event bindings on Save and Test connection buttons', () => {
+  api.showSettingsModal();
+  const saveBtn = mockWindow.document.getElementById('ai-save-key-btn');
+  const testBtn = mockWindow.document.getElementById('ai-test-key-btn');
+
+  assert(saveBtn, 'ai-save-key-btn must exist in Settings modal DOM');
+  assert(testBtn, 'ai-test-key-btn must exist in Settings modal DOM');
+  assert.equal(typeof saveBtn.onclick, 'function', 'Save button must have explicit .onclick binding');
+  assert.equal(typeof testBtn.onclick, 'function', 'Test button must have explicit .onclick binding');
+  assert.equal(typeof saveBtn.ontouchend, 'function', 'Save button must have explicit .ontouchend touch binding');
+  assert.equal(typeof testBtn.ontouchend, 'function', 'Test button must have explicit .ontouchend touch binding');
+});
+
+it('saveAIKey updates inline status badge in green and synchronizes S.cfg in-memory state', () => {
+  api.showSettingsModal();
+  const keyInput = mockWindow.document.getElementById('ai-key-input');
+  keyInput.value = 'gsk_test_direct_save_v611';
+  const res = api.saveAIKey();
+
+  assert.equal(res.key, 'gsk_test_direct_save_v611');
+  assert.equal(mockWindow.localStorage.getItem('ai_api_key'), 'gsk_test_direct_save_v611');
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), 'gsk_test_direct_save_v611');
+  assert.equal(api.S.cfg.aiKey, 'gsk_test_direct_save_v611');
+
+  const statusEl = mockWindow.document.querySelector('#ai-conn-status');
+  assert(statusEl, 'ai-conn-status must exist');
+  assert(statusEl.innerHTML.includes('✓ API Key Saved to LocalStorage'), 'Status badge must show API Key Saved');
+});
+
+it('style.css enforces mobile-first viewport units, responsive GIF media, and 44px touch targets', () => {
+  assert(cssCode.includes('max-height: 85dvh'), '.sheet must use dynamic viewport unit 85dvh');
+  assert(cssCode.includes('aspect-ratio: 16/9'), '.work-hero-gif must enforce 16/9 aspect ratio');
+  assert(cssCode.includes('max-height: 25vh'), '.work-hero-gif must cap max-height at 25vh');
+  assert(cssCode.includes('min-width: 44px') && cssCode.includes('min-height: 44px'), 'Buttons and chips must enforce 44px touch target bounds');
 });
 
 console.log(`\n======================================================`);

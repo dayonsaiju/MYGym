@@ -133,8 +133,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.1.0';
-const SHELL_VERSION = 'mygym-core-v6.1.0-hardened';
+const APP_VERSION = '6.1.1';
+const SHELL_VERSION = 'mygym-core-v6.1.1-unified';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5456,8 +5456,8 @@ function showSettingsModal() {
             </div>
 
             <div class="row g" style="margin-top:10px">
-              <button class="btn s sm-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
-              <button class="btn s sm-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
+              <button class="btn s sm-btn" id="ai-test-key-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
+              <button class="btn s sm-btn" id="ai-save-key-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
             </div>
             <div id="ai-conn-status" style="margin-top:8px"></div>
           </div>
@@ -5506,6 +5506,18 @@ function showSettingsModal() {
       </div>
     </div>
   `);
+
+  // Direct Event Binding in Settings Modal to ensure click/touch events never drop
+  const saveBtn = document.getElementById('ai-save-key-btn');
+  if (saveBtn) {
+    saveBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); saveAIKey(); };
+    saveBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); saveAIKey(); };
+  }
+  const testBtn = document.getElementById('ai-test-key-btn');
+  if (testBtn) {
+    testBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); testAIConnection(); };
+    testBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); testAIConnection(); };
+  }
 }
 
 // 2-Step Confirmation Modal for Erase All Data
@@ -5850,6 +5862,11 @@ function saveAIKey() {
   S.cfg.aiProvider = provider;
   S.cfg.aiModel = model;
 
+  const statusEl = document.querySelector('#ai-conn-status');
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:600">✓ API Key Saved to LocalStorage</span>`;
+  }
+
   toast('API Key saved successfully');
   return { key, provider, model };
 }
@@ -6071,9 +6088,12 @@ async function testAIConnection() {
     statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15)">Testing direct API connection...</span>`;
   }
 
-  // Read key directly from DOM input (document.getElementById('ai-key-input').value.trim()), NOT just from memory fallback.
+  // Read key directly from DOM input. If key in DOM is empty, fall back to localStorage.
   const domKeyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
-  const key = (domKeyInput && domKeyInput.value != null ? domKeyInput.value : '').trim();
+  let key = (domKeyInput && domKeyInput.value != null ? domKeyInput.value : '').trim();
+  if (!key && typeof localStorage !== 'undefined') {
+    key = (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key') || '').trim();
+  }
 
   // If key is empty, alert user.
   if (!key) {
@@ -9069,7 +9089,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.1.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.1.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
