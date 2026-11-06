@@ -132,8 +132,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '5.9.0';
-const SHELL_VERSION = 'mygym-core-v5.9.0-calc';
+const APP_VERSION = '6.0.0';
+const SHELL_VERSION = 'mygym-core-v6.0.0-production';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -2147,10 +2147,29 @@ const vTrain = () => {
     </div>
   `;
 
+  const aiAssistantBannerHtml = `
+    <div class="card ai-assistant-banner" style="margin-bottom:12px;padding:12px 14px;background:linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(88, 86, 214, 0.12));border:1px solid rgba(0, 122, 255, 0.25)">
+      <div class="row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:24px">🤖</span>
+          <div>
+            <b style="font-size:14px">MyGyM AI Assistant (BYOK)</b>
+            <div class="t2 sm" style="margin-top:2px">Import routines via AI or get real-time form cues & warm-up sets</div>
+          </div>
+        </div>
+        <div class="row g">
+          <button class="btn s sm-btn" data-a="openaiimport" style="white-space:nowrap">🪄 Import Workout</button>
+          <button class="btn sm-btn" data-a="openaicoach" style="white-space:nowrap">Ask Coach →</button>
+        </div>
+      </div>
+    </div>
+  `;
+
   return viewHeader('Train') +
     renderStreakBadge() +
     resumeBannerHtml +
     pastWorkoutBannerHtml +
+    aiAssistantBannerHtml +
 
     // Active Deload Banner at top (subtle & actionable if deload is ongoing)
     (S.deload && S.deload.active ? `
@@ -2343,7 +2362,8 @@ const vTrain = () => {
             `;
           }).join('')}
           <div class="row g" style="margin-top:10px">
-            <button class="btn s sm-btn" data-a="edit" style="width:100%">${ic('plus', 16)} New Routine</button>
+            <button class="btn s sm-btn" data-a="edit" style="flex:1">${ic('plus', 16)} New Routine</button>
+            <button class="btn s sm-btn" data-a="openaiimport" style="flex:1">🪄 Import via AI</button>
           </div>
         </div>
       </details>
@@ -2352,8 +2372,9 @@ const vTrain = () => {
         <div class="empty-state-icon">🏋️‍♂️</div>
         <div class="empty-state-title">No routines created yet</div>
         <p class="t2 sm">Build custom routines to track progressive overload automatically.</p>
-        <div class="row g" style="margin-top:14px">
+        <div class="row g" style="margin-top:14px;flex-wrap:wrap">
           <button class="btn" data-a="edit">${ic('plus', 16)} Create Routine</button>
+          <button class="btn s" data-a="openaiimport">🪄 Import via AI</button>
           <button class="btn s" data-a="openfreeworkout">+ Free Workout</button>
         </div>
       </div>
@@ -2987,6 +3008,7 @@ function renderWorkHeroCard(a, curIdx) {
 
       <!-- Neat Decluttered Horizontal Toolbar directly below the media frame -->
       <div class="work-hero-toolbar">
+        <button class="chip" data-a="openaicoach" data-p="Give me 3 critical form cues and execution tips for ${esc(exInfo.name)}">🤖 AI Coach</button>
         <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
         <button class="chip" data-a="zoomexgif" data-id="${esc(exInfo.id)}">ℹ️ Form Cues</button>
         ${ssInfo.isSuperset && ssInfo.isPaired
@@ -3253,6 +3275,7 @@ function vWork() {
         <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
       </div>
       <div class="work-top-actions">
+        <button class="btn sm-btn frosted" data-a="openaicoach" title="Ask AI Coach for cues, warm-up sets, or substitutions">🤖 Coach</button>
         <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
         <button class="btn sm-btn chip-success" data-a="directsave" title="Emergency Direct Save: bypass confirmation and save immediately">⚡ Direct Save</button>
         <button class="btn sm-btn" data-a="promptfin">Finish</button>
@@ -5147,6 +5170,56 @@ function showSettingsModal() {
       </div>
 
       <div class="settings-section">
+        <div class="settings-section-title">AI Engine Setup (BYOK) 🤖</div>
+        <div class="card settings-card">
+          <div style="padding:10px 0 6px">
+            <div class="t2 sm" style="margin-bottom:12px;line-height:1.4">
+              Bring Your Own Key (BYOK) for smart workout importing and real-time AI coaching. Keys are stored <b>strictly in localStorage on this device</b> and connect directly to the provider. Zero backend proxies.
+            </div>
+
+            <label class="settings-row" style="margin-bottom:8px">
+              <span class="settings-label">AI Provider</span>
+              <select class="settings-select" id="ai-provider-select" data-f="ai-provider">
+                <option value="openai" ${(typeof localStorage !== 'undefined' && (localStorage.getItem('ai_provider') || 'openai') === 'openai') ? 'selected' : ''}>OpenAI (ChatGPT)</option>
+                <option value="gemini" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? 'selected' : ''}>Google Gemini</option>
+              </select>
+            </label>
+
+            <div class="settings-divider"></div>
+
+            <label class="settings-row" style="margin-bottom:8px">
+              <span class="settings-label">Model</span>
+              <select class="settings-select" id="ai-model-select" data-f="ai-model">
+                ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? `
+                  <option value="gemini-1.5-flash" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') !== 'gemini-1.5-pro') ? 'selected' : ''}>gemini-1.5-flash (Fast & Recommended)</option>
+                  <option value="gemini-1.5-pro" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') === 'gemini-1.5-pro') ? 'selected' : ''}>gemini-1.5-pro (High Reasoning)</option>
+                ` : `
+                  <option value="gpt-4o-mini" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') !== 'gpt-4o') ? 'selected' : ''}>gpt-4o-mini (Fast & Recommended)</option>
+                  <option value="gpt-4o" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') === 'gpt-4o') ? 'selected' : ''}>gpt-4o (High Reasoning)</option>
+                `}
+              </select>
+            </label>
+
+            <div class="settings-divider"></div>
+
+            <div style="margin:10px 0">
+              <div class="row" style="justify-content:space-between;margin-bottom:6px">
+                <span class="settings-label">API Key</span>
+                <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle View</button>
+              </div>
+              <input type="password" id="ai-api-key-input" class="txt" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? 'AIzaSy...' : 'sk-proj-...'}" value="${esc((typeof localStorage !== 'undefined' && localStorage.getItem('ai_api_key')) || '')}">
+            </div>
+
+            <div class="row g" style="margin-top:10px">
+              <button class="btn s sm-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
+              <button class="btn s sm-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
+            </div>
+            <div id="ai-conn-status" style="margin-top:8px"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <div class="settings-section-title">Storage & Offline Cache</div>
         <div class="card settings-card">
           <div class="settings-row">
@@ -5263,6 +5336,635 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
       <button class="btn s" data-a="close" style="width:100%;margin-top:10px">Done</button>
     </div>
   `);
+}
+
+// ============================================================================
+// v6.0.0 BYOK AI ENGINE, NATIVE DIRECT ENDPOINTS & WORKOUT IMPORTER
+// ============================================================================
+
+let aiCoachHistory = [];
+let parsedAIRoutine = null;
+
+function saveAISettings() {
+  const keyInput = document.querySelector('#ai-api-key-input');
+  const provSelect = document.querySelector('#ai-provider-select');
+  const modelSelect = document.querySelector('#ai-model-select');
+  if (typeof localStorage !== 'undefined') {
+    if (keyInput) localStorage.setItem('ai_api_key', keyInput.value.trim());
+    if (provSelect) localStorage.setItem('ai_provider', provSelect.value);
+    if (modelSelect) localStorage.setItem('ai_model', modelSelect.value);
+  }
+  toast('AI Engine settings saved! 💾');
+}
+
+async function callAI(promptOrMessages, options = {}) {
+  const apiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_api_key') || '') : '').trim();
+  if (!apiKey) {
+    throw new Error('API key missing. Please configure your OpenAI or Gemini key in Settings (⚙️).');
+  }
+  const provider = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_provider') || 'openai') : 'openai');
+  const model = options.model || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || (provider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('Network Offline. An active internet connection is required to contact AI.');
+  }
+
+  if (provider === 'openai') {
+    const messages = Array.isArray(promptOrMessages)
+      ? promptOrMessages
+      : [{ role: 'user', content: String(promptOrMessages) }];
+
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: model || 'gpt-4o-mini',
+        messages,
+        temperature: options.temperature != null ? options.temperature : 0.4,
+        ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
+      })
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const errMsg = errBody?.error?.message || `HTTP ${res.status} ${res.statusText}`;
+      if (res.status === 401) throw new Error('Invalid OpenAI API Key (401). Verify your key in Settings.');
+      if (res.status === 429) throw new Error('OpenAI Rate Limit Exceeded (429). Please try again shortly.');
+      throw new Error(`OpenAI Error: ${errMsg}`);
+    }
+
+    const data = await res.json();
+    const reply = data?.choices?.[0]?.message?.content;
+    if (!reply) throw new Error('Empty response from OpenAI');
+    return reply;
+  } else {
+    // Google Gemini Direct Client Endpoint
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-1.5-flash')}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    
+    let contents;
+    if (Array.isArray(promptOrMessages)) {
+      contents = promptOrMessages.map(m => ({
+        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }));
+    } else {
+      contents = [{ role: 'user', parts: [{ text: String(promptOrMessages) }] }];
+    }
+
+    const reqBody = {
+      contents,
+      generationConfig: {
+        temperature: options.temperature != null ? options.temperature : 0.4,
+        ...(options.jsonMode ? { responseMimeType: 'application/json' } : {})
+      }
+    };
+
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(reqBody)
+    });
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const errMsg = errBody?.error?.message || `HTTP ${res.status} ${res.statusText}`;
+      if (res.status === 400 && errMsg.includes('API_KEY_INVALID')) {
+        throw new Error('Invalid Gemini API Key. Verify your key in Settings.');
+      }
+      if (res.status === 429) throw new Error('Gemini Quota Exceeded (429). Please try again shortly.');
+      throw new Error(`Gemini Error: ${errMsg}`);
+    }
+
+    const data = await res.json();
+    const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!reply) throw new Error('Empty response from Gemini');
+    return reply;
+  }
+}
+
+async function testAIConnection() {
+  saveAISettings();
+  const statusEl = document.querySelector('#ai-conn-status');
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15)">Testing direct API connection...</span>`;
+  }
+  try {
+    const resText = await callAI('Reply with the single word "PONG".', { temperature: 0.1 });
+    const model = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || 'AI';
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connection Successful! (${esc(model)} ready)</span>`;
+    }
+    toast('AI Connection Successful! 🤖');
+  } catch (err) {
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(err.message)}</span>`;
+    }
+    toast(`AI Test Failed: ${err.message}`);
+  }
+}
+
+function findBestExerciseMatch(rawName, targetMuscle = '', equipment = '') {
+  if (!rawName) return null;
+  const q = String(rawName).trim().toLowerCase();
+  const db = (Array.isArray(EXDB) && EXDB.length) ? EXDB : (_global.__EXDB__ || []);
+  if (!db.length) return null;
+
+  // 1. Direct name match
+  let found = db.find(e => (e.name || '').toLowerCase() === q);
+  if (found) return found;
+
+  // 2. Synonyms and fuzzy matches via matchesExerciseSearch
+  found = db.find(e => matchesExerciseSearch(e, q));
+  if (found) return found;
+
+  // 3. Substring match
+  found = db.find(e => (e.name || '').toLowerCase().includes(q) || q.includes((e.name || '').toLowerCase()));
+  if (found) return found;
+
+  // 4. Token scoring
+  const words = q.split(/\s+/).filter(w => w.length > 2);
+  let best = null;
+  let maxScore = 0;
+  for (const e of db) {
+    const en = (e.name || '').toLowerCase();
+    let score = 0;
+    for (const w of words) {
+      if (en.includes(w)) score += 2;
+    }
+    if (targetMuscle && ((e.tg || '').toLowerCase().includes(targetMuscle.toLowerCase()) || (e.g || '').toLowerCase().includes(targetMuscle.toLowerCase()))) {
+      score += 1;
+    }
+    if (equipment && (e.eq || '').toLowerCase().includes(equipment.toLowerCase())) {
+      score += 1;
+    }
+    if (score > maxScore) {
+      maxScore = score;
+      best = e;
+    }
+  }
+
+  return maxScore >= 2 ? best : null;
+}
+
+function findClosestExercise(targetMuscle = '', equipment = '') {
+  const db = (Array.isArray(EXDB) && EXDB.length) ? EXDB : (_global.__EXDB__ || []);
+  if (!db.length) return null;
+  if (!targetMuscle && !equipment) return db[0];
+
+  return db.find(e => {
+    const mMatch = targetMuscle && ((e.tg || '').toLowerCase().includes(targetMuscle.toLowerCase()) || (e.g || '').toLowerCase().includes(targetMuscle.toLowerCase()));
+    const eqMatch = equipment && (e.eq || '').toLowerCase().includes(equipment.toLowerCase());
+    return mMatch && eqMatch;
+  }) || db.find(e => {
+    return targetMuscle && ((e.tg || '').toLowerCase().includes(targetMuscle.toLowerCase()) || (e.g || '').toLowerCase().includes(targetMuscle.toLowerCase()));
+  }) || db[0];
+}
+
+function createCustomExerciseFromAI(name, targetMuscle = 'Chest', equipment = 'Barbell') {
+  const cleanName = (name || 'Custom Exercise').trim();
+  const customId = 'cust_' + uid();
+  const newEx = {
+    id: customId,
+    name: cleanName,
+    g: targetMuscle || 'Chest',
+    tg: targetMuscle || 'Chest',
+    eq: equipment || 'Barbell',
+    type: 'strength',
+    isCustom: true
+  };
+  S.customExercises = S.customExercises || [];
+  S.customExercises.push(newEx);
+  save('customExercises');
+  mergeCustomExercises();
+  toast(`Created custom exercise: "${cleanName}"`);
+  return newEx;
+}
+
+function parseWorkoutTextOfflineFallback(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) return null;
+  const exercises = [];
+  let routineName = 'Imported Workout';
+
+  for (const line of lines) {
+    if (line.endsWith(':') && exercises.length === 0) {
+      routineName = line.replace(':', '').trim();
+      continue;
+    }
+    const cleaned = line.replace(/^\d+[\.\)]\s*/, '');
+    const setRepMatch = cleaned.match(/(\d+)\s*(?:sets?\s*x\s*|x|\*)\s*(\d+)(?:\s*reps?)?/i);
+    const weightMatch = cleaned.match(/(\d+(?:\.\d+)?)\s*(?:kg|lbs)/i) || cleaned.match(/\((\d+(?:\.\d+)?)\s*(?:kg|lbs)?\)/i);
+    const namePart = cleaned.split(/[:\-\(]/)[0].trim();
+    if (namePart.length >= 3) {
+      exercises.push({
+        name: namePart,
+        sets: setRepMatch ? Number(setRepMatch[1]) : 3,
+        reps: setRepMatch ? Number(setRepMatch[2]) : 8,
+        w: weightMatch ? Number(weightMatch[1]) : 0,
+        targetMuscle: 'General',
+        equipment: 'Barbell'
+      });
+    }
+  }
+
+  return { name: routineName, exercises };
+}
+
+function openAIImportModal() {
+  const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
+  modal(`
+    <div class="ai-import-sheet">
+      <div style="flex:none">
+        <h2 style="display:flex;align-items:center;gap:8px">
+          <span>🪄</span> Import Workout via AI
+        </h2>
+        <p class="t2 sm" style="margin-top:2px;margin-bottom:12px">
+          Paste text copied from ChatGPT, Instagram, notes, or upload a routine file. AI extracts exercises, sets, reps, and weights, mapping them to your library.
+        </p>
+
+        ${!hasKey ? `
+          <div class="card" style="margin-bottom:12px;padding:10px 12px;background:rgba(255,159,10,0.12);border:1px solid rgba(255,159,10,0.3)">
+            <div style="font-weight:700;font-size:13px;color:var(--am);margin-bottom:2px">⚠️ No API Key Configured</div>
+            <div class="t2 sm">Configure your OpenAI or Gemini key in Settings (⚙️) for automatic AI parsing, or paste JSON below for instant offline import.</div>
+            <button class="btn s sm-btn" data-a="opensettings" style="margin-top:8px">Open Settings ⚙️</button>
+          </div>
+        ` : ''}
+
+        <div style="margin-bottom:10px">
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Workout Text / Notes</label>
+          <textarea id="ai-import-text" class="ai-import-textarea" rows="6" placeholder="Paste your workout notes here, e.g.:&#10;Upper Hypertrophy:&#10;1. Barbell Bench Press: 4 sets x 8 reps (80kg)&#10;2. Incline Dumbbell Press: 3 sets x 10 reps (26kg)&#10;3. Lat Pulldown: 3 sets x 12 reps (65kg)&#10;4. Triceps Cable Pushdown: 3 sets x 15 reps (25kg)"></textarea>
+        </div>
+
+        <div class="row" style="margin-bottom:14px;align-items:center;justify-content:space-between">
+          <label class="btn s sm-btn" style="cursor:pointer;font-size:12px">
+            📁 Upload Text/JSON File
+            <input type="file" id="ai-import-file" accept=".txt,.json,.md,.csv" style="display:none">
+          </label>
+          <span id="ai-import-file-name" class="t2 sm"></span>
+        </div>
+      </div>
+
+      <div id="ai-import-status" style="margin-bottom:10px"></div>
+
+      <div style="flex:none">
+        <button class="btn finish-save-btn" data-a="parse-ai-workout" style="width:100%;margin-bottom:8px">⚡ Parse & Build Routine</button>
+        <button class="btn s outline" data-a="closemodal" style="width:100%">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+async function parseAIWorkoutFromInput() {
+  const textEl = document.querySelector('#ai-import-text');
+  const rawText = (textEl ? textEl.value : '').trim();
+  if (!rawText) {
+    toast('Please paste workout text or upload a file first');
+    return;
+  }
+
+  const statusEl = document.querySelector('#ai-import-status');
+  if (statusEl) {
+    statusEl.innerHTML = `<div class="card" style="text-align:center;padding:14px;background:rgba(0,122,255,0.1);border:1px solid rgba(0,122,255,0.3)">
+      <div style="font-size:24px;margin-bottom:6px">🤖</div>
+      <b>Analyzing routine with AI...</b>
+      <div class="t2 sm" style="margin-top:2px">Extracting exercises, volume, and biomechanical targets</div>
+    </div>`;
+  }
+
+  let routineJson = null;
+
+  if (rawText.startsWith('{') && rawText.endsWith('}')) {
+    try {
+      routineJson = JSON.parse(rawText);
+    } catch {}
+  }
+
+  if (!routineJson) {
+    const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
+    if (!hasKey) {
+      routineJson = parseWorkoutTextOfflineFallback(rawText);
+      if (!routineJson || !routineJson.exercises.length) {
+        if (statusEl) {
+          statusEl.innerHTML = `<div class="card" style="padding:10px;background:rgba(255,69,58,0.15);border:1px solid var(--rd)">
+            <b>API Key Required</b>
+            <div class="t2 sm">Please configure your OpenAI or Gemini API key in Settings (⚙️) to parse natural language.</div>
+          </div>`;
+        }
+        toast('Please configure your AI API key in Settings');
+        return;
+      }
+    } else {
+      try {
+        const prompt = `You are a fitness routine parser for MyGyM weightlifting PWA.
+Analyze this user text and extract a structured routine into STRICT JSON.
+NO markdown ticks or prose. Output ONLY valid JSON.
+
+Schema:
+{
+  "name": "Routine Name",
+  "exercises": [
+    {
+      "name": "Standard Exercise Name",
+      "sets": 3,
+      "reps": 8,
+      "reps2": 12,
+      "w": 50,
+      "targetMuscle": "Chest",
+      "equipment": "Barbell",
+      "note": ""
+    }
+  ]
+}
+
+User text:
+${rawText}`;
+
+        const reply = await callAI(prompt, { jsonMode: true, temperature: 0.2 });
+        const cleaned = reply.replace(/```json/gi, '').replace(/```/g, '').trim();
+        routineJson = JSON.parse(cleaned);
+      } catch (err) {
+        if (statusEl) {
+          statusEl.innerHTML = `<div class="card" style="padding:10px;background:rgba(255,69,58,0.15);border:1px solid var(--rd)">
+            <b>Parsing Failed:</b> ${esc(err.message)}
+          </div>`;
+        }
+        toast(`AI Parsing Error: ${err.message}`);
+        return;
+      }
+    }
+  }
+
+  if (!routineJson || !Array.isArray(routineJson.exercises) || !routineJson.exercises.length) {
+    if (statusEl) {
+      statusEl.innerHTML = `<div class="card" style="padding:10px;background:rgba(255,69,58,0.15);border:1px solid var(--rd)">
+        <b>No exercises could be extracted.</b> Please verify the text format.
+      </div>`;
+    }
+    toast('No exercises found in workout text');
+    return;
+  }
+
+  const mappedExercises = routineJson.exercises.map((rx, idx) => {
+    const rawName = (rx.name || `Exercise ${idx + 1}`).trim();
+    const match = findBestExerciseMatch(rawName, rx.targetMuscle, rx.equipment);
+    const closest = !match ? findClosestExercise(rx.targetMuscle, rx.equipment) : null;
+    return {
+      rawName,
+      matchedEx: match,
+      closestMatch: closest,
+      id: match ? match.id : (closest ? closest.id : '0025'),
+      sets: Math.max(1, Number(rx.sets) || 3),
+      reps: Math.max(1, Number(rx.reps) || 8),
+      reps2: rx.reps2 ? Math.max(Number(rx.reps) || 8, Number(rx.reps2)) : (Number(rx.reps) || 8) + 2,
+      w: Math.max(0, Number(rx.w) || 0),
+      targetMuscle: rx.targetMuscle || (match ? (match.tg || match.g) : 'Full Body'),
+      equipment: rx.equipment || (match ? match.eq : 'Barbell'),
+      note: rx.note || '',
+      isCustomNeeded: !match
+    };
+  });
+
+  parsedAIRoutine = {
+    name: (routineJson.name || 'Imported AI Routine').trim(),
+    exercises: mappedExercises
+  };
+
+  renderAIImportPreview();
+}
+
+function renderAIImportPreview() {
+  if (!parsedAIRoutine) return;
+  const p = parsedAIRoutine;
+
+  modal(`
+    <div class="ai-import-sheet">
+      <div style="flex:none">
+        <h2 style="display:flex;align-items:center;gap:8px">
+          <span>✨</span> Workout Import Preview
+        </h2>
+        <p class="t2 sm" style="margin-top:2px;margin-bottom:12px">
+          Review extracted exercises and library mappings before saving to your routines.
+        </p>
+
+        <div style="margin-bottom:12px">
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Routine Name</label>
+          <input type="text" id="ai-preview-name" class="txt" value="${esc(p.name)}" style="width:100%;padding:10px;font-weight:600">
+        </div>
+      </div>
+
+      <div style="overflow-y:auto;flex:1;margin-bottom:12px;padding-right:2px">
+        ${p.exercises.map((rx, idx) => {
+          const resolvedEx = X(rx.id);
+          return `
+            <div class="ai-preview-card">
+              <div class="row" style="margin-bottom:6px">
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span style="font-weight:700;color:var(--ac);font-size:13px">${idx + 1}.</span>
+                    <b style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(resolvedEx.name)}</b>
+                    ${rx.isCustomNeeded ? `<span class="chip" style="font-size:10px;color:var(--am);background:rgba(255,159,10,0.15)">Auto-Matched</span>` : `<span class="chip" style="font-size:10px;color:var(--gn);background:rgba(48,209,88,0.15)">Library Match</span>`}
+                  </div>
+                  <div class="t2 sm" style="margin-top:2px">Pasted as: "${esc(rx.rawName)}" · ${esc(resolvedEx.tg || resolvedEx.g)} (${esc(resolvedEx.eq)})</div>
+                </div>
+              </div>
+
+              ${rx.isCustomNeeded ? `
+                <div style="margin:6px 0;padding:6px 8px;background:rgba(255,255,255,0.03);border-radius:6px;font-size:11px" class="row">
+                  <span>Not in library?</span>
+                  <button class="btn s sm-btn" data-a="add-custom-ai-ex" data-i="${idx}" style="font-size:11px;padding:2px 8px">+ Add as Custom Exercise</button>
+                </div>
+              ` : ''}
+
+              <div class="row" style="font-size:12px;font-weight:600;color:var(--t1)">
+                <span>${rx.sets} sets × ${rx.reps}${rx.reps2 > rx.reps ? '-' + rx.reps2 : ''} reps</span>
+                <span>${rx.w > 0 ? rx.w + ' kg' : 'Bodyweight'}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <div style="flex:none">
+        <button class="btn finish-save-btn" data-a="commit-ai-routine" style="width:100%;margin-bottom:8px">💾 Save to My Routines</button>
+        <button class="btn s" data-a="start-ai-routine" style="width:100%;margin-bottom:8px">⚡ Save & Start Workout Immediately</button>
+        <button class="btn s outline" data-a="closemodal" style="width:100%">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+function commitAIRoutine(startImmediately = false) {
+  if (!parsedAIRoutine) return;
+  const nameInput = document.querySelector('#ai-preview-name');
+  const routineName = (nameInput && nameInput.value ? nameInput.value.trim() : parsedAIRoutine.name) || 'Imported AI Routine';
+
+  const newRoutine = {
+    id: uid(),
+    name: routineName,
+    ex: parsedAIRoutine.exercises.map(rx => ({
+      id: rx.id,
+      sets: rx.sets,
+      reps: rx.reps,
+      reps2: rx.reps2,
+      w: rx.w,
+      inc: 2.5,
+      note: rx.note || ''
+    }))
+  };
+
+  S.routines = S.routines || [];
+  S.routines.push(newRoutine);
+  save('routines');
+  closeModal();
+  toast(`Routine "${routineName}" saved! 🏆`);
+
+  if (startImmediately) {
+    startWorkout(newRoutine.id);
+  } else {
+    view = 'train';
+    render();
+  }
+}
+
+function openAICoachDrawer(initialPrompt = null) {
+  const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
+  const model = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || ((typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? 'gemini-1.5-flash' : 'gpt-4o-mini');
+
+  let curExName = 'Bench Press';
+  let curExWeight = 60;
+  if (S.act && S.act.ex && S.act.ex.length) {
+    const curEx = S.act.ex[S.act.curEx || 0];
+    if (curEx) {
+      const eObj = X(curEx.id);
+      curExName = eObj ? eObj.name : 'Current Exercise';
+      const lastSet = (curEx.sets || []).find(s => s.w > 0) || curEx.sets?.[0];
+      if (lastSet && lastSet.w) curExWeight = lastSet.w;
+    }
+  }
+
+  if (!aiCoachHistory.length) {
+    aiCoachHistory.push({
+      role: 'assistant',
+      content: `👋 Hi! I'm your MyGyM Coach (${model}). Ask me for real-time form cues, warm-up set breakdowns, alternative exercises, or progressive overload advice.`
+    });
+  }
+
+  modal(`
+    <div class="ai-coach-sheet">
+      <div class="ai-coach-header">
+        <div class="ai-coach-title-group">
+          <div class="ai-coach-avatar">🤖</div>
+          <div>
+            <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px">
+              <span>MyGyM AI Coach</span>
+              <span class="chip on" style="font-size:10px;padding:1px 6px">${esc(model)}</span>
+            </div>
+            <div class="t2 sm">${S.act ? `Active Session: ${esc(S.act.name)}` : 'On-Demand Training Assistant'}</div>
+          </div>
+        </div>
+        <button class="btn s sm-btn outline" data-a="closemodal" style="padding:4px 10px">✕</button>
+      </div>
+
+      ${!hasKey ? `
+        <div class="card" style="margin:10px 0 0;padding:10px;background:rgba(255,159,10,0.12);border:1px solid rgba(255,159,10,0.3)">
+          <div style="font-weight:700;font-size:12px;color:var(--am)">⚠️ API Key Needed for Live Answers</div>
+          <div class="t2 sm" style="margin-top:2px">Configure your OpenAI or Gemini key in Settings (⚙️) to chat with the coach.</div>
+          <button class="btn s sm-btn" data-a="opensettings" style="margin-top:6px;font-size:11px">Open Settings ⚙️</button>
+        </div>
+      ` : ''}
+
+      <div class="ai-chat-messages" id="ai-chat-messages">
+        ${aiCoachHistory.map(m => `
+          <div class="ai-msg ${m.role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant'}">
+            ${m.role === 'assistant' ? '<div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px">🤖 COACH</div>' : ''}
+            <div>${esc(m.content).replace(/\n/g, '<br>')}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <!-- Quick Context Chips -->
+      <div class="ai-quick-chips">
+        <button class="ai-chip" data-a="ai-quick-prompt" data-p="Give me 3 critical form cues and execution tips for ${esc(curExName)}">💡 Form Cues</button>
+        <button class="ai-chip" data-a="ai-quick-prompt" data-p="Calculate optimal warm-up sets building up to ${curExWeight}kg on ${esc(curExName)}">⚡ Warm-up Sets</button>
+        <button class="ai-chip" data-a="ai-quick-prompt" data-p="Suggest 2 alternative exercises targeting the same muscles if the equipment for ${esc(curExName)} is taken">🔄 Equipment Busy?</button>
+        <button class="ai-chip" data-a="ai-quick-prompt" data-p="How should I break through a plateau if I missed my rep target on ${esc(curExName)}?">📈 Rep Plateau Advice</button>
+      </div>
+
+      <div class="ai-input-bar">
+        <input type="text" id="ai-chat-input" placeholder="Ask about form, warm-ups, substitutions...">
+        <button class="ai-send-btn" data-a="send-ai-coach-msg" title="Send Question">➤</button>
+      </div>
+    </div>
+  `);
+
+  const msgContainer = document.querySelector('#ai-chat-messages');
+  if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
+
+  if (initialPrompt) {
+    sendAICoachMessage(initialPrompt);
+  }
+}
+
+async function sendAICoachMessage(userText) {
+  const input = document.querySelector('#ai-chat-input');
+  const text = (userText || (input ? input.value : '')).trim();
+  if (!text) return;
+  if (input) input.value = '';
+
+  aiCoachHistory.push({ role: 'user', content: text });
+
+  const msgContainer = document.querySelector('#ai-chat-messages');
+  if (msgContainer) {
+    msgContainer.innerHTML += `
+      <div class="ai-msg ai-msg-user">
+        <div>${esc(text).replace(/\n/g, '<br>')}</div>
+      </div>
+      <div class="ai-msg ai-msg-assistant" id="ai-coach-loading">
+        <div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px">🤖 COACH</div>
+        <div class="t2 sm">Thinking...</div>
+      </div>
+    `;
+    msgContainer.scrollTop = msgContainer.scrollHeight;
+  }
+
+  let systemContext = 'You are an elite strength & bodybuilding coach embedded in MyGyM PWA. Keep answers concise (2-4 sentences max), direct, and actionable for a lifter in the gym.';
+  if (S.act) {
+    const curEx = S.act.ex[S.act.curEx || 0];
+    const eObj = curEx ? X(curEx.id) : null;
+    systemContext += `\nLifter's active workout: "${S.act.name}". Current exercise: ${eObj ? eObj.name : 'Unknown'}. Equipment: ${eObj ? eObj.eq : 'N/A'}. Target: ${eObj ? (eObj.tg || eObj.g) : 'N/A'}.`;
+  }
+
+  try {
+    const messages = [
+      { role: 'system', content: systemContext },
+      ...aiCoachHistory.slice(-8)
+    ];
+    const reply = await callAI(messages, { temperature: 0.4 });
+    aiCoachHistory.push({ role: 'assistant', content: reply });
+
+    const loadingEl = document.querySelector('#ai-coach-loading');
+    if (loadingEl) {
+      loadingEl.id = '';
+      loadingEl.innerHTML = `
+        <div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px">🤖 COACH</div>
+        <div>${esc(reply).replace(/\n/g, '<br>')}</div>
+      `;
+    }
+  } catch (err) {
+    const loadingEl = document.querySelector('#ai-coach-loading');
+    if (loadingEl) {
+      loadingEl.id = '';
+      loadingEl.innerHTML = `
+        <div style="font-size:11px;font-weight:700;color:var(--rd);margin-bottom:3px">⚠️ ERROR</div>
+        <div>${esc(err.message)}</div>
+      `;
+    }
+  }
+
+  if (msgContainer) msgContainer.scrollTop = msgContainer.scrollHeight;
 }
 
 // ---- Finish Workout ----
@@ -6773,6 +7475,61 @@ document.addEventListener('click', e => {
       saveCustomExerciseFromForm();
       return;
     }
+    case 'openaicoach': {
+      openAICoachDrawer(t.dataset.p || null);
+      return;
+    }
+    case 'openaiimport': {
+      openAIImportModal();
+      return;
+    }
+    case 'test-ai-key': {
+      testAIConnection();
+      return;
+    }
+    case 'save-ai-key': {
+      saveAISettings();
+      return;
+    }
+    case 'toggle-key-vis': {
+      const keyInput = document.querySelector('#ai-api-key-input');
+      if (keyInput) {
+        keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
+      }
+      return;
+    }
+    case 'parse-ai-workout': {
+      parseAIWorkoutFromInput();
+      return;
+    }
+    case 'commit-ai-routine': {
+      commitAIRoutine(false);
+      return;
+    }
+    case 'start-ai-routine': {
+      commitAIRoutine(true);
+      return;
+    }
+    case 'send-ai-coach-msg': {
+      sendAICoachMessage();
+      return;
+    }
+    case 'ai-quick-prompt': {
+      sendAICoachMessage(t.dataset.p);
+      return;
+    }
+    case 'add-custom-ai-ex': {
+      const exIdx = parseInt(t.dataset.i, 10);
+      if (parsedAIRoutine && parsedAIRoutine.exercises[exIdx]) {
+        const item = parsedAIRoutine.exercises[exIdx];
+        const created = createCustomExerciseFromAI(item.rawName, item.targetMuscle, item.equipment);
+        item.id = created.id;
+        item.matchedEx = created;
+        item.isCustomNeeded = false;
+        renderAIImportPreview();
+      }
+      return;
+    }
     case 'removecursessionex': {
       if (!S.act || !Array.isArray(S.act.ex)) return;
       const exIdx = parseInt(t.dataset.i ?? S.act.curEx, 10);
@@ -7197,6 +7954,47 @@ document.addEventListener('change', e => {
     imp(t.files[0]);
     t.value = '';
   }
+  if (t.id === 'ai-import-file' && t.files && t.files[0]) {
+    const file = t.files[0];
+    const nameEl = document.querySelector('#ai-import-file-name');
+    if (nameEl) nameEl.textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const textEl = document.querySelector('#ai-import-text');
+      if (textEl) textEl.value = ev.target.result;
+    };
+    reader.readAsText(file);
+    return;
+  }
+  if (t.id === 'ai-provider-select') {
+    const prov = t.value;
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_provider', prov);
+    const modelSelect = document.querySelector('#ai-model-select');
+    const keyInput = document.querySelector('#ai-api-key-input');
+    if (modelSelect) {
+      if (prov === 'gemini') {
+        modelSelect.innerHTML = `
+          <option value="gemini-1.5-flash" selected>gemini-1.5-flash (Fast & Recommended)</option>
+          <option value="gemini-1.5-pro">gemini-1.5-pro (High Reasoning)</option>
+        `;
+        if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', 'gemini-1.5-flash');
+      } else {
+        modelSelect.innerHTML = `
+          <option value="gpt-4o-mini" selected>gpt-4o-mini (Fast & Recommended)</option>
+          <option value="gpt-4o">gpt-4o (High Reasoning)</option>
+        `;
+        if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', 'gpt-4o-mini');
+      }
+    }
+    if (keyInput) {
+      keyInput.placeholder = prov === 'gemini' ? 'AIzaSy...' : 'sk-proj-...';
+    }
+    return;
+  }
+  if (t.id === 'ai-model-select') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value);
+    return;
+  }
   if (t.id === 'calib-goal') {
     const gEl = $('#calib-gender');
     const targetBfEl = $('#calib-target-bf');
@@ -7441,7 +8239,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=5.9.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.0.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -7453,6 +8251,13 @@ async function init() {
     });
   }
 }
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target && e.target.id === 'ai-chat-input') {
+    e.preventDefault();
+    sendAICoachMessage();
+  }
+});
 
 // Auto-run boot sequence
 init();
@@ -7472,9 +8277,27 @@ if (typeof globalThis !== 'undefined') {
     finishWorkout,
     finish: finishWorkout,
     closeModal,
+    showSettingsModal,
     openPastWorkoutModal,
     savePastWorkout,
     editPastWorkout,
+    callAI,
+    testAIConnection,
+    saveAISettings,
+    findBestExerciseMatch,
+    findClosestExercise,
+    createCustomExerciseFromAI,
+    openAIImportModal,
+    parseAIWorkoutFromInput,
+    parseWorkoutTextOfflineFallback,
+    renderAIImportPreview,
+    commitAIRoutine,
+    openAICoachDrawer,
+    sendAICoachMessage,
+    get aiCoachHistory() { return aiCoachHistory; },
+    set aiCoachHistory(v) { aiCoachHistory = v; },
+    get parsedAIRoutine() { return parsedAIRoutine; },
+    set parsedAIRoutine(v) { parsedAIRoutine = v; },
     Calc,
     calcWeeklyMuscleFrequency,
     renderWeeklyMuscleFrequencyCard,

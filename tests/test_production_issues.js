@@ -926,26 +926,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.9.0-calc, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.9.0-calc';"), 'sw.js must use mygym-core-v5.9.0-calc cache name');
-  assert(swCode.includes("'./style.css?v=5.9.0'"), 'sw.js must precache style.css?v=5.9.0');
-  assert(swCode.includes("'./app.js?v=5.9.0'"), 'sw.js must precache app.js?v=5.9.0');
-  assert(swCode.includes("'./calc.js?v=5.9.0'"), 'sw.js must precache calc.js?v=5.9.0');
+it('sw.js cache key is bumped to mygym-core-v6.0.0-production, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.0.0-production';"), 'sw.js must use mygym-core-v6.0.0-production cache name');
+  assert(swCode.includes("'./style.css?v=6.0.0'"), 'sw.js must precache style.css?v=6.0.0');
+  assert(swCode.includes("'./app.js?v=6.0.0'"), 'sw.js must precache app.js?v=6.0.0');
+  assert(swCode.includes("'./calc.js?v=6.0.0'"), 'sw.js must precache calc.js?v=6.0.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=5.9.0'), 'index.html must link style.css?v=5.9.0');
-  assert(htmlCode.includes('app.js?v=5.9.0'), 'index.html must load app.js?v=5.9.0');
-  assert(htmlCode.includes('calc.js?v=5.9.0'), 'index.html must load calc.js?v=5.9.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.9.0-calc'"), 'index.html must use mygym-core-v5.9.0-calc');
+  assert(htmlCode.includes('style.css?v=6.0.0'), 'index.html must link style.css?v=6.0.0');
+  assert(htmlCode.includes('app.js?v=6.0.0'), 'index.html must load app.js?v=6.0.0');
+  assert(htmlCode.includes('calc.js?v=6.0.0'), 'index.html must load calc.js?v=6.0.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.0-production'"), 'index.html must use mygym-core-v6.0.0-production');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '5.9.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.9.0-calc');
+  assert.equal(api.APP_VERSION, '6.0.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.0-production');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2344,6 +2344,186 @@ it('Backdated workout editing and deletion: editPastWorkout and delete actions w
   api.S.logs.splice(logIdx, 1);
   api.save('logs', api.S.logs);
   assert(!api.S.logs.some(l => String(l.id) === String(testLogId)));
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 20: BYOK AI ASSISTANT, ROUTINE IMPORTER & SECURE CLIENT STORAGE (v6.0.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 20: BYOK AI Assistant, Routine Importer & Secure Client Storage (v6.0.0)');
+
+it('Settings modal renders AI Engine Setup (BYOK) card with provider, model, and masked key input', () => {
+  api.showSettingsModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('AI Engine Setup (BYOK)'), 'Settings must include AI Engine Setup');
+  assert(mHtml.includes('ai-provider-select'), 'Settings must include AI provider select');
+  assert(mHtml.includes('OpenAI (ChatGPT)'), 'Settings must offer OpenAI provider');
+  assert(mHtml.includes('Google Gemini'), 'Settings must offer Gemini provider');
+  assert(mHtml.includes('ai-model-select'), 'Settings must include model select');
+  assert(mHtml.includes('ai-api-key-input'), 'Settings must include masked API key input');
+  assert(mHtml.includes('data-a="test-ai-key"'), 'Settings must include Test Connection button');
+  assert(mHtml.includes('data-a="save-ai-key"'), 'Settings must include Save Key button');
+  assert(mHtml.includes('data-a="toggle-key-vis"'), 'Settings must include toggle key visibility button');
+});
+
+it('Strict client-side key security: API key resides exclusively in localStorage and never in S.logs, S.routines, or S.cfg', () => {
+  const secretKey = 'sk-test-secret-never-leak-12345';
+  mockWindow.localStorage.setItem('ai_api_key', secretKey);
+
+  assert.equal(mockWindow.localStorage.getItem('ai_api_key'), secretKey);
+  assert.equal(api.S.cfg.aiKey, undefined, 'S.cfg must not store API key');
+  assert.equal(api.S.cfg.ai_api_key, undefined, 'S.cfg must not store ai_api_key');
+
+  // Verify that S state stringification does not contain the secret key
+  const stateStr = JSON.stringify(api.S);
+  assert(!stateStr.includes(secretKey), 'api.S state must never contain the API key');
+
+  // Verify app.js uses direct localStorage calls and no proxy server
+  assert(appCode.includes("localStorage.getItem('ai_api_key')"), 'app.js must read key from localStorage');
+  assert(!appCode.includes('https://api.mygym.app/ai'), 'app.js must not proxy AI requests through third-party servers');
+});
+
+it('Direct client-side endpoints: callAI points directly to OpenAI and Google Gemini and handles offline/missing keys', async () => {
+  // Direct endpoints
+  assert(appCode.includes('https://api.openai.com/v1/chat/completions'), 'app.js must connect directly to OpenAI API');
+  assert(appCode.includes('https://generativelanguage.googleapis.com/v1beta/models/'), 'app.js must connect directly to Gemini API');
+
+  // Missing key throws descriptive error
+  mockWindow.localStorage.removeItem('ai_api_key');
+  await assert.rejects(
+    async () => { await api.callAI('Ping'); },
+    /API key missing/
+  );
+
+  // Offline status check
+  mockWindow.localStorage.setItem('ai_api_key', 'sk-test-valid-offline');
+  mockWindow.navigator.onLine = false;
+  await assert.rejects(
+    async () => { await api.callAI('Ping'); },
+    /Network Offline/
+  );
+  mockWindow.navigator.onLine = true;
+});
+
+it('Workout routine importer: openAIImportModal renders textarea/file upload and parses structured exercises', () => {
+  api.openAIImportModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('Import Workout via AI'), 'Modal must have Import Workout via AI header');
+  assert(mHtml.includes('id="ai-import-text"'), 'Modal must include multi-line text input');
+  assert(mHtml.includes('id="ai-import-file"'), 'Modal must include file upload input');
+  assert(mHtml.includes('data-a="parse-ai-workout"'), 'Modal must include parse workout action');
+
+  // Test local parser fallback for natural language input
+  const sampleText = `Push Hypertrophy:
+1. Barbell Bench Press: 4 sets x 8 reps (80kg)
+2. Incline Dumbbell Press: 3 sets x 10 reps (28kg)
+3. Triceps Cable Pushdown: 3 sets x 12 reps (30kg)`;
+
+  const parsed = api.parseWorkoutTextOfflineFallback(sampleText);
+  assert(parsed && parsed.exercises.length === 3);
+  assert.equal(parsed.exercises[0].name, 'Barbell Bench Press');
+  assert.equal(parsed.exercises[0].sets, 4);
+  assert.equal(parsed.exercises[0].reps, 8);
+  assert.equal(parsed.exercises[0].w, 80);
+});
+
+it('Biomechanical matching & EXDB auto-mapping aligns exercises and creates custom movements on demand', () => {
+  // Direct match in EXDB
+  const matchBench = api.findBestExerciseMatch('Barbell Bench Press', 'Chest', 'Barbell');
+  assert(matchBench, 'Barbell Bench Press must match in EXDB');
+  assert.equal(matchBench.id, '0025');
+
+  // Synonyms and fuzzy matches
+  const matchIncline = api.findBestExerciseMatch('Incline dumbbell press', 'Chest', 'Dumbbell');
+  assert(matchIncline, 'Incline dumbbell press must match in EXDB');
+
+  // Missing exercise suggests closest and enables 1-tap custom creation
+  const novelExercise = 'Swiss Bar Floor Press Multi-Grip';
+  const closest = api.findClosestExercise('Chest', 'Barbell');
+  assert(closest && closest.name, 'findClosestExercise must return nearest match');
+
+  const createdCustom = api.createCustomExerciseFromAI(novelExercise, 'Chest', 'Barbell');
+  assert(createdCustom && createdCustom.id.startsWith('cust_'));
+  assert.equal(createdCustom.name, 'Swiss Bar Floor Press Multi-Grip');
+
+  // Verify created custom exercise is resolvable via X(id)
+  const resolved = api.X(createdCustom.id);
+  assert.equal(resolved.name, 'Swiss Bar Floor Press Multi-Grip');
+});
+
+it('commitAIRoutine commits parsed workout to S.routines and renders without data corruption', () => {
+  const initialRoutinesCount = api.S.routines.length;
+  api.parsedAIRoutine = {
+    name: 'AI Generated Pull Day',
+    exercises: [
+      { id: '0025', sets: 4, reps: 8, reps2: 10, w: 80, note: 'Drive with heels' }
+    ]
+  };
+
+  api.commitAIRoutine(false);
+  assert.equal(api.S.routines.length, initialRoutinesCount + 1, 'Routine must be appended to S.routines');
+  const added = api.S.routines.at(-1);
+  assert.equal(added.name, 'AI Generated Pull Day');
+  assert.equal(added.ex.length, 1);
+  assert.equal(added.ex[0].id, '0025');
+});
+
+it('In-App AI Coach slide-over drawer: ephemeral session history, active workout context, and quick chips', () => {
+  // Open AI coach drawer
+  api.openAICoachDrawer();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('MyGyM AI Coach'), 'Drawer must display MyGyM AI Coach');
+  assert(mHtml.includes('ai-chat-messages'), 'Drawer must render chat message container');
+  assert(mHtml.includes('ai-quick-chips'), 'Drawer must provide quick action chips');
+  assert(mHtml.includes('💡 Form Cues'), 'Drawer must offer Form Cues chip');
+  assert(mHtml.includes('⚡ Warm-up Sets'), 'Drawer must offer Warm-up Sets chip');
+
+  // Ephemeral memory: history is maintained in memory without polluting S or localStorage
+  assert(Array.isArray(api.aiCoachHistory));
+  assert(api.aiCoachHistory.length > 0);
+  assert.equal(api.S.aiCoachHistory, undefined, 'S state must not store ephemeral AI chat history');
+});
+
+it('Obliques and Forearms are fully tracked with dual-pips and calendar week boundaries in calc.js', () => {
+  const now = new Date('2026-10-21T10:00:00Z').getTime(); // Wednesday
+
+  // Log containing Obliques exercise (Russian twist / side plank) and Forearms (wrist curl)
+  const testLogs = [
+    {
+      date: new Date('2026-10-19T10:00:00Z').getTime(), // Monday (same calendar week)
+      ex: [
+        { id: 'ob1', name: 'Russian Twist with Plate', tg: 'obliques', sets: [{ w: 10, r: 20, done: true }] },
+        { id: 'fa1', name: 'Barbell Wrist Curl', tg: 'forearms', sets: [{ w: 30, r: 15, done: true }] }
+      ]
+    },
+    {
+      date: new Date('2026-10-20T10:00:00Z').getTime(), // Tuesday (same calendar week)
+      ex: [
+        { id: 'ob1', name: 'Russian Twist with Plate', tg: 'obliques', sets: [{ w: 10, r: 20, done: true }] },
+        { id: 'fa1', name: 'Barbell Wrist Curl', tg: 'forearms', sets: [{ w: 30, r: 15, done: true }] }
+      ]
+    }
+  ];
+
+  const freq = Calc.calcWeeklyMuscleFrequency(testLogs, now, 'mon');
+  assert.equal(freq['Obliques'].count, 2);
+  assert.equal(freq['Obliques'].status, 'optimal');
+  assert(freq['Obliques'].pips.includes('●●'));
+
+  assert.equal(freq['Forearms'].count, 2);
+  assert.equal(freq['Forearms'].status, 'optimal');
+  assert(freq['Forearms'].pips.includes('●●'));
+});
+
+it('Mobile-first ergonomics: CSS input bounds min-width 72px, height 44px, font-size 16px, and CSP whitelist', () => {
+  // CSS verification
+  assert(cssCode.includes('min-width: 72px;'), 'style.css must enforce min-width: 72px on set-input-box for portrait touch targets');
+  assert(cssCode.includes('font-size: 16px !important;'), 'style.css must enforce font-size: 16px on set-val-input to prevent iOS zoom');
+  assert(cssCode.includes('.ai-coach-sheet'), 'style.css must include .ai-coach-sheet');
+  assert(cssCode.includes('max-height: 85dvh;'), 'style.css must use dvh units for mobile viewports');
+
+  // CSP verification in index.html
+  assert(htmlCode.includes('https://api.openai.com'), 'index.html CSP must allow https://api.openai.com');
+  assert(htmlCode.includes('https://generativelanguage.googleapis.com'), 'index.html CSP must allow https://generativelanguage.googleapis.com');
 });
 
 console.log(`\n======================================================`);

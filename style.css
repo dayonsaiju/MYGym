@@ -3828,7 +3828,7 @@ textarea.note:focus {
   border: 1px solid var(--bd);
   border-radius: 10px;
   height: 44px;
-  min-width: 0;
+  min-width: 72px;
   flex: 1 1 0%;
   padding: 0 4px;
   box-sizing: border-box;
@@ -4404,3 +4404,183 @@ textarea.note:focus {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+/* ==========================================================================
+   v6.0.0 BYOK AI ASSISTANT & ROUTINE IMPORTER STYLES
+   ========================================================================== */
+.ai-coach-sheet {
+  display: flex;
+  flex-direction: column;
+  height: 85dvh;
+  max-height: 85dvh;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+  text-align: left;
+}
+
+.ai-coach-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 0.5px solid var(--bd);
+  flex: none;
+}
+
+.ai-coach-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ai-coach-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ac), #5856D6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+}
+
+.ai-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ai-msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: 16px;
+  font-size: 14px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.ai-msg-user {
+  align-self: flex-end;
+  background: var(--ac);
+  color: #FFFFFF;
+  border-bottom-right-radius: 4px;
+}
+
+.ai-msg-assistant {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--t1);
+  border-bottom-left-radius: 4px;
+}
+
+.ai-quick-chips {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 0;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex: none;
+}
+.ai-quick-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.ai-chip {
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--t1);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.15s ease;
+}
+.ai-chip:active {
+  background: var(--ac);
+  color: #FFFFFF;
+}
+
+.ai-input-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 0.5px solid var(--bd);
+  flex: none;
+}
+
+.ai-input-bar input {
+  flex: 1;
+  height: 44px;
+  background: var(--c2);
+  border: 1px solid var(--bd);
+  border-radius: 22px;
+  padding: 0 16px;
+  color: #FFFFFF;
+  font-size: 15px;
+}
+
+.ai-send-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--ac);
+  border: none;
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  cursor: pointer;
+  flex: none;
+}
+
+/* AI Import Sheet */
+.ai-import-sheet {
+  display: flex;
+  flex-direction: column;
+  max-height: 88dvh;
+  text-align: left;
+}
+
+.ai-import-textarea {
+  width: 100%;
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--c2);
+  border: 1px solid var(--bd);
+  color: #FFFFFF;
+  font-size: 14px;
+  line-height: 1.4;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.ai-preview-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.ai-ex-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+

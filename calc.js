@@ -453,7 +453,7 @@
       groups.add('Abs');
     }
     // 12. Obliques
-    if (tg === 'obliques' || tg === 'serratus anterior' || n.includes('oblique') || n.includes('russian twist') || n.includes('side plank') || n.includes('woodchopper') || n.includes('pallof')) {
+    if (tg === 'obliques' || tg === 'serratus anterior' || n.includes('oblique') || n.includes('russian twist') || n.includes('side plank') || n.includes('woodchopper') || n.includes('pallof') || n.includes('serratus')) {
       groups.add('Obliques');
     }
 
@@ -469,14 +469,12 @@
     const calLogs = (logs || []).filter(l => l && l.date >= startOfWeek && l.date <= endOfWeek);
     const rollingLogs = (logs || []).filter(l => l && l.date >= sevenDaysAgo && l.date <= refTime);
 
+    // True Calendar Week bucketing as default (Mon-Sun or Sun-Sat based on weekStartDay)
     let recentLogs;
-    if (options.mode === 'calendar' || options.useCalendarWeek === true) {
-      recentLogs = calLogs;
-    } else if (options.mode === 'rolling' || options.useCalendarWeek === false) {
+    if (options.mode === 'rolling' || options.useCalendarWeek === false) {
       recentLogs = rollingLogs;
     } else {
-      // Default: Calendar week bucketing, falling back to rolling if logs are in rolling window
-      recentLogs = (calLogs.length >= rollingLogs.length) ? calLogs : rollingLogs;
+      recentLogs = calLogs;
     }
 
     const dayGroups = {};
@@ -689,3 +687,4 @@
     calcMacros
   };
 });
+
