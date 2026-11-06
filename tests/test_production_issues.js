@@ -215,14 +215,19 @@ const mockWindow = {
     createElement: (tag) => new MockElement(tag),
     getElementById: (id) => {
       if (elementsMap['#' + id]) return elementsMap['#' + id];
+      if (id === 'ai-api-key-input' && elementsMap['#ai-key-input']) return elementsMap['#ai-key-input'];
+      if (id === 'ai-key-input' && elementsMap['#ai-api-key-input']) return elementsMap['#ai-api-key-input'];
       for (const root of [elementsMap['#m'], elementsMap['#v']]) {
-        if (root && root.innerHTML && root.innerHTML.includes(`id="${id}"`)) {
-          const match = root.innerHTML.match(new RegExp(`<([a-z0-9-]+)[^>]*id="${id}"([^>]*)>`, 'i'));
+        const altId = id === 'ai-api-key-input' ? 'ai-key-input' : (id === 'ai-key-input' ? 'ai-api-key-input' : id);
+        const searchId = root && root.innerHTML && root.innerHTML.includes(`id="${id}"`) ? id : (root && root.innerHTML && root.innerHTML.includes(`id="${altId}"`) ? altId : null);
+        if (searchId) {
+          const match = root.innerHTML.match(new RegExp(`<([a-z0-9-]+)[^>]*id="${searchId}"([^>]*)>`, 'i'));
           if (match) {
             const valMatch = match[0].match(/value="([^"]*)"/i);
-            const el = new MockElement(match[1], '', id);
+            const el = new MockElement(match[1], '', searchId);
             el.value = valMatch ? valMatch[1] : '';
             elementsMap['#' + id] = el;
+            elementsMap['#' + searchId] = el;
             return el;
           }
         }
@@ -957,26 +962,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.0.3-stable, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.0.3-stable';"), 'sw.js must use mygym-core-v6.0.3-stable cache name');
-  assert(swCode.includes("'./style.css?v=6.0.3'"), 'sw.js must precache style.css?v=6.0.3');
-  assert(swCode.includes("'./app.js?v=6.0.3'"), 'sw.js must precache app.js?v=6.0.3');
-  assert(swCode.includes("'./calc.js?v=6.0.3'"), 'sw.js must precache calc.js?v=6.0.3');
+it('sw.js cache key is bumped to mygym-core-v6.0.4-groq-fix, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.0.4-groq-fix';"), 'sw.js must use mygym-core-v6.0.4-groq-fix cache name');
+  assert(swCode.includes("'./style.css?v=6.0.4'"), 'sw.js must precache style.css?v=6.0.4');
+  assert(swCode.includes("'./app.js?v=6.0.4'"), 'sw.js must precache app.js?v=6.0.4');
+  assert(swCode.includes("'./calc.js?v=6.0.4'"), 'sw.js must precache calc.js?v=6.0.4');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.0.3'), 'index.html must link style.css?v=6.0.3');
-  assert(htmlCode.includes('app.js?v=6.0.3'), 'index.html must load app.js?v=6.0.3');
-  assert(htmlCode.includes('calc.js?v=6.0.3'), 'index.html must load calc.js?v=6.0.3');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.3-stable'"), 'index.html must use mygym-core-v6.0.3-stable');
+  assert(htmlCode.includes('style.css?v=6.0.4'), 'index.html must link style.css?v=6.0.4');
+  assert(htmlCode.includes('app.js?v=6.0.4'), 'index.html must load app.js?v=6.0.4');
+  assert(htmlCode.includes('calc.js?v=6.0.4'), 'index.html must load calc.js?v=6.0.4');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.4-groq-fix'"), 'index.html must use mygym-core-v6.0.4-groq-fix');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.0.3');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.3-stable');
+  assert.equal(api.APP_VERSION, '6.0.4');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.4-groq-fix');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2759,6 +2764,82 @@ it('Error translation formats 401, 429, and network failures with user-friendly 
     async () => { await api.callAI('Test Network'); },
     /Network connection blocked or CORS issue/
   );
+});
+
+it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6.0.4)', async () => {
+  // 1. Verify Groq exact model strings in AI_PROVIDERS
+  assert.equal(api.AI_PROVIDERS.groq.defaultModel, 'llama-3.3-70b-versatile');
+  assert.equal(api.AI_PROVIDERS.groq.models[0].id, 'llama-3.3-70b-versatile');
+  assert.equal(api.AI_PROVIDERS.groq.models[1].id, 'llama3-8b-8192');
+  assert.equal(api.AI_PROVIDERS.groq.models[2].id, 'mixtral-8x7b-32768');
+
+  // 2. Test saveAIKey(): trims whitespace, stores mygym_ai_* keys, syncs S.cfg
+  api.showSettingsModal();
+  const keyInput = mockWindow.document.getElementById('ai-key-input');
+  const provSelect = mockWindow.document.getElementById('ai-provider-select');
+  const modelSelect = mockWindow.document.getElementById('ai-model-select');
+
+  keyInput.value = '   gsk_test_whitespace_key_789   ';
+  provSelect.value = 'groq';
+  modelSelect.value = 'llama-3.3-70b-versatile';
+
+  elementsMap['#toast'].innerHTML = '';
+  api.saveAIKey();
+
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), 'gsk_test_whitespace_key_789');
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_provider'), 'groq');
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_model'), 'llama-3.3-70b-versatile');
+  assert.equal(api.S.cfg.aiKey, 'gsk_test_whitespace_key_789');
+  assert.equal(api.S.cfg.aiProvider, 'groq');
+  assert.equal(api.S.cfg.aiModel, 'llama-3.3-70b-versatile');
+  assert(elementsMap['#toast'].innerHTML.includes('API Key saved successfully'));
+
+  // 3. Test testAIConnection(): empty key alerts user
+  keyInput.value = '';
+  let alertMsg = null;
+  mockWindow.alert = (msg) => { alertMsg = msg; };
+  elementsMap['#toast'].innerHTML = '';
+  await api.testAIConnection();
+  assert(alertMsg && alertMsg.includes('Please enter an API key'));
+
+  // 4. Test testAIConnection() with Groq logs payload to console and calls groq endpoint
+  keyInput.value = 'gsk_test_valid_groq_key';
+  provSelect.value = 'groq';
+  modelSelect.value = 'llama-3.3-70b-versatile';
+
+  let capturedConsolePayload = null;
+  const origConsoleLog = console.log;
+  console.log = (payload, ...rest) => {
+    if (payload && payload.model && payload.messages) {
+      capturedConsolePayload = payload;
+    }
+    origConsoleLog(payload, ...rest);
+  };
+
+  let capturedUrl = null;
+  let capturedBody = null;
+  mockWindow.fetch = async (url, opts = {}) => {
+    capturedUrl = url;
+    capturedBody = JSON.parse(opts.body || '{}');
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Groq Hello Response' } }] })
+    };
+  };
+
+  await api.testAIConnection();
+  console.log = origConsoleLog;
+
+  assert.equal(capturedUrl, 'https://api.groq.com/openai/v1/chat/completions');
+  assert.equal(capturedBody.model, 'llama-3.3-70b-versatile');
+  assert.equal(capturedBody.messages[0].content, 'hi');
+  assert(capturedConsolePayload, 'testAIConnection must log payload to console');
+  assert.equal(capturedConsolePayload.model, 'llama-3.3-70b-versatile');
+  assert.equal(capturedConsolePayload.messages[0].content, 'hi');
+
+  // 5. Test eliminating invalid auto-switching: manual Groq selection is preserved
+  api.handleAIKeyInput('sk-openai-key-while-groq-selected');
+  assert.equal(provSelect.value, 'groq', 'handleAIKeyInput must not overwrite explicitly selected Groq provider');
 });
 
 it('index.html Content-Security-Policy expands connect-src for all supported AI providers', () => {

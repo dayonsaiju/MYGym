@@ -132,8 +132,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.0.3';
-const SHELL_VERSION = 'mygym-core-v6.0.3-stable';
+const APP_VERSION = '6.0.4';
+const SHELL_VERSION = 'mygym-core-v6.0.4-groq-fix';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5103,9 +5103,9 @@ function expCSV() {
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
 function showSettingsModal() {
-  const savedKey = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_api_key') : '') || '';
-  const savedProv = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_provider') : '') || 'auto';
-  const savedModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : '') || '';
+  const savedKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key')) : '') || '';
+  const savedProv = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider')) : '') || 'auto';
+  const savedModel = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model')) : '') || '';
   const savedBaseUrl = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || '';
   const detectedKeyInfo = detectProviderFromKey(savedKey);
 
@@ -5231,7 +5231,7 @@ function showSettingsModal() {
                   <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle View</button>
                 </div>
               </div>
-              <input type="password" id="ai-api-key-input" class="txt" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
+              <input type="password" id="ai-key-input" data-id="ai-api-key-input" class="txt ai-api-key-input" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
             </div>
 
             <div class="row g" style="margin-top:10px">
@@ -5373,9 +5373,9 @@ const AI_PROVIDERS = {
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     defaultModel: 'llama-3.3-70b-versatile',
     models: [
-      { id: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b-versatile (Recommended)' },
-      { id: 'llama3-8b-8192', name: 'llama3-8b-8192 (Fast Alternative)' },
-      { id: 'mixtral-8x7b-32768', name: 'mixtral-8x7b-32768' }
+      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended)' },
+      { id: 'llama3-8b-8192', name: 'Llama 3 8B 8192 (Fast Alternative)' },
+      { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B 32768' }
     ],
     placeholder: 'gsk_...'
   },
@@ -5442,7 +5442,7 @@ function detectProviderFromKey(key) {
 
 function resolveAIConfig() {
   const domKey = typeof document !== 'undefined'
-    ? (document.getElementById('ai-api-key-input')?.value)
+    ? (document.getElementById('ai-key-input')?.value ?? document.getElementById('ai-api-key-input')?.value)
     : null;
   const domProvider = typeof document !== 'undefined'
     ? (document.getElementById('ai-provider-select')?.value)
@@ -5454,9 +5454,9 @@ function resolveAIConfig() {
     ? (document.getElementById('ai-model-input')?.value ?? document.getElementById('ai-custom-model-input')?.value ?? document.getElementById('ai-model-select')?.value)
     : null;
 
-  const apiKey = (domKey != null && domKey !== '' ? domKey : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_api_key') || '') : '')).trim();
-  let provider = (domProvider != null && domProvider !== '' ? domProvider : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_provider') || 'auto') : 'auto'));
-  let model = (domModel != null && domModel !== '' ? domModel : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_model') || '') : '')).trim();
+  const apiKey = (domKey != null && domKey !== '' ? domKey : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key') || '') : '')).trim();
+  let provider = (domProvider != null && domProvider !== '' ? domProvider : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider') || 'auto') : 'auto'));
+  let model = (domModel != null && domModel !== '' ? domModel : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model') || '') : '')).trim();
   const baseUrl = (domBaseUrl != null && domBaseUrl !== '' ? domBaseUrl : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '')).trim();
 
   // If provider === 'custom', preserve whatever base URL and model name the user entered without overriding it based on key prefix!
@@ -5471,7 +5471,7 @@ function resolveAIConfig() {
     };
   }
 
-  // If auto or unset, detect from key ONLY when provider is not 'custom'
+  // Only run key-prefix auto-detection if provider is explicitly 'auto' or empty
   if (provider === 'auto' || !provider) {
     const detected = detectProviderFromKey(apiKey);
     if (detected) {
@@ -5485,7 +5485,13 @@ function resolveAIConfig() {
   }
 
   const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
-  const effectiveModel = model || provDef.defaultModel || 'gpt-4o-mini';
+  let effectiveModel = (model || provDef.defaultModel || 'gpt-4o-mini').trim();
+
+  if (provider === 'groq') {
+    if (!effectiveModel || effectiveModel === 'llama-3.3-70b-versatile' || effectiveModel.includes('llama-3.3-70b')) {
+      effectiveModel = 'llama-3.3-70b-versatile';
+    }
+  }
 
   return {
     apiKey,
@@ -5500,7 +5506,7 @@ function resolveAIConfig() {
 function renderAIModelOptions(prov, currentModel) {
   if (prov === 'auto') {
     return `
-      <option value="llama-3.3-70b-versatile" ${(!currentModel || currentModel === 'llama-3.3-70b-versatile') ? 'selected' : ''}>llama-3.3-70b-versatile (Groq)</option>
+      <option value="llama-3.3-70b-versatile" ${(!currentModel || currentModel === 'llama-3.3-70b-versatile') ? 'selected' : ''}>Llama 3.3 70B Versatile (Groq)</option>
       <option value="meta-llama/llama-3.1-8b-instruct:free" ${currentModel === 'meta-llama/llama-3.1-8b-instruct:free' ? 'selected' : ''}>meta-llama/llama-3.1-8b-instruct:free (OpenRouter)</option>
       <option value="gemini-1.5-flash" ${currentModel === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Gemini)</option>
       <option value="gpt-4o-mini" ${currentModel === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (OpenAI)</option>
@@ -5517,7 +5523,7 @@ function updateAIModalFields(prov, selectedModel = null) {
   const stdRow = document.querySelector('#ai-standard-model-row');
   const customFields = document.querySelector('#ai-custom-fields');
   const modelSelect = document.querySelector('#ai-model-select');
-  const keyInput = document.querySelector('#ai-api-key-input');
+  const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input') || document.querySelector('#ai-key-input, #ai-api-key-input');
   const customModelInput = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input');
 
   if (prov === 'custom') {
@@ -5533,22 +5539,27 @@ function updateAIModalFields(prov, selectedModel = null) {
     const p = AI_PROVIDERS[prov] || AI_PROVIDERS.openai;
     if (keyInput) keyInput.placeholder = p.placeholder || 'API Key...';
     if (modelSelect) {
-      const activeModel = selectedModel || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || p.defaultModel;
+      let activeModel = selectedModel || (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model')) : null) || p.defaultModel;
+      if (prov === 'groq' && (!activeModel || activeModel.includes('llama-3.3-70b'))) {
+        activeModel = 'llama-3.3-70b-versatile';
+      }
       modelSelect.innerHTML = renderAIModelOptions(prov, activeModel);
       if (typeof localStorage !== 'undefined' && activeModel) {
+        localStorage.setItem('mygym_ai_model', activeModel);
         localStorage.setItem('ai_model', activeModel);
       }
+      if (S.cfg) S.cfg.aiModel = activeModel;
     }
   }
 }
 
 function handleAIKeyInput(keyVal) {
   const provSelect = document.querySelector('#ai-provider-select');
-  if (provSelect && provSelect.value === 'custom') {
-    return;
-  }
-  const savedProv = typeof localStorage !== 'undefined' ? localStorage.getItem('ai_provider') : null;
-  if (savedProv === 'custom' && (!provSelect || provSelect.value === 'custom')) {
+  const currentProv = provSelect ? provSelect.value : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider')) : null);
+
+  // ELIMINATE INVALID AUTO-SWITCHING OVERRIDES:
+  // Only run key-prefix auto-detection if the user has explicitly selected "Auto-Detect from Key"
+  if (currentProv && currentProv !== 'auto') {
     return;
   }
 
@@ -5560,13 +5571,11 @@ function handleAIKeyInput(keyVal) {
       detectedPill.textContent = '⚡ ' + detected.name;
       detectedPill.style.display = 'inline-block';
     }
-    if (provSelect) {
-      provSelect.value = detected.provider;
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('ai_provider', detected.provider);
-        localStorage.setItem('ai_model', detected.model);
+    if (provSelect && provSelect.value === 'auto') {
+      const modelSelect = document.querySelector('#ai-model-select');
+      if (modelSelect) {
+        modelSelect.innerHTML = renderAIModelOptions(detected.provider, detected.model);
       }
-      updateAIModalFields(detected.provider, detected.model);
     }
   } else {
     if (detectedPill) {
@@ -5578,23 +5587,54 @@ function handleAIKeyInput(keyVal) {
 let aiCoachHistory = [];
 let parsedAIRoutine = null;
 
-function saveAISettings() {
-  const keyInput = document.querySelector('#ai-api-key-input');
-  const provSelect = document.querySelector('#ai-provider-select');
-  const modelSelect = document.querySelector('#ai-model-select');
-  const baseUrlInput = document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input');
-  const customModelInput = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input');
-  if (typeof localStorage !== 'undefined') {
-    if (keyInput) localStorage.setItem('ai_api_key', keyInput.value.trim());
-    if (provSelect) localStorage.setItem('ai_provider', provSelect.value);
-    if (provSelect && provSelect.value === 'custom') {
-      if (baseUrlInput) localStorage.setItem('ai_base_url', baseUrlInput.value.trim());
-      if (customModelInput) localStorage.setItem('ai_model', customModelInput.value.trim());
-    } else if (modelSelect) {
-      localStorage.setItem('ai_model', modelSelect.value);
+function saveAIKey() {
+  const keyEl = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input') || document.querySelector('#ai-key-input, #ai-api-key-input');
+  const provEl = document.getElementById('ai-provider-select');
+  const modelEl = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select');
+  const baseUrlEl = document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input');
+
+  const rawKey = keyEl && keyEl.value != null ? keyEl.value : '';
+  const key = rawKey.trim();
+
+  let provider = provEl && provEl.value ? provEl.value : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider') || 'auto') : 'auto');
+
+  let model = modelEl && modelEl.value != null ? modelEl.value.trim() : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model') || '') : '');
+
+  const baseUrl = baseUrlEl && baseUrlEl.value != null ? baseUrlEl.value.trim() : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '');
+
+  if (provider === 'groq') {
+    if (!model || model === 'llama-3.3-70b-versatile' || model.includes('llama-3.3-70b')) {
+      model = 'llama-3.3-70b-versatile';
     }
   }
-  toast('AI Engine settings saved! 💾');
+  model = model.trim();
+
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('mygym_ai_key', key);
+    localStorage.setItem('mygym_ai_provider', provider);
+    localStorage.setItem('mygym_ai_model', model);
+
+    // Maintain backwards compatibility
+    localStorage.setItem('ai_api_key', key);
+    localStorage.setItem('ai_provider', provider);
+    localStorage.setItem('ai_model', model);
+    if (baseUrl) {
+      localStorage.setItem('ai_base_url', baseUrl);
+    }
+  }
+
+  // Ensure S.cfg.aiKey, S.cfg.aiProvider, and S.cfg.aiModel are immediately synchronized in memory
+  if (!S.cfg) S.cfg = {};
+  S.cfg.aiKey = key;
+  S.cfg.aiProvider = provider;
+  S.cfg.aiModel = model;
+
+  toast('API Key saved successfully');
+  return { key, provider, model };
+}
+
+function saveAISettings() {
+  return saveAIKey();
 }
 
 async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
@@ -5613,7 +5653,7 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     ? document.getElementById('ai-provider-select')
     : null;
   const domKeyEl = typeof document !== 'undefined'
-    ? document.getElementById('ai-api-key-input')
+    ? (document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input'))
     : null;
 
   const currentDomModel = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
@@ -5640,10 +5680,17 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
   } else if (currentDomModel) {
     model = currentDomModel;
   } else if (provider === 'custom') {
-    model = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : '') || config.model || '';
+    model = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model')) : '') || config.model || '';
   } else {
     model = config.model;
   }
+
+  if (provider === 'groq') {
+    if (!model || model === 'llama-3.3-70b-versatile' || model.includes('llama-3.3-70b')) {
+      model = 'llama-3.3-70b-versatile';
+    }
+  }
+  model = String(model || '').trim();
 
   const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
   const providerName = provider === 'custom' ? 'Custom / OpenAI-Compatible' : (provDef.name || provider);
@@ -5755,6 +5802,12 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
     };
 
+    // When calling Groq endpoint, log exact payload to console: { model: model, messages: [{ role: 'user', content: 'hi' }] }
+    // Ensure payload model field contains trimmed exact string llama-3.3-70b-versatile
+    if (provider === 'groq' || endpointUrl.includes('groq.com')) {
+      console.log({ model: bodyPayload.model, messages: bodyPayload.messages });
+    }
+
     let res;
     try {
       res = await fetch(endpointUrl, {
@@ -5789,30 +5842,78 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
 }
 
 async function testAIConnection() {
-  saveAISettings();
   const statusEl = document.querySelector('#ai-conn-status');
   if (statusEl) {
     statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15)">Testing direct API connection...</span>`;
   }
-  try {
-    const domModelEl = typeof document !== 'undefined'
-      ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select'))
-      : null;
-    const domProvEl = typeof document !== 'undefined'
-      ? document.getElementById('ai-provider-select')
-      : null;
 
-    const config = resolveAIConfig();
-    const effectiveProv = domProvEl?.value || config.provider;
-    const effectiveModel = domModelEl?.value?.trim() || config.model;
-    const provDef = AI_PROVIDERS[effectiveProv] || AI_PROVIDERS.openai;
-    const effectiveName = effectiveProv === 'custom' ? 'Custom' : (provDef.name || effectiveProv);
+  // Read key directly from DOM input (document.getElementById('ai-key-input').value.trim()), NOT just from memory fallback.
+  const domKeyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
+  const key = (domKeyInput && domKeyInput.value != null ? domKeyInput.value : '').trim();
 
-    await callAI('Hi', { temperature: 0.1 });
-    if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(effectiveName)} (${esc(effectiveModel)})</span>`;
+  // If key is empty, alert user.
+  if (!key) {
+    const msg = 'Please enter an API key.';
+    if (typeof alert === 'function') {
+      try { alert(msg); } catch (_) {}
     }
-    toast(`✓ Connected to ${effectiveName} (${effectiveModel})`);
+    toast(msg);
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(msg)}</span>`;
+    }
+    return;
+  }
+
+  // Read the active provider and model directly from their DOM select/input elements.
+  const domProvEl = document.getElementById('ai-provider-select');
+  let activeProvider = domProvEl && domProvEl.value ? domProvEl.value : 'auto';
+
+  if (activeProvider === 'auto') {
+    const detected = detectProviderFromKey(key);
+    activeProvider = detected ? detected.provider : 'openai';
+  }
+
+  const domModelEl = activeProvider === 'custom'
+    ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input'))
+    : (document.getElementById('ai-model-select') || document.getElementById('ai-model-input'));
+
+  let activeModel = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
+  const provDef = AI_PROVIDERS[activeProvider] || AI_PROVIDERS.openai;
+
+  if (!activeModel) {
+    activeModel = provDef.defaultModel || 'gpt-4o-mini';
+  }
+
+  if (activeProvider === 'groq') {
+    if (!activeModel || activeModel === 'llama-3.3-70b-versatile' || activeModel.includes('llama-3.3-70b')) {
+      activeModel = 'llama-3.3-70b-versatile';
+    }
+  }
+  activeModel = activeModel.trim();
+
+  // Save settings immediately
+  saveAIKey();
+
+  const effectiveName = activeProvider === 'custom' ? 'Custom' : (provDef.name || activeProvider);
+
+  try {
+    // When calling Groq endpoint, log exact payload to console: { model: model, messages: [{ role: 'user', content: 'hi' }] }
+    // Ensure payload model field contains trimmed exact string llama-3.3-70b-versatile
+    if (activeProvider === 'groq') {
+      console.log({ model: activeModel, messages: [{ role: 'user', content: 'hi' }] });
+    }
+
+    await callAI('hi', {
+      apiKey: key,
+      provider: activeProvider,
+      model: activeModel,
+      temperature: 0.1
+    });
+
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(effectiveName)} (${esc(activeModel)})</span>`;
+    }
+    toast(`✓ Connected to ${effectiveName} (${activeModel})`);
   } catch (err) {
     if (statusEl) {
       statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(err.message)}</span>`;
@@ -7862,11 +7963,11 @@ document.addEventListener('click', e => {
       return;
     }
     case 'save-ai-key': {
-      saveAISettings();
+      saveAIKey();
       return;
     }
     case 'toggle-key-vis': {
-      const keyInput = document.querySelector('#ai-api-key-input');
+      const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
       if (keyInput) {
         keyInput.type = keyInput.type === 'password' ? 'text' : 'password';
       }
@@ -8320,18 +8421,23 @@ document.addEventListener('input', e => {
   if (e.target.id && e.target.id.startsWith('calib-')) {
     updateCalibrationPreview();
   }
-  if (e.target.id === 'ai-api-key-input') {
+  if (e.target.id === 'ai-api-key-input' || e.target.id === 'ai-key-input') {
     handleAIKeyInput(e.target.value);
   }
   if (e.target.id === 'ai-model-input' || e.target.id === 'ai-custom-model-input') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', e.target.value.trim());
+    const mVal = e.target.value.trim();
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('mygym_ai_model', mVal);
+      localStorage.setItem('ai_model', mVal);
+    }
+    if (S.cfg) S.cfg.aiModel = mVal;
   }
   if (e.target.id === 'ai-baseurl-input' || e.target.id === 'ai-base-url-input') {
     if (typeof localStorage !== 'undefined') localStorage.setItem('ai_base_url', e.target.value.trim());
   }
 });
 document.addEventListener('paste', e => {
-  if (e.target && e.target.id === 'ai-api-key-input') {
+  if (e.target && (e.target.id === 'ai-api-key-input' || e.target.id === 'ai-key-input')) {
     setTimeout(() => {
       handleAIKeyInput(e.target.value);
     }, 0);
@@ -8359,12 +8465,21 @@ document.addEventListener('change', e => {
   }
   if (t.id === 'ai-provider-select') {
     const prov = t.value;
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_provider', prov);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('mygym_ai_provider', prov);
+      localStorage.setItem('ai_provider', prov);
+    }
+    if (S.cfg) S.cfg.aiProvider = prov;
     updateAIModalFields(prov);
     return;
   }
   if (t.id === 'ai-model-select' || t.id === 'ai-model-input' || t.id === 'ai-custom-model-input') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value.trim ? t.value.trim() : t.value);
+    const mVal = t.value.trim ? t.value.trim() : t.value;
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('mygym_ai_model', mVal);
+      localStorage.setItem('ai_model', mVal);
+    }
+    if (S.cfg) S.cfg.aiModel = mVal;
     return;
   }
   if (t.id === 'ai-baseurl-input' || t.id === 'ai-base-url-input') {
@@ -8615,7 +8730,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.0.3').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.0.4').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -8664,6 +8779,7 @@ if (typeof globalThis !== 'undefined') {
     editPastWorkout,
     callAI,
     testAIConnection,
+    saveAIKey,
     saveAISettings,
     findBestExerciseMatch,
     findClosestExercise,

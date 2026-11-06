@@ -1,13 +1,13 @@
-const C = 'mygym-core-v6.0.3-stable';
+const C = 'mygym-core-v6.0.4-groq-fix';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=6.0.3',
+  './style.css?v=6.0.4',
   './calc.js',
-  './calc.js?v=6.0.3',
+  './calc.js?v=6.0.4',
   './app.js',
-  './app.js?v=6.0.3',
+  './app.js?v=6.0.4',
   './manifest.json',
   './icon.png',
   './exercises.json',
