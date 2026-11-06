@@ -1,13 +1,13 @@
-const C = 'mygym-core-v6.0.4-groq-fix';
+const C = 'mygym-core-v6.1.0-hardened';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=6.0.4',
+  './style.css?v=6.1.0',
   './calc.js',
-  './calc.js?v=6.0.4',
+  './calc.js?v=6.1.0',
   './app.js',
-  './app.js?v=6.0.4',
+  './app.js?v=6.1.0',
   './manifest.json',
   './icon.png',
   './exercises.json',
@@ -23,10 +23,20 @@ self.addEventListener('install', e => {
 });
 
 self.addEventListener('activate', e => {
+  // Safe Offline Cache Purge: verify new cache integrity before purging old caches
   e.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(k => k !== C).map(k => caches.delete(k))
-    )).then(() => clients.claim())
+    caches.has(C).then(hasNewCache => {
+      if (!hasNewCache) return clients.claim();
+      return caches.open(C).then(cache => {
+        return cache.match('./index.html').then(match => {
+          if (match) {
+            return caches.keys().then(keys => Promise.all(
+              keys.filter(k => k !== C).map(k => caches.delete(k))
+            ));
+          }
+        });
+      }).then(() => clients.claim());
+    })
   );
 });
 

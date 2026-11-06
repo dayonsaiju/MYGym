@@ -109,6 +109,7 @@ const put = async (k, v) => {
 };
 
 let S = {
+  schemaVersion: 1,
   routines: [],
   logs: [],
   weights: [],
@@ -132,8 +133,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.0.4';
-const SHELL_VERSION = 'mygym-core-v6.0.4-groq-fix';
+const APP_VERSION = '6.1.0';
+const SHELL_VERSION = 'mygym-core-v6.1.0-hardened';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -168,6 +169,29 @@ const save = (...args) => {
     return Promise.resolve();
   }));
 };
+
+// LocalStorage Quota & Backup Housekeeping: keep only 3 most recent emergency snapshots
+function pruneEmergencyBackups() {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    const backupKeys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && (k.startsWith('backup_act_') || k.startsWith('backup_'))) {
+        backupKeys.push(k);
+      }
+    }
+    backupKeys.sort().reverse();
+    for (let i = 3; i < backupKeys.length; i++) {
+      try { localStorage.removeItem(backupKeys[i]); } catch (_) {}
+    }
+  } catch (_) {}
+}
+
+// Request persistent storage durability if supported
+if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
 
 // Clean & sanitize exercise names (fix corrupted degree encodings, typos and title-casing)
 const cleanExName = s => {
@@ -1338,7 +1362,13 @@ const wake = async () => {
 };
 
 document.addEventListener('visibilitychange', () => {
-  if (S.act && document.visibilityState === 'visible') wake();
+  if (document.visibilityState === 'visible') {
+    if (S.act) wake();
+    // Recompute remaining rest time immediately upon returning to foreground
+    if (T.end && $('#rest') && !$('#rest').hidden) {
+      tick();
+    }
+  }
 });
 
 const modal = (h, opts = {}) => {
@@ -2901,7 +2931,7 @@ function renderWorkHeroCard(a, curIdx) {
       <!-- Header Info & Tags directly at top -->
       <div class="work-hero-info">
         <div class="row" style="margin-bottom:4px">
-          <div class="work-hero-title">${esc(exInfo.name)}</div>
+          <div class="work-hero-title clickable-title" data-a="showexhistory" data-id="${esc(exInfo.id)}" style="cursor:pointer" title="View exercise history & analytics">${esc(exInfo.name)} <span class="history-icon" style="font-size:13px;opacity:0.8">📈</span></div>
           <button class="chip gif-toggle-chip" data-a="togglegif" data-i="${curIdx}" style="font-size:11px;padding:2px 8px">${workGifCollapsed ? '👁️ Show Demo GIF' : 'Hide GIF'}</button>
         </div>
         <div class="work-hero-tags">
@@ -2945,10 +2975,10 @@ function renderWorkHeroCard(a, curIdx) {
           const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
 
           return `<div class="set set-row${s.done ? ' d' : ''}" data-i="${curIdx}" data-j="${j}">
-            <!-- Col 1: Compact Set # Badge -->
+            <!-- Col 1: Compact Set # Badge & Set Type Toggle -->
             <div class="set-col set-col-num">
-              <button class="n set-num-badge" data-a="done" data-i="${curIdx}" data-j="${j}">
-                ${j + 1}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆</span>` : ''}
+              <button class="n set-num-badge set-type-btn set-type-${s.type ? s.type.toLowerCase() : 'normal'}" data-a="togglesettype" data-i="${curIdx}" data-j="${j}" title="Tap to toggle set type (Normal, Warm-up, Drop set, Failure, AMRAP)">
+                ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆</span>` : ''}
               </button>
             </div>
 
@@ -2999,6 +3029,10 @@ function renderWorkHeroCard(a, curIdx) {
         <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
       </div>
       <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
+      <details class="session-notes-collapsible" ${a.note ? 'open' : ''} style="margin-top:8px">
+        <summary style="font-size:12px;color:var(--t2);cursor:pointer;padding:4px 0">📝 Session Notes ${a.note ? '(active)' : ''}</summary>
+        <textarea class="note" placeholder="Overall workout notes for today's session..." data-f="session-note" rows="2" style="margin-top:4px">${esc(a.note || '')}</textarea>
+      </details>
 
       <!-- Compact / Collapsible Exercise Demonstration GIF -->
       <div class="work-hero-media" data-a="zoomexgif" data-id="${esc(exInfo.id)}" ${workGifCollapsed ? 'style="display:none"' : ''} title="Tap to expand fullscreen demonstration">
@@ -3008,6 +3042,7 @@ function renderWorkHeroCard(a, curIdx) {
 
       <!-- Neat Decluttered Horizontal Toolbar directly below the media frame -->
       <div class="work-hero-toolbar">
+        <button class="chip" data-a="showexhistory" data-id="${esc(exInfo.id)}">📈 History</button>
         <button class="chip" data-a="openaicoach" data-p="Give me 3 critical form cues and execution tips for ${esc(exInfo.name)}">🤖 AI Coach</button>
         <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
         <button class="chip" data-a="zoomexgif" data-id="${esc(exInfo.id)}">ℹ️ Form Cues</button>
@@ -3113,6 +3148,160 @@ function showExpandedGifModal(targetId) {
           ? `<ol class="zoom-cues-list">${ex.st.map(s => `<li>${esc(s)}</li>`).join('')}</ol>`
           : `<p class="t2 sm" style="margin:0">Maintain strict form, neutral spine, controlled concentric phase, and deliberate eccentric contraction.</p>`
         }
+      </div>
+    </div>
+  `);
+}
+
+function showExerciseHistoryModal(targetId) {
+  const ex = X(targetId);
+  if (!ex) return;
+  const logs = S.logs || [];
+  const targetIdStr = String(targetId);
+
+  // Collect sessions with this exercise
+  const sessions = [];
+  for (const l of logs) {
+    if (!l || !Array.isArray(l.ex)) continue;
+    const x = l.ex.find(item => String(item.id) === targetIdStr);
+    if (!x || !Array.isArray(x.sets)) continue;
+
+    const completedSets = x.sets.filter(s => s && (s.done || Number(s.r) > 0));
+    if (!completedSets.length) continue;
+
+    let maxW = 0;
+    let best1RM = 0;
+    let vol = 0;
+    for (const s of completedSets) {
+      const isW = s.type === 'W' || s.type === 'warmup' || s.isWarmup;
+      const w = Number(s.w) || 0;
+      const r = Number(s.r) || 0;
+      if (!isW) {
+        if (w > maxW) maxW = w;
+        const e1 = typeof Calc !== 'undefined' && Calc.estimate1RM ? Calc.estimate1RM(w, r) : (r <= 10 ? (w * 36) / (37 - r) : w * (1 + r / 30));
+        if (e1 > best1RM) best1RM = Math.round(e1 * 10) / 10;
+        vol += w * r * (x.uni ? 2 : 1);
+      }
+    }
+
+    sessions.push({
+      date: l.date || l.t0 || Date.now(),
+      workoutName: l.name || 'Workout',
+      sets: completedSets,
+      maxW,
+      best1RM,
+      vol: Math.round(vol * 10) / 10,
+      note: x.note || ''
+    });
+  }
+
+  // Sort by date descending for list
+  sessions.sort((a, b) => (new Date(b.date).getTime() || 0) - (new Date(a.date).getTime() || 0));
+
+  // Global PRs across history
+  let allTime1RM = 0;
+  let allTimeMaxW = 0;
+  let allTimeMaxVol = 0;
+
+  sessions.forEach(s => {
+    if (s.best1RM > allTime1RM) allTime1RM = s.best1RM;
+    if (s.maxW > allTimeMaxW) allTimeMaxW = s.maxW;
+    if (s.vol > allTimeMaxVol) allTimeMaxVol = s.vol;
+  });
+
+  // Last 5 sessions
+  const recentSessions = sessions.slice(0, 5);
+
+  // Lightweight SVG Sparkline (chronological order of last 7 sessions)
+  const sparklineData = sessions.slice(0, 7).reverse().map(s => s.best1RM || s.maxW || 0);
+  let sparklineSvg = '';
+  if (sparklineData.length >= 2) {
+    const min = Math.min(...sparklineData);
+    const max = Math.max(...sparklineData);
+    const range = (max - min) || 1;
+    const w = 280, h = 60, pad = 12;
+    const pts = sparklineData.map((val, idx) => {
+      const px = pad + (idx / (sparklineData.length - 1)) * (w - 2 * pad);
+      const py = h - pad - ((val - min) / range) * (h - 2 * pad);
+      return `${px.toFixed(1)},${py.toFixed(1)}`;
+    });
+
+    const polylinePts = pts.join(' ');
+    const lastPt = pts[pts.length - 1].split(',');
+
+    sparklineSvg = `
+      <div class="ex-history-sparkline-wrap" style="background:var(--c2);border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid var(--bdr)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t2);margin-bottom:6px">
+          <span>Strength Trend (Estimated 1RM)</span>
+          <span style="font-weight:600;color:var(--ac)">Latest: ${sparklineData[sparklineData.length - 1]} kg</span>
+        </div>
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:60px;overflow:visible">
+          <polyline fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${polylinePts}" />
+          <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4" fill="var(--ac)" />
+        </svg>
+      </div>
+    `;
+  }
+
+  modal(`
+    <div class="zoom-modal-sheet ex-history-modal">
+      <div class="zoom-modal-header">
+        <div>
+          <h2 class="zoom-title" style="display:flex;align-items:center;gap:6px">
+            <span>📈</span> <span>${esc(ex.name)}</span>
+          </h2>
+          <div class="t2 sm">${esc(ex.g)} · ${esc(ex.eq)} · ${sessions.length} logged sessions</div>
+        </div>
+        <button class="btn s sm-btn zoom-close-btn" data-a="close">✕ Close</button>
+      </div>
+
+      <!-- All-time Records Cards -->
+      <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin:12px 0 14px">
+        <div class="card" style="padding:10px 8px;text-align:center;background:var(--c2);border:1px solid var(--bdr);border-radius:10px">
+          <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:0.5px">Est. 1RM</div>
+          <div style="font-size:18px;font-weight:800;color:var(--ac);margin-top:2px">${allTime1RM ? allTime1RM + ' kg' : '—'}</div>
+        </div>
+        <div class="card" style="padding:10px 8px;text-align:center;background:var(--c2);border:1px solid var(--bdr);border-radius:10px">
+          <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:0.5px">Max Weight</div>
+          <div style="font-size:18px;font-weight:800;color:var(--tx);margin-top:2px">${allTimeMaxW ? allTimeMaxW + ' kg' : '—'}</div>
+        </div>
+        <div class="card" style="padding:10px 8px;text-align:center;background:var(--c2);border:1px solid var(--bdr);border-radius:10px">
+          <div style="font-size:10px;font-weight:600;color:var(--t2);text-transform:uppercase;letter-spacing:0.5px">Best Vol</div>
+          <div style="font-size:18px;font-weight:800;color:var(--tx);margin-top:2px">${allTimeMaxVol ? allTimeMaxVol + ' kg' : '—'}</div>
+        </div>
+      </div>
+
+      ${sparklineSvg}
+
+      <!-- Recent Sessions List -->
+      <div style="flex:1;overflow-y:auto;min-height:120px">
+        <div style="font-size:12px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">
+          Last ${recentSessions.length} Sessions
+        </div>
+        ${recentSessions.length === 0 ? `
+          <div style="text-align:center;padding:28px 16px;color:var(--t2);background:var(--c2);border-radius:12px">
+            <div style="font-size:24px;margin-bottom:6px">📊</div>
+            <div style="font-weight:600;font-size:14px;color:var(--tx)">No Workout History Yet</div>
+            <div style="font-size:12px;margin-top:4px">Complete your first set for this exercise to start tracking strength gains and PR milestones.</div>
+          </div>
+        ` : recentSessions.map(sess => {
+          const dateStr = new Date(sess.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+          const setsSummary = sess.sets.map((s, idx) => {
+            const typeBadge = s.type ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(255,255,255,0.1);font-weight:700">${s.type}</span> ` : '';
+            return `${typeBadge}${s.w || 0}kg × ${s.r || 0}`;
+          }).join(', ');
+
+          return `
+            <div class="card" style="padding:10px 12px;margin-bottom:8px;background:var(--c2);border:1px solid var(--bdr);border-radius:10px">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+                <span style="font-weight:700;font-size:13px">${esc(dateStr)}</span>
+                <span style="font-size:11px;color:var(--t2)">Vol: <b>${sess.vol} kg</b></span>
+              </div>
+              <div style="font-size:12px;color:var(--t1);line-height:1.4">${setsSummary}</div>
+              ${sess.note ? `<div style="font-size:11px;color:var(--t2);margin-top:4px;font-style:italic">Note: "${esc(sess.note)}"</div>` : ''}
+            </div>
+          `;
+        }).join('')}
       </div>
     </div>
   `);
@@ -4990,6 +5179,38 @@ async function imp(f) {
       return value;
     });
 
+    // Backup Import Whitelist: strictly allow only whitelisted keys and sanitize aliases
+    const ALLOWED_IMPORT_KEYS = ['routines', 'history', 'logs', 'userMetrics', 'weights', 'settings', 'cfg', 'sched', 'app', 'v', 'exported'];
+    const WHITELISTED_BACKUP_KEYS = ALLOWED_IMPORT_KEYS;
+    for (const key of Object.keys(o)) {
+      if (!WHITELISTED_BACKUP_KEYS.includes(key) || key.startsWith('backup_') || key.toLowerCase().includes('key')) {
+        delete o[key];
+      }
+    }
+    // Normalize aliases
+    if (o.history && !o.logs) o.logs = o.history;
+    if (o.userMetrics && !o.weights) o.weights = o.userMetrics;
+    if (o.settings && !o.cfg) o.cfg = o.settings;
+
+    // Explicitly reject and strip any imported entries for aiKey, mygym_ai_key, ai_api_key, or backup_*
+    if (o.cfg && typeof o.cfg === 'object') {
+      delete o.cfg.aiKey;
+      delete o.cfg.mygym_ai_key;
+      delete o.cfg.ai_api_key;
+      delete o.cfg.aiProvider;
+      delete o.cfg.mygym_ai_provider;
+      delete o.cfg.ai_provider;
+      delete o.cfg.aiModel;
+      delete o.cfg.mygym_ai_model;
+      delete o.cfg.ai_model;
+      delete o.cfg.ai_base_url;
+      for (const k of Object.keys(o.cfg)) {
+        if (k.startsWith('backup_') || k.toLowerCase().includes('key')) {
+          delete o.cfg[k];
+        }
+      }
+    }
+
     if (!valid(o)) throw new Error('Invalid schema structure');
     if (!confirm('Replace all current data with this backup?')) return;
 
@@ -5696,8 +5917,8 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
   const providerName = provider === 'custom' ? 'Custom / OpenAI-Compatible' : (provDef.name || provider);
 
   if (provider === 'gemini') {
-    // Google Gemini Direct Client Endpoint
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-1.5-flash')}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    // Google Gemini Direct Client Endpoint (Secure Header-Authenticated)
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-1.5-flash')}:generateContent`;
     
     let contents;
     if (Array.isArray(promptOrMessages)) {
@@ -5725,7 +5946,10 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     try {
       res = await fetch(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify(reqBody)
       });
     } catch (netErr) {
@@ -6073,6 +6297,62 @@ function openAIImportModal() {
   `);
 }
 
+function sanitizeAndValidateAIRoutine(data) {
+  if (typeof data === 'string') {
+    let cleaned = data.trim();
+    if (cleaned.startsWith('```')) {
+      cleaned = cleaned.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '').trim();
+    }
+    data = JSON.parse(cleaned);
+  }
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid routine payload: expected JSON object');
+  }
+  const name = String(data.name || 'Imported AI Routine').trim().slice(0, 100);
+  if (!Array.isArray(data.exercises) || !data.exercises.length) {
+    throw new Error('Routine must contain an array of exercises');
+  }
+
+  // Cap exercise count per routine to 15 to eliminate hallucinated junk volume
+  const clampedList = data.exercises.slice(0, 15);
+  const validated = [];
+
+  for (let i = 0; i < clampedList.length; i++) {
+    const rx = clampedList[i];
+    if (!rx || typeof rx !== 'object') continue;
+    const exName = String(rx.name || `Exercise ${i + 1}`).trim().slice(0, 100);
+    if (!exName) continue;
+
+    // Number clamping: sets (1 to 10), reps (1 to 100), weight (>= 0)
+    const rawSets = parseInt(rx.sets, 10);
+    const sets = Math.min(10, Math.max(1, isNaN(rawSets) ? 3 : rawSets));
+    const rawReps = parseInt(rx.reps, 10);
+    const reps = Math.min(100, Math.max(1, isNaN(rawReps) ? 8 : rawReps));
+    const rawReps2 = rx.reps2 != null ? parseInt(rx.reps2, 10) : reps;
+    const reps2 = Math.min(100, Math.max(reps, isNaN(rawReps2) ? reps : rawReps2));
+    const weightVal = rx.w != null ? rx.w : rx.weight;
+    const w = Math.max(0, parseFloat(weightVal) || 0);
+
+    validated.push({
+      name: exName,
+      sets,
+      reps,
+      reps2,
+      w,
+      weight: w,
+      targetMuscle: String(rx.targetMuscle || '').trim().slice(0, 50),
+      equipment: String(rx.equipment || '').trim().slice(0, 50),
+      note: String(rx.note || '').trim().slice(0, 200)
+    });
+  }
+
+  if (!validated.length) {
+    throw new Error('No valid exercises could be extracted from routine');
+  }
+
+  return { name, exercises: validated };
+}
+
 async function parseAIWorkoutFromInput() {
   const textEl = document.querySelector('#ai-import-textarea') || document.querySelector('#ai-import-text');
   let rawText = (textEl ? textEl.value : '').trim();
@@ -6111,16 +6391,25 @@ async function parseAIWorkoutFromInput() {
 
   let routineJson = null;
 
-  if (rawText.startsWith('{') && rawText.endsWith('}')) {
+  const strippedText = rawText.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+  if (strippedText.startsWith('{') && strippedText.endsWith('}')) {
     try {
-      routineJson = JSON.parse(rawText);
+      const parsed = JSON.parse(strippedText);
+      routineJson = sanitizeAndValidateAIRoutine(parsed);
     } catch {}
   }
 
   if (!routineJson) {
     const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
     if (!hasKey) {
-      routineJson = parseWorkoutTextOfflineFallback(rawText);
+      const parsedFallback = parseWorkoutTextOfflineFallback(rawText);
+      if (parsedFallback && parsedFallback.exercises.length) {
+        try {
+          routineJson = sanitizeAndValidateAIRoutine(parsedFallback);
+        } catch (_) {
+          routineJson = parsedFallback;
+        }
+      }
       if (!routineJson || !routineJson.exercises.length) {
         if (statusEl) {
           statusEl.innerHTML = `<div class="card" style="padding:10px;background:rgba(255,69,58,0.15);border:1px solid var(--rd)">
@@ -6158,8 +6447,9 @@ User text:
 ${rawText}`;
 
         const reply = await callAI(prompt, { jsonMode: true, temperature: 0.2 });
-        const cleaned = reply.replace(/```json/gi, '').replace(/```/g, '').trim();
-        routineJson = JSON.parse(cleaned);
+        const cleaned = reply.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        routineJson = sanitizeAndValidateAIRoutine(parsed);
       } catch (err) {
         if (statusEl) {
           statusEl.innerHTML = `<div class="card" style="padding:10px;background:rgba(255,69,58,0.15);border:1px solid var(--rd)">
@@ -6456,8 +6746,9 @@ function finishWorkout() {
       return;
     }
 
+    const activeBackupKey = 'backup_act_' + Date.now();
     try {
-      localStorage.setItem('backup_act_' + Date.now(), JSON.stringify(a));
+      localStorage.setItem(activeBackupKey, JSON.stringify(a));
     } catch (_) {}
 
     const exercises = Array.isArray(a.ex) ? a.ex : [];
@@ -6611,7 +6902,10 @@ function finishWorkout() {
       // Volume & Deltas
       S.logs = S.logs || [];
       const prevLog = S.logs.filter(l => l && l.name === a.name).at(-1) || S.logs.at(-1);
-      curVol = ex.reduce((sum, x) => sum + (x.sets || []).reduce((sSum, s) => sSum + ((Number(s.w) || 0) * (Number(s.r) || 0) * (x.uni ? 2 : 1)), 0), 0);
+      curVol = ex.reduce((sum, x) => sum + (x.sets || []).reduce((sSum, s) => {
+        if (Calc.isWarmupSet ? Calc.isWarmupSet(s) : (s.type === 'W' || s.type === 'warmup')) return sSum;
+        return sSum + ((Number(s.w) || 0) * (Number(s.r) || 0) * (x.uni ? 2 : 1));
+      }, 0), 0);
       if (prevLog) {
         const prevVol = vol(prevLog);
         if (prevVol > 0) {
@@ -6672,6 +6966,7 @@ function finishWorkout() {
       date: Date.now(),
       name: a.name || 'Workout',
       dur: curDur,
+      note: a.note || '',
       ex,
       isDeload
     };
@@ -6681,6 +6976,10 @@ function finishWorkout() {
     S.logs = S.logs || [];
     S.logs.push(completedWorkout);
     save('logs', S.logs);
+
+    // Delete transient active session backup immediately upon successful commit to history
+    try { localStorage.removeItem(activeBackupKey); } catch (_) {}
+    pruneEmergencyBackups();
 
     // 2. S.act = null; localStorage.removeItem('act'); save('act', null)
     S.act = null;
@@ -6692,6 +6991,13 @@ function finishWorkout() {
     try { save('cfg'); } catch (_) {}
     try { stopRest(); } catch (_) {}
     try { wl?.release?.(); } catch (_) {}
+
+    // Check if deferred Service Worker update was waiting for workout completion
+    if (window._pendingSWReload) {
+      setTimeout(() => {
+        window.location.reload();
+      }, 2500);
+    }
 
     // 3. Close modal immediately
     closeModal();
@@ -7538,6 +7844,32 @@ document.addEventListener('click', e => {
         }
       }
     }
+    case 'togglesettype': {
+      const x = S.act?.ex[i], s = x?.sets[j];
+      if (!s) return;
+      if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(15);
+      const cycle = ['', 'W', 'D', 'F', 'A'];
+      const curType = s.type || '';
+      const nextIdx = (cycle.indexOf(curType) + 1) % cycle.length;
+      s.type = cycle[nextIdx];
+      ls.set('act', S.act);
+      save('act');
+      const labels = {
+        '': 'Normal set',
+        'W': 'Warm-up set (excluded from volume & PRs)',
+        'D': 'Drop set',
+        'F': 'Failure set',
+        'A': 'AMRAP set'
+      };
+      toast(labels[s.type] || 'Set updated');
+      switchWorkExercise(i, false);
+      return;
+    }
+    case 'showexhistory': {
+      const exId = t.dataset.id || (S.act?.ex[i]?.id);
+      if (exId) showExerciseHistoryModal(exId);
+      return;
+    }
     case 'toggleuni': {
       const x = S.act?.ex[i];
       if (x) {
@@ -8381,6 +8713,13 @@ const handleFieldUpdate = t => {
     return;
   }
 
+  if (f === 'session-note' && S.act) {
+    S.act.note = t.value;
+    ls.set('act', S.act);
+    save('act');
+    return;
+  }
+
   if (f && S.act && S.act.ex[i]) {
     const x = S.act.ex[i];
     if (f === 'note') {
@@ -8730,11 +9069,16 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.0.4').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.1.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
     navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (S && S.act) {
+        window._pendingSWReload = true;
+        toast('Update ready. Will apply after workout.');
+        return;
+      }
       if (!window._swReloading) {
         window._swReloading = true;
         window.location.reload();
@@ -8896,7 +9240,9 @@ if (typeof globalThis !== 'undefined') {
     getAchievementsData,
     renderAchievementsCard,
     matchesExerciseSearch,
-    SEARCH_SYNONYMS
+    SEARCH_SYNONYMS,
+    showExerciseHistoryModal,
+    sanitizeAndValidateAIRoutine
   };
 }
 

@@ -962,26 +962,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.0.4-groq-fix, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.0.4-groq-fix';"), 'sw.js must use mygym-core-v6.0.4-groq-fix cache name');
-  assert(swCode.includes("'./style.css?v=6.0.4'"), 'sw.js must precache style.css?v=6.0.4');
-  assert(swCode.includes("'./app.js?v=6.0.4'"), 'sw.js must precache app.js?v=6.0.4');
-  assert(swCode.includes("'./calc.js?v=6.0.4'"), 'sw.js must precache calc.js?v=6.0.4');
+it('sw.js cache key is bumped to mygym-core-v6.1.0-hardened, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.1.0-hardened';"), 'sw.js must use mygym-core-v6.1.0-hardened cache name');
+  assert(swCode.includes("'./style.css?v=6.1.0'"), 'sw.js must precache style.css?v=6.1.0');
+  assert(swCode.includes("'./app.js?v=6.1.0'"), 'sw.js must precache app.js?v=6.1.0');
+  assert(swCode.includes("'./calc.js?v=6.1.0'"), 'sw.js must precache calc.js?v=6.1.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.0.4'), 'index.html must link style.css?v=6.0.4');
-  assert(htmlCode.includes('app.js?v=6.0.4'), 'index.html must load app.js?v=6.0.4');
-  assert(htmlCode.includes('calc.js?v=6.0.4'), 'index.html must load calc.js?v=6.0.4');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.4-groq-fix'"), 'index.html must use mygym-core-v6.0.4-groq-fix');
+  assert(htmlCode.includes('style.css?v=6.1.0'), 'index.html must link style.css?v=6.1.0');
+  assert(htmlCode.includes('app.js?v=6.1.0'), 'index.html must load app.js?v=6.1.0');
+  assert(htmlCode.includes('calc.js?v=6.1.0'), 'index.html must load calc.js?v=6.1.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.1.0-hardened'"), 'index.html must use mygym-core-v6.1.0-hardened');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.0.4');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.4-groq-fix');
+  assert.equal(api.APP_VERSION, '6.1.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.1.0-hardened');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2024,8 +2024,17 @@ it('finishWorkout saves immediate backup_act_<ts> and logs session even with 0 c
     ex: [{ id: '0025', sets: [{ w: 0, r: 0, done: false }] }]
   };
 
+  // Track setItem calls to verify immediate emergency snapshot creation
+  const createdBackupKeys = [];
+  const origSetItem = mockWindow.localStorage.setItem;
+  mockWindow.localStorage.setItem = function(k, v) {
+    if (k && k.startsWith('backup_act_')) createdBackupKeys.push(k);
+    origSetItem.call(this, k, v);
+  };
+
   // Trigger finishWorkout
   api.finishWorkout();
+  mockWindow.localStorage.setItem = origSetItem;
 
   // Active workout must be cleared and log pushed
   assert.equal(api.S.act, null, 'Active workout must be cleared');
@@ -2033,10 +2042,8 @@ it('finishWorkout saves immediate backup_act_<ts> and logs session even with 0 c
   const logged = api.S.logs.at(-1);
   assert.equal(logged.name, 'Zero Sets Test Workout');
 
-  // Verify backup_act_ was created in localStorage
-  const storageData = (globalThis.localStorage && globalThis.localStorage._data) || (mockWindow.localStorage && mockWindow.localStorage._data) || {};
-  const backupKeys = Object.keys(storageData).filter(k => k.startsWith('backup_act_'));
-  assert(backupKeys.length > 0, 'Immediate backup_act_<ts> must be saved to localStorage');
+  // Verify backup_act_ was created during finish execution
+  assert(createdBackupKeys.length > 0, 'Immediate backup_act_<ts> must be saved to localStorage');
 });
 
 it('finishWorkout resilience: fallback saves raw session log if stats calculation throws', () => {
@@ -2849,6 +2856,73 @@ it('index.html Content-Security-Policy expands connect-src for all supported AI 
   assert(htmlCode.includes('https://api.together.xyz'), 'CSP must include https://api.together.xyz');
   assert(htmlCode.includes('https://api.openai.com'), 'CSP must include https://api.openai.com');
   assert(htmlCode.includes('https://generativelanguage.googleapis.com'), 'CSP must include https://generativelanguage.googleapis.com');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 10: HARDENED PRODUCTION & MOBILE PARITY (v6.1.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 10: Production Hardening, Security & Mobile Parity (v6.1.0)');
+
+it('index.html contains anti-reload loop guard and active workout reload guard', () => {
+  assert(htmlCode.includes('sessionStorage.getItem(\'mygym_reload_attempts\')'), 'index.html must check sessionStorage for reload attempts');
+  assert(htmlCode.includes('localStorage.getItem(\'lift_act\')'), 'index.html must check for active workout in storage before self-healing reload');
+});
+
+it('sw.js verifies index.html presence in new cache before purging old caches', () => {
+  assert(swCode.includes("cache.match('./index.html')"), 'sw.js must verify index.html is precached before purging');
+  assert(swCode.includes('keys.filter(k => k !== C)'), 'sw.js must only purge old caches after verification');
+});
+
+it('app.js Gemini API call passes apiKey via x-goog-api-key header and never in URL query string', () => {
+  assert(appCode.includes('x-goog-api-key'), 'Gemini API call must use x-goog-api-key header');
+  assert(!appCode.includes('generateContent?key='), 'Gemini API call must not append ?key= to URL');
+});
+
+it('sanitizeAndValidateAIRoutine cleans markdown, caps exercise count, and clamps set numbers', () => {
+  assert.equal(typeof api.sanitizeAndValidateAIRoutine, 'function', 'sanitizeAndValidateAIRoutine must be exported');
+
+  const rawJson = '```json\n{"name":"Test AI","exercises":[{"name":"Squat","sets":20,"reps":200,"weight":-50},{"name":"Bench Press","sets":-5,"reps":0,"weight":100}]}\n```';
+  const validated = api.sanitizeAndValidateAIRoutine(rawJson);
+
+  assert.equal(validated.name, 'Test AI');
+  assert.equal(validated.exercises.length, 2);
+  // Sets clamped to 1..10
+  assert.equal(validated.exercises[0].sets, 10);
+  assert.equal(validated.exercises[1].sets, 1);
+  // Reps clamped to 1..100
+  assert.equal(validated.exercises[0].reps, 100);
+  assert.equal(validated.exercises[1].reps, 1);
+  // Weight clamped to >= 0
+  assert.equal(validated.exercises[0].weight, 0);
+  assert.equal(validated.exercises[1].weight, 100);
+
+  // Exercise count cap (15)
+  const hugeRoutine = JSON.stringify({
+    name: 'Huge',
+    exercises: Array.from({ length: 25 }, (_, i) => ({ name: `Ex ${i + 1}`, sets: 3, reps: 10 }))
+  });
+  const capped = api.sanitizeAndValidateAIRoutine(hugeRoutine);
+  assert.equal(capped.exercises.length, 15, 'Must cap exercises to 15');
+});
+
+it('backup import imp(f) whitelists safe keys and rejects/strips credentials and backups', () => {
+  assert(appCode.includes('ALLOWED_IMPORT_KEYS'), 'imp must define ALLOWED_IMPORT_KEYS whitelist');
+  assert(appCode.includes('aiKey') && appCode.includes('mygym_ai_key'), 'imp must scrub AI credentials from import');
+});
+
+it('showExerciseHistoryModal renders all-time stats, last sessions, and empty state gracefully', () => {
+  assert.equal(typeof api.showExerciseHistoryModal, 'function', 'showExerciseHistoryModal must be exported');
+
+  // Test empty history
+  api.showExerciseHistoryModal('non_existent_ex_id');
+  const modalHtml = elementsMap['#m'].innerHTML;
+  assert(modalHtml.includes('ex-history-modal'), 'Must render ex-history-modal container');
+  assert(modalHtml.includes('No Workout History Yet'), 'Must show clean empty state for unlogged exercise');
+});
+
+it('active workout reload guard defers controllerchange reload if active workout exists', () => {
+  assert(appCode.includes('window._pendingSWReload'), 'app.js must defer reload when active workout is in progress');
+  assert(appCode.includes('Update ready. Will apply after workout.'), 'app.js must notify user of pending update');
 });
 
 console.log(`\n======================================================`);

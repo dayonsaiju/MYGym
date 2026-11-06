@@ -3581,20 +3581,85 @@ textarea.note:focus {
   background: var(--c2);
   border: 0.5px solid var(--bd);
   color: var(--t1);
-  border-radius: 6px;
-  padding: 2px 4px;
-  font-size: 10px;
+  border-radius: 8px;
+  padding: 4px 6px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   flex: none;
-  height: 32px;
-  min-width: 24px;
-  transition: background-color 0.1s ease;
+  min-height: 44px;
+  min-width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  transition: background-color 0.1s ease, transform 0.1s ease;
 }
 
 .step-btn:active {
   background: var(--ac);
   color: #FFFFFF;
+  transform: scale(0.95);
+}
+
+/* Set Type Badges & Toggles */
+.set-type-btn {
+  font-weight: 700;
+  border-radius: 8px;
+  min-width: 34px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: manipulation;
+  cursor: pointer;
+  background: var(--c2);
+  border: 1px solid var(--bd);
+  color: var(--t1);
+  transition: all 0.15s ease;
+}
+
+.set-type-btn:active {
+  transform: scale(0.94);
+}
+
+.set-type-btn.set-type-w {
+  background: rgba(255, 159, 10, 0.18) !important;
+  color: var(--am) !important;
+  border-color: rgba(255, 159, 10, 0.5) !important;
+}
+
+.set-type-btn.set-type-d {
+  background: rgba(100, 210, 255, 0.18) !important;
+  color: var(--bl) !important;
+  border-color: rgba(100, 210, 255, 0.5) !important;
+}
+
+.set-type-btn.set-type-f {
+  background: rgba(255, 69, 58, 0.18) !important;
+  color: var(--rd) !important;
+  border-color: rgba(255, 69, 58, 0.5) !important;
+}
+
+.set-type-btn.set-type-a {
+  background: rgba(191, 90, 242, 0.18) !important;
+  color: #BF5AF2 !important;
+  border-color: rgba(191, 90, 242, 0.5) !important;
+}
+
+/* Exercise History Modal & Notes */
+.ex-history-modal {
+  max-height: 85dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.session-notes-collapsible summary {
+  user-select: none;
+  list-style: none;
+}
+.session-notes-collapsible summary::-webkit-details-marker {
+  display: none;
 }
 
 .chip-suggestion {
@@ -4077,8 +4142,8 @@ textarea.note:focus {
 }
 
 .dot-muted {
-  color: var(--t2, #636366);
-  opacity: 0.45;
+  color: var(--t2, #8E8E93);
+  opacity: 0.6;
 }
 
 .wfi-label {
