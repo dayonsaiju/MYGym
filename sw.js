@@ -1,13 +1,13 @@
-const C = 'mygym-core-v6.1.1-unified';
+const C = 'mygym-core-v6.1.2-hotfix';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=6.1.1',
+  './style.css?v=6.1.2',
   './calc.js',
-  './calc.js?v=6.1.1',
+  './calc.js?v=6.1.2',
   './app.js',
-  './app.js?v=6.1.1',
+  './app.js?v=6.1.2',
   './manifest.json',
   './icon.png',
   './exercises.json',

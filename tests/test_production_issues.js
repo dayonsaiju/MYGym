@@ -962,26 +962,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.1.1-unified, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.1.1-unified';"), 'sw.js must use mygym-core-v6.1.1-unified cache name');
-  assert(swCode.includes("'./style.css?v=6.1.1'"), 'sw.js must precache style.css?v=6.1.1');
-  assert(swCode.includes("'./app.js?v=6.1.1'"), 'sw.js must precache app.js?v=6.1.1');
-  assert(swCode.includes("'./calc.js?v=6.1.1'"), 'sw.js must precache calc.js?v=6.1.1');
+it('sw.js cache key is bumped to mygym-core-v6.1.2-hotfix, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.1.2-hotfix';"), 'sw.js must use mygym-core-v6.1.2-hotfix cache name');
+  assert(swCode.includes("'./style.css?v=6.1.2'"), 'sw.js must precache style.css?v=6.1.2');
+  assert(swCode.includes("'./app.js?v=6.1.2'"), 'sw.js must precache app.js?v=6.1.2');
+  assert(swCode.includes("'./calc.js?v=6.1.2'"), 'sw.js must precache calc.js?v=6.1.2');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.1.1'), 'index.html must link style.css?v=6.1.1');
-  assert(htmlCode.includes('app.js?v=6.1.1'), 'index.html must load app.js?v=6.1.1');
-  assert(htmlCode.includes('calc.js?v=6.1.1'), 'index.html must load calc.js?v=6.1.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.1.1-unified'"), 'index.html must use mygym-core-v6.1.1-unified');
+  assert(htmlCode.includes('style.css?v=6.1.2'), 'index.html must link style.css?v=6.1.2');
+  assert(htmlCode.includes('app.js?v=6.1.2'), 'index.html must load app.js?v=6.1.2');
+  assert(htmlCode.includes('calc.js?v=6.1.2'), 'index.html must load calc.js?v=6.1.2');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.1.2-hotfix'"), 'index.html must use mygym-core-v6.1.2-hotfix');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.1.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.1.1-unified');
+  assert.equal(api.APP_VERSION, '6.1.2');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.1.2-hotfix');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2777,8 +2777,9 @@ it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6
   // 1. Verify Groq exact model strings in AI_PROVIDERS
   assert.equal(api.AI_PROVIDERS.groq.defaultModel, 'llama-3.3-70b-versatile');
   assert.equal(api.AI_PROVIDERS.groq.models[0].id, 'llama-3.3-70b-versatile');
-  assert.equal(api.AI_PROVIDERS.groq.models[1].id, 'llama3-8b-8192');
-  assert.equal(api.AI_PROVIDERS.groq.models[2].id, 'mixtral-8x7b-32768');
+  assert.equal(api.AI_PROVIDERS.groq.models[1].id, 'llama3-70b-8192');
+  assert.equal(api.AI_PROVIDERS.groq.models[2].id, 'llama3-8b-8192');
+  assert.equal(api.AI_PROVIDERS.groq.models[3].id, 'gemma2-9b-it');
 
   // 2. Test saveAIKey(): trims whitespace, stores mygym_ai_* keys, syncs S.cfg
   api.showSettingsModal();
@@ -2809,7 +2810,7 @@ it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6
   mockWindow.alert = (msg) => { alertMsg = msg; };
   elementsMap['#toast'].innerHTML = '';
   await api.testAIConnection();
-  assert(alertMsg && alertMsg.includes('Please enter an API key'));
+  assert(alertMsg && (alertMsg.includes('No API Key') || alertMsg.includes('Please enter an API key')));
 
   // 4. Test testAIConnection() with Groq logs payload to console and calls groq endpoint
   keyInput.value = 'gsk_test_valid_groq_key';
@@ -2958,7 +2959,7 @@ it('saveAIKey updates inline status badge in green and synchronizes S.cfg in-mem
 
   const statusEl = mockWindow.document.querySelector('#ai-conn-status');
   assert(statusEl, 'ai-conn-status must exist');
-  assert(statusEl.innerHTML.includes('✓ API Key Saved to LocalStorage'), 'Status badge must show API Key Saved');
+  assert(statusEl.innerHTML.includes('✓ API Key Saved Successfully'), 'Status badge must show API Key Saved Successfully');
 });
 
 it('style.css enforces mobile-first viewport units, responsive GIF media, and 44px touch targets', () => {
@@ -2966,6 +2967,73 @@ it('style.css enforces mobile-first viewport units, responsive GIF media, and 44
   assert(cssCode.includes('aspect-ratio: 16/9'), '.work-hero-gif must enforce 16/9 aspect ratio');
   assert(cssCode.includes('max-height: 25vh'), '.work-hero-gif must cap max-height at 25vh');
   assert(cssCode.includes('min-width: 44px') && cssCode.includes('min-height: 44px'), 'Buttons and chips must enforce 44px touch target bounds');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 12: STRICT KEY VALIDATION, CLEAR KEY & LANDSCAPE SUPPORT (v6.1.2)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 12: Strict Key Validation, Clear Key & Landscape Support (v6.1.2)');
+
+it('saveAIKey strictly rejects empty/whitespace input without saving to localStorage', () => {
+  api.showSettingsModal();
+  const keyInput = mockWindow.document.getElementById('ai-key-input');
+  mockWindow.localStorage.removeItem('mygym_ai_key');
+  mockWindow.localStorage.removeItem('ai_api_key');
+  keyInput.value = '   ';
+
+  const res = api.saveAIKey();
+  assert.equal(res, null, 'Empty key must return null and not save');
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), null, 'Must not save empty key to localStorage');
+  const statusEl = mockWindow.document.querySelector('#ai-conn-status');
+  assert(statusEl && statusEl.innerHTML.includes('× Please enter a valid API Key before saving.'), 'Must show red error badge on empty save');
+});
+
+it('clearAIKey removes keys from localStorage, resets S.cfg.aiKey and clears input', () => {
+  api.showSettingsModal();
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_to_be_cleared');
+  mockWindow.localStorage.setItem('ai_api_key', 'gsk_to_be_cleared');
+  api.S.cfg.aiKey = 'gsk_to_be_cleared';
+  const keyInput = mockWindow.document.getElementById('ai-key-input');
+  keyInput.value = 'gsk_to_be_cleared';
+
+  const clearBtn = mockWindow.document.getElementById('ai-clear-key-btn');
+  assert(clearBtn, '#ai-clear-key-btn must exist in Settings modal DOM');
+  assert.equal(typeof clearBtn.onclick, 'function', 'Clear button must have .onclick handler');
+  assert.equal(typeof clearBtn.ontouchend, 'function', 'Clear button must have .ontouchend handler');
+
+  api.clearAIKey();
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), null, 'mygym_ai_key must be removed');
+  assert.equal(mockWindow.localStorage.getItem('ai_api_key'), null, 'ai_api_key must be removed');
+  assert.equal(api.S.cfg.aiKey, '', 'S.cfg.aiKey must be cleared');
+  assert.equal(keyInput.value, '', 'Key input element value must be emptied');
+  const statusEl = mockWindow.document.querySelector('#ai-conn-status');
+  assert(statusEl && statusEl.innerHTML.includes('Key cleared'), 'Status badge must show Key cleared');
+});
+
+it('style.css supports landscape orientation with expanded max-height and safe-area padding', () => {
+  assert(cssCode.includes('@media (orientation: landscape)'), 'style.css must have landscape media query');
+  assert(cssCode.includes('max-height: 92vh') || cssCode.includes('max-height: 92dvh'), 'Landscape mode must expand sheet max-height');
+  assert(cssCode.includes('calc(env(safe-area-inset-bottom) + 32px)'), 'Sheet must apply 32px safe-area bottom offset');
+});
+
+it('callAI suggests fallback models when receiving a 404 from Groq', async () => {
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_test_mock_groq');
+  mockWindow.localStorage.setItem('mygym_ai_provider', 'groq');
+  mockWindow.localStorage.setItem('mygym_ai_model', 'non-existent-model');
+  api.S.cfg.aiKey = 'gsk_test_mock_groq';
+  api.S.cfg.aiProvider = 'groq';
+  api.S.cfg.aiModel = 'non-existent-model';
+
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 404,
+    json: async () => ({ error: { message: 'The model non-existent-model does not exist' } })
+  });
+
+  await assert.rejects(
+    async () => { await api.callAI('Test query'); },
+    /Model not available on your Groq tier\. Please select 'llama3-70b-8192' or 'llama3-8b-8192'/
+  );
 });
 
 console.log(`\n======================================================`);

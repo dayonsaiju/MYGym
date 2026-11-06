@@ -133,8 +133,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.1.1';
-const SHELL_VERSION = 'mygym-core-v6.1.1-unified';
+const APP_VERSION = '6.1.2';
+const SHELL_VERSION = 'mygym-core-v6.1.2-hotfix';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5458,6 +5458,7 @@ function showSettingsModal() {
             <div class="row g" style="margin-top:10px">
               <button class="btn s sm-btn" id="ai-test-key-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
               <button class="btn s sm-btn" id="ai-save-key-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
+              <button class="btn s sm-btn red" id="ai-clear-key-btn" data-a="clear-ai-key" style="flex:1">🗑️ Clear Key</button>
             </div>
             <div id="ai-conn-status" style="margin-top:8px"></div>
           </div>
@@ -5478,7 +5479,7 @@ function showSettingsModal() {
           </div>
           <div class="settings-divider"></div>
           <div style="padding:10px 0">
-            <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} Force Cache Reload</button>
+            <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} ♻️ Force Cache Reload</button>
           </div>
         </div>
       </div>
@@ -5517,6 +5518,11 @@ function showSettingsModal() {
   if (testBtn) {
     testBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); testAIConnection(); };
     testBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); testAIConnection(); };
+  }
+  const clearBtn = document.getElementById('ai-clear-key-btn');
+  if (clearBtn) {
+    clearBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); clearAIKey(); };
+    clearBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); clearAIKey(); };
   }
 }
 
@@ -5606,9 +5612,10 @@ const AI_PROVIDERS = {
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
     defaultModel: 'llama-3.3-70b-versatile',
     models: [
-      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended)' },
-      { id: 'llama3-8b-8192', name: 'Llama 3 8B 8192 (Fast Alternative)' },
-      { id: 'mixtral-8x7b-32768', name: 'Mixtral 8x7B 32768' }
+      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Primary)' },
+      { id: 'llama3-70b-8192', name: 'Llama 3 70B 8192 (Secondary / Fallback)' },
+      { id: 'llama3-8b-8192', name: 'Llama 3 8B 8192 (Ultra-Fast)' },
+      { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT (Alternative)' }
     ],
     placeholder: 'gsk_...'
   },
@@ -5822,12 +5829,21 @@ let parsedAIRoutine = null;
 
 function saveAIKey() {
   const keyEl = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input') || document.querySelector('#ai-key-input, #ai-api-key-input');
+  const val = keyEl && keyEl.value != null ? keyEl.value.trim() : '';
+  const statusEl = document.querySelector('#ai-conn-status');
+
+  if (!val) {
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">× Please enter a valid API Key before saving.</span>`;
+    }
+    toast('Please enter a valid API Key before saving.');
+    return null;
+  }
+
+  const key = val;
   const provEl = document.getElementById('ai-provider-select');
   const modelEl = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select');
   const baseUrlEl = document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input');
-
-  const rawKey = keyEl && keyEl.value != null ? keyEl.value : '';
-  const key = rawKey.trim();
 
   let provider = provEl && provEl.value ? provEl.value : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider') || 'auto') : 'auto');
 
@@ -5836,7 +5852,7 @@ function saveAIKey() {
   const baseUrl = baseUrlEl && baseUrlEl.value != null ? baseUrlEl.value.trim() : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '');
 
   if (provider === 'groq') {
-    if (!model || model === 'llama-3.3-70b-versatile' || model.includes('llama-3.3-70b')) {
+    if (!model) {
       model = 'llama-3.3-70b-versatile';
     }
   }
@@ -5862,13 +5878,27 @@ function saveAIKey() {
   S.cfg.aiProvider = provider;
   S.cfg.aiModel = model;
 
-  const statusEl = document.querySelector('#ai-conn-status');
   if (statusEl) {
-    statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:600">✓ API Key Saved to LocalStorage</span>`;
+    statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:600">✓ API Key Saved Successfully</span>`;
   }
 
   toast('API Key saved successfully');
   return { key, provider, model };
+}
+
+function clearAIKey() {
+  if (typeof localStorage !== 'undefined') {
+    localStorage.removeItem('mygym_ai_key');
+    localStorage.removeItem('ai_api_key');
+  }
+  if (S.cfg) S.cfg.aiKey = '';
+  const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
+  if (keyInput) keyInput.value = '';
+  const statusEl = document.querySelector('#ai-conn-status');
+  if (statusEl) {
+    statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15);font-weight:600">Key cleared</span>`;
+  }
+  toast('Key cleared');
 }
 
 function saveAISettings() {
@@ -5924,7 +5954,7 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
   }
 
   if (provider === 'groq') {
-    if (!model || model === 'llama-3.3-70b-versatile' || model.includes('llama-3.3-70b')) {
+    if (!model) {
       model = 'llama-3.3-70b-versatile';
     }
   }
@@ -6066,6 +6096,9 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       const errMsg = errBody?.error?.message || errBody?.message || `HTTP ${res.status} ${res.statusText}`;
+      if (res.status === 404 && provider === 'groq') {
+        throw new Error("Model not available on your Groq tier. Please select 'llama3-70b-8192' or 'llama3-8b-8192' from the dropdown and test again.");
+      }
       if (res.status === 401) {
         throw new Error(`Invalid API Key for ${providerName} (401). Verify your key in Settings.`);
       }
@@ -6097,13 +6130,13 @@ async function testAIConnection() {
 
   // If key is empty, alert user.
   if (!key) {
-    const msg = 'Please enter an API key.';
+    const msg = '× No API Key provided';
     if (typeof alert === 'function') {
       try { alert(msg); } catch (_) {}
     }
     toast(msg);
     if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(msg)}</span>`;
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">${esc(msg)}</span>`;
     }
     return;
   }
@@ -6121,17 +6154,12 @@ async function testAIConnection() {
     ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input'))
     : (document.getElementById('ai-model-select') || document.getElementById('ai-model-input'));
 
+  // Read exact chosen model from DOM - NEVER override with hardcoded strings!
   let activeModel = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
   const provDef = AI_PROVIDERS[activeProvider] || AI_PROVIDERS.openai;
 
   if (!activeModel) {
     activeModel = provDef.defaultModel || 'gpt-4o-mini';
-  }
-
-  if (activeProvider === 'groq') {
-    if (!activeModel || activeModel === 'llama-3.3-70b-versatile' || activeModel.includes('llama-3.3-70b')) {
-      activeModel = 'llama-3.3-70b-versatile';
-    }
   }
   activeModel = activeModel.trim();
 
@@ -6142,7 +6170,6 @@ async function testAIConnection() {
 
   try {
     // When calling Groq endpoint, log exact payload to console: { model: model, messages: [{ role: 'user', content: 'hi' }] }
-    // Ensure payload model field contains trimmed exact string llama-3.3-70b-versatile
     if (activeProvider === 'groq') {
       console.log({ model: activeModel, messages: [{ role: 'user', content: 'hi' }] });
     }
@@ -6159,10 +6186,14 @@ async function testAIConnection() {
     }
     toast(`✓ Connected to ${effectiveName} (${activeModel})`);
   } catch (err) {
-    if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(err.message)}</span>`;
+    let errText = err.message || 'Connection failed';
+    if (activeProvider === 'groq' && (errText.includes('404') || errText.toLowerCase().includes('model_not_found') || errText.toLowerCase().includes('does not exist') || errText.toLowerCase().includes('not found') || errText.toLowerCase().includes('tier'))) {
+      errText = "Model not available on your Groq tier. Please select 'llama3-70b-8192' or 'llama3-8b-8192' from the dropdown and test again.";
     }
-    toast(`AI Test Failed: ${err.message}`);
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(errText)}</span>`;
+    }
+    toast(`AI Test Failed: ${errText}`);
   }
 }
 
@@ -7697,7 +7728,11 @@ document.addEventListener('click', e => {
           } catch (err) {
             console.warn('Cache clearance issue:', err);
           }
-          window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
+          try {
+            window.location.reload(true);
+          } catch (_) {
+            window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
+          }
         })();
       }
       return;
@@ -8316,6 +8351,10 @@ document.addEventListener('click', e => {
     }
     case 'save-ai-key': {
       saveAIKey();
+      return;
+    }
+    case 'clear-ai-key': {
+      clearAIKey();
       return;
     }
     case 'toggle-key-vis': {
@@ -9089,7 +9128,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.1.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.1.2').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -9144,6 +9183,7 @@ if (typeof globalThis !== 'undefined') {
     callAI,
     testAIConnection,
     saveAIKey,
+    clearAIKey,
     saveAISettings,
     findBestExerciseMatch,
     findClosestExercise,

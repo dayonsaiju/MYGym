@@ -461,6 +461,7 @@ input[type="checkbox"] {
   display: none !important;
 }
 
+#m .sheet,
 .sheet {
   background: var(--c1);
   width: 100%;
@@ -469,12 +470,22 @@ input[type="checkbox"] {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: 20px 20px 0 0;
-  padding: 14px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 16px);
+  padding: 14px calc(env(safe-area-inset-right) + 16px) calc(env(safe-area-inset-bottom) + 32px) calc(env(safe-area-inset-left) + 16px);
   touch-action: manipulation;
   pointer-events: auto !important;
   position: relative;
   z-index: 10001;
   overscroll-behavior: contain;
+}
+
+@media (orientation: landscape) {
+  #m .sheet,
+  .sheet {
+    max-height: 92vh;
+    max-height: 92dvh;
+    width: 100%;
+    border-radius: 16px 16px 0 0;
+  }
 }
 
 #m .finish-save-btn,
