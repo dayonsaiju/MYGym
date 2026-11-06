@@ -132,8 +132,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.0.1';
-const SHELL_VERSION = 'mygym-core-v6.0.1-universal-ai';
+const APP_VERSION = '6.0.2';
+const SHELL_VERSION = 'mygym-core-v6.0.2-ai-fix';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5213,11 +5213,11 @@ function showSettingsModal() {
               <div class="settings-divider"></div>
               <label class="settings-row" style="margin-bottom:8px">
                 <span class="settings-label">Base URL</span>
-                <input type="text" id="ai-base-url-input" class="txt" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="https://api.deepseek.com/v1" value="${esc(savedBaseUrl)}">
+                <input type="text" id="ai-baseurl-input" data-id="ai-base-url-input" class="txt ai-base-url-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="https://api.deepseek.com/v1" value="${esc(savedBaseUrl)}">
               </label>
               <label class="settings-row" style="margin-bottom:8px">
                 <span class="settings-label">Model Name</span>
-                <input type="text" id="ai-custom-model-input" class="txt" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc(savedModel || '')}">
+                <input type="text" id="ai-model-input" data-id="ai-custom-model-input" class="txt ai-custom-model-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc(savedModel || '')}">
               </label>
             </div>
 
@@ -5363,7 +5363,7 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 }
 
 // ============================================================================
-// v6.0.1 UNIVERSAL BYOK AI ENGINE (OPENAI-COMPATIBLE & NATIVE GEMINI)
+// v6.0.2 UNIVERSAL BYOK AI ENGINE (OPENAI-COMPATIBLE & NATIVE GEMINI)
 // ============================================================================
 
 const AI_PROVIDERS = {
@@ -5371,10 +5371,10 @@ const AI_PROVIDERS = {
     id: 'groq',
     name: 'Groq',
     endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    defaultModel: 'llama-3.1-8b-instant',
+    defaultModel: 'llama-3.3-70b-versatile',
     models: [
-      { id: 'llama-3.1-8b-instant', name: 'llama-3.1-8b-instant (Free & Ultra-Fast)' },
-      { id: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b-versatile (High Quality)' },
+      { id: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b-versatile (Recommended)' },
+      { id: 'llama3-8b-8192', name: 'llama3-8b-8192 (Fast Alternative)' },
       { id: 'mixtral-8x7b-32768', name: 'mixtral-8x7b-32768' }
     ],
     placeholder: 'gsk_...'
@@ -5417,7 +5417,7 @@ const AI_PROVIDERS = {
     id: 'custom',
     name: 'Custom / OpenAI-Compatible',
     endpoint: 'custom',
-    defaultModel: 'llama-3.1-8b-instant',
+    defaultModel: 'llama-3.3-70b-versatile',
     models: [],
     placeholder: 'API Key...'
   }
@@ -5426,7 +5426,7 @@ const AI_PROVIDERS = {
 function detectProviderFromKey(key) {
   const k = String(key || '').trim();
   if (k.startsWith('gsk_')) {
-    return { provider: 'groq', model: 'llama-3.1-8b-instant', name: 'Groq' };
+    return { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'Groq' };
   }
   if (k.startsWith('sk-or-')) {
     return { provider: 'openrouter', model: 'meta-llama/llama-3.1-8b-instruct:free', name: 'OpenRouter' };
@@ -5441,12 +5441,37 @@ function detectProviderFromKey(key) {
 }
 
 function resolveAIConfig() {
-  const apiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_api_key') || '') : '').trim();
-  let provider = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_provider') || 'auto') : 'auto');
-  let model = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_model') || '') : '').trim();
-  const baseUrl = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '').trim();
+  const domKey = typeof document !== 'undefined'
+    ? (document.getElementById('ai-api-key-input')?.value)
+    : null;
+  const domProvider = typeof document !== 'undefined'
+    ? (document.getElementById('ai-provider-select')?.value)
+    : null;
+  const domBaseUrl = typeof document !== 'undefined'
+    ? (document.getElementById('ai-baseurl-input')?.value ?? document.getElementById('ai-base-url-input')?.value)
+    : null;
+  const domModel = typeof document !== 'undefined'
+    ? (document.getElementById('ai-model-input')?.value ?? document.getElementById('ai-custom-model-input')?.value ?? document.getElementById('ai-model-select')?.value)
+    : null;
 
-  // If auto or unset, detect from key
+  const apiKey = (domKey != null && domKey !== '' ? domKey : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_api_key') || '') : '')).trim();
+  let provider = (domProvider != null && domProvider !== '' ? domProvider : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_provider') || 'auto') : 'auto'));
+  let model = (domModel != null && domModel !== '' ? domModel : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_model') || '') : '')).trim();
+  const baseUrl = (domBaseUrl != null && domBaseUrl !== '' ? domBaseUrl : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '')).trim();
+
+  // If provider === 'custom', preserve whatever base URL and model name the user entered without overriding it based on key prefix!
+  if (provider === 'custom') {
+    return {
+      apiKey,
+      provider: 'custom',
+      providerName: 'Custom / OpenAI-Compatible',
+      model: model || 'custom-model',
+      baseUrl: baseUrl || 'https://api.openai.com/v1',
+      endpoint: 'custom'
+    };
+  }
+
+  // If auto or unset, detect from key ONLY when provider is not 'custom'
   if (provider === 'auto' || !provider) {
     const detected = detectProviderFromKey(apiKey);
     if (detected) {
@@ -5475,7 +5500,7 @@ function resolveAIConfig() {
 function renderAIModelOptions(prov, currentModel) {
   if (prov === 'auto') {
     return `
-      <option value="llama-3.1-8b-instant" ${(!currentModel || currentModel === 'llama-3.1-8b-instant') ? 'selected' : ''}>llama-3.1-8b-instant (Groq)</option>
+      <option value="llama-3.3-70b-versatile" ${(!currentModel || currentModel === 'llama-3.3-70b-versatile') ? 'selected' : ''}>llama-3.3-70b-versatile (Groq)</option>
       <option value="meta-llama/llama-3.1-8b-instruct:free" ${currentModel === 'meta-llama/llama-3.1-8b-instruct:free' ? 'selected' : ''}>meta-llama/llama-3.1-8b-instruct:free (OpenRouter)</option>
       <option value="gemini-1.5-flash" ${currentModel === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Gemini)</option>
       <option value="gpt-4o-mini" ${currentModel === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (OpenAI)</option>
@@ -5493,11 +5518,15 @@ function updateAIModalFields(prov, selectedModel = null) {
   const customFields = document.querySelector('#ai-custom-fields');
   const modelSelect = document.querySelector('#ai-model-select');
   const keyInput = document.querySelector('#ai-api-key-input');
+  const customModelInput = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input');
 
   if (prov === 'custom') {
     if (stdRow) stdRow.style.display = 'none';
     if (customFields) customFields.style.display = 'block';
     if (keyInput) keyInput.placeholder = 'API Key...';
+    if (customModelInput && selectedModel) {
+      customModelInput.value = selectedModel;
+    }
   } else {
     if (stdRow) stdRow.style.display = 'flex';
     if (customFields) customFields.style.display = 'none';
@@ -5514,9 +5543,17 @@ function updateAIModalFields(prov, selectedModel = null) {
 }
 
 function handleAIKeyInput(keyVal) {
+  const provSelect = document.querySelector('#ai-provider-select');
+  if (provSelect && provSelect.value === 'custom') {
+    return;
+  }
+  const savedProv = typeof localStorage !== 'undefined' ? localStorage.getItem('ai_provider') : null;
+  if (savedProv === 'custom' && (!provSelect || provSelect.value === 'custom')) {
+    return;
+  }
+
   const detected = detectProviderFromKey(keyVal);
   const detectedPill = document.querySelector('#ai-detected-pill');
-  const provSelect = document.querySelector('#ai-provider-select');
 
   if (detected) {
     if (detectedPill) {
@@ -5545,8 +5582,8 @@ function saveAISettings() {
   const keyInput = document.querySelector('#ai-api-key-input');
   const provSelect = document.querySelector('#ai-provider-select');
   const modelSelect = document.querySelector('#ai-model-select');
-  const baseUrlInput = document.querySelector('#ai-base-url-input');
-  const customModelInput = document.querySelector('#ai-custom-model-input');
+  const baseUrlInput = document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input');
+  const customModelInput = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input');
   if (typeof localStorage !== 'undefined') {
     if (keyInput) localStorage.setItem('ai_api_key', keyInput.value.trim());
     if (provSelect) localStorage.setItem('ai_provider', provSelect.value);
@@ -5565,8 +5602,27 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     ? { systemPrompt: optionsOrSystemPrompt }
     : (optionsOrSystemPrompt || {});
 
+  // Always read current DOM inputs directly before fetch call
+  const domModelEl = typeof document !== 'undefined'
+    ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select'))
+    : null;
+  const domBaseUrlEl = typeof document !== 'undefined'
+    ? (document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input'))
+    : null;
+  const domProvEl = typeof document !== 'undefined'
+    ? document.getElementById('ai-provider-select')
+    : null;
+  const domKeyEl = typeof document !== 'undefined'
+    ? document.getElementById('ai-api-key-input')
+    : null;
+
+  const currentDomModel = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
+  const currentDomBaseUrl = domBaseUrlEl && domBaseUrlEl.value != null ? domBaseUrlEl.value.trim() : '';
+  const currentDomProv = domProvEl && domProvEl.value ? domProvEl.value : '';
+  const currentDomKey = domKeyEl && domKeyEl.value ? domKeyEl.value.trim() : '';
+
   const config = resolveAIConfig();
-  const apiKey = (options.apiKey || config.apiKey || '').trim();
+  const apiKey = (options.apiKey || currentDomKey || config.apiKey || '').trim();
   if (!apiKey) {
     throw new Error('API key missing. Please configure your OpenAI, Groq, OpenRouter, or Gemini key in Settings (⚙️).');
   }
@@ -5575,10 +5631,22 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     throw new Error('Network Offline. An active internet connection is required to contact AI.');
   }
 
-  const provider = options.provider || config.provider;
-  const model = options.model || config.model;
+  const provider = options.provider || currentDomProv || config.provider;
+
+  // Do NOT use hardcoded model fallbacks if in Custom mode or user has typed into Model Name input
+  let model;
+  if (options.model) {
+    model = options.model;
+  } else if (currentDomModel) {
+    model = currentDomModel;
+  } else if (provider === 'custom') {
+    model = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : '') || config.model || '';
+  } else {
+    model = config.model;
+  }
+
   const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
-  const providerName = provDef.name || provider;
+  const providerName = provider === 'custom' ? 'Custom / OpenAI-Compatible' : (provDef.name || provider);
 
   if (provider === 'gemini') {
     // Google Gemini Direct Client Endpoint
@@ -5646,7 +5714,7 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     } else if (provider === 'openai') {
       endpointUrl = 'https://api.openai.com/v1/chat/completions';
     } else if (provider === 'custom') {
-      let bUrl = options.baseUrl || config.baseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || 'https://api.openai.com/v1';
+      let bUrl = options.baseUrl || currentDomBaseUrl || config.baseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || 'https://api.openai.com/v1';
       bUrl = (bUrl || 'https://api.openai.com/v1').trim();
       if (!bUrl.endsWith('/chat/completions')) {
         endpointUrl = bUrl.replace(/\/+$/, '') + '/chat/completions';
@@ -5727,12 +5795,24 @@ async function testAIConnection() {
     statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15)">Testing direct API connection...</span>`;
   }
   try {
+    const domModelEl = typeof document !== 'undefined'
+      ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select'))
+      : null;
+    const domProvEl = typeof document !== 'undefined'
+      ? document.getElementById('ai-provider-select')
+      : null;
+
     const config = resolveAIConfig();
+    const effectiveProv = domProvEl?.value || config.provider;
+    const effectiveModel = domModelEl?.value?.trim() || config.model;
+    const provDef = AI_PROVIDERS[effectiveProv] || AI_PROVIDERS.openai;
+    const effectiveName = effectiveProv === 'custom' ? 'Custom' : (provDef.name || effectiveProv);
+
     await callAI('Hi', { temperature: 0.1 });
     if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(config.providerName)} (${esc(config.model)})</span>`;
+      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(effectiveName)} (${esc(effectiveModel)})</span>`;
     }
-    toast(`✓ Connected to ${config.providerName} (${config.model})`);
+    toast(`✓ Connected to ${effectiveName} (${effectiveModel})`);
   } catch (err) {
     if (statusEl) {
       statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(err.message)}</span>`;
@@ -8223,6 +8303,12 @@ document.addEventListener('input', e => {
   if (e.target.id === 'ai-api-key-input') {
     handleAIKeyInput(e.target.value);
   }
+  if (e.target.id === 'ai-model-input' || e.target.id === 'ai-custom-model-input') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', e.target.value.trim());
+  }
+  if (e.target.id === 'ai-baseurl-input' || e.target.id === 'ai-base-url-input') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_base_url', e.target.value.trim());
+  }
 });
 document.addEventListener('paste', e => {
   if (e.target && e.target.id === 'ai-api-key-input') {
@@ -8257,15 +8343,11 @@ document.addEventListener('change', e => {
     updateAIModalFields(prov);
     return;
   }
-  if (t.id === 'ai-model-select') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value);
+  if (t.id === 'ai-model-select' || t.id === 'ai-model-input' || t.id === 'ai-custom-model-input') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value.trim ? t.value.trim() : t.value);
     return;
   }
-  if (t.id === 'ai-custom-model-input') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value.trim());
-    return;
-  }
-  if (t.id === 'ai-base-url-input') {
+  if (t.id === 'ai-baseurl-input' || t.id === 'ai-base-url-input') {
     if (typeof localStorage !== 'undefined') localStorage.setItem('ai_base_url', t.value.trim());
     return;
   }
@@ -8513,7 +8595,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.0.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.0.2').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

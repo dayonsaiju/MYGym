@@ -191,13 +191,44 @@ const mockWindow = {
     body: elementsMap['body'],
     querySelector: (sel) => {
       if (elementsMap[sel]) return elementsMap[sel];
+      if (sel.startsWith('#')) {
+        const id = sel.slice(1);
+        if (elementsMap['#' + id]) return elementsMap['#' + id];
+        for (const root of [elementsMap['#m'], elementsMap['#v']]) {
+          if (root && root.innerHTML && root.innerHTML.includes(`id="${id}"`)) {
+            const match = root.innerHTML.match(new RegExp(`<([a-z0-9-]+)[^>]*id="${id}"([^>]*)>`, 'i'));
+            if (match) {
+              const valMatch = match[0].match(/value="([^"]*)"/i);
+              const el = new MockElement(match[1], '', id);
+              el.value = valMatch ? valMatch[1] : '';
+              elementsMap['#' + id] = el;
+              return el;
+            }
+          }
+        }
+      }
       return elementsMap['#v'].querySelector(sel);
     },
     querySelectorAll: (sel) => {
       return elementsMap['#v'].querySelectorAll(sel);
     },
     createElement: (tag) => new MockElement(tag),
-    getElementById: (id) => elementsMap['#' + id] || null,
+    getElementById: (id) => {
+      if (elementsMap['#' + id]) return elementsMap['#' + id];
+      for (const root of [elementsMap['#m'], elementsMap['#v']]) {
+        if (root && root.innerHTML && root.innerHTML.includes(`id="${id}"`)) {
+          const match = root.innerHTML.match(new RegExp(`<([a-z0-9-]+)[^>]*id="${id}"([^>]*)>`, 'i'));
+          if (match) {
+            const valMatch = match[0].match(/value="([^"]*)"/i);
+            const el = new MockElement(match[1], '', id);
+            el.value = valMatch ? valMatch[1] : '';
+            elementsMap['#' + id] = el;
+            return el;
+          }
+        }
+      }
+      return null;
+    },
     addEventListener: () => {}
   },
   localStorage: {
@@ -926,26 +957,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.0.1-universal-ai, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.0.1-universal-ai';"), 'sw.js must use mygym-core-v6.0.1-universal-ai cache name');
-  assert(swCode.includes("'./style.css?v=6.0.1'"), 'sw.js must precache style.css?v=6.0.1');
-  assert(swCode.includes("'./app.js?v=6.0.1'"), 'sw.js must precache app.js?v=6.0.1');
-  assert(swCode.includes("'./calc.js?v=6.0.1'"), 'sw.js must precache calc.js?v=6.0.1');
+it('sw.js cache key is bumped to mygym-core-v6.0.2-ai-fix, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.0.2-ai-fix';"), 'sw.js must use mygym-core-v6.0.2-ai-fix cache name');
+  assert(swCode.includes("'./style.css?v=6.0.2'"), 'sw.js must precache style.css?v=6.0.2');
+  assert(swCode.includes("'./app.js?v=6.0.2'"), 'sw.js must precache app.js?v=6.0.2');
+  assert(swCode.includes("'./calc.js?v=6.0.2'"), 'sw.js must precache calc.js?v=6.0.2');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.0.1'), 'index.html must link style.css?v=6.0.1');
-  assert(htmlCode.includes('app.js?v=6.0.1'), 'index.html must load app.js?v=6.0.1');
-  assert(htmlCode.includes('calc.js?v=6.0.1'), 'index.html must load calc.js?v=6.0.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.1-universal-ai'"), 'index.html must use mygym-core-v6.0.1-universal-ai');
+  assert(htmlCode.includes('style.css?v=6.0.2'), 'index.html must link style.css?v=6.0.2');
+  assert(htmlCode.includes('app.js?v=6.0.2'), 'index.html must load app.js?v=6.0.2');
+  assert(htmlCode.includes('calc.js?v=6.0.2'), 'index.html must load calc.js?v=6.0.2');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.2-ai-fix'"), 'index.html must use mygym-core-v6.0.2-ai-fix');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.0.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.1-universal-ai');
+  assert.equal(api.APP_VERSION, '6.0.2');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.2-ai-fix');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2534,10 +2565,10 @@ it('Auto-detection correctly identifies Groq, OpenRouter, Gemini, and OpenAI fro
   const detect = api.detectProviderFromKey;
   assert(typeof detect === 'function', 'detectProviderFromKey must be a function');
 
-  // Groq
+  // Groq (Updated to llama-3.3-70b-versatile in v6.0.2)
   const groq = detect('gsk_1234567890abcdef');
   assert.equal(groq.provider, 'groq');
-  assert.equal(groq.model, 'llama-3.1-8b-instant');
+  assert.equal(groq.model, 'llama-3.3-70b-versatile');
   assert.equal(groq.name, 'Groq');
 
   // OpenRouter
@@ -2571,8 +2602,8 @@ it('Settings modal renders multi-provider dropdown and custom base URL & model n
   assert(mHtml.includes('Groq (Free &amp; Ultra-Fast)') || mHtml.includes('Groq (Free & Ultra-Fast)'), 'Provider select must include Groq');
   assert(mHtml.includes('OpenRouter (Free Tier)'), 'Provider select must include OpenRouter');
   assert(mHtml.includes('Custom / OpenAI-Compatible'), 'Provider select must include Custom');
-  assert(mHtml.includes('ai-base-url-input'), 'Settings must provide Base URL input for custom OpenAI-compatible endpoints');
-  assert(mHtml.includes('ai-custom-model-input'), 'Settings must provide Model Name input for custom endpoints');
+  assert(mHtml.includes('ai-baseurl-input') || mHtml.includes('ai-base-url-input'), 'Settings must provide Base URL input for custom OpenAI-compatible endpoints');
+  assert(mHtml.includes('ai-model-input') || mHtml.includes('ai-custom-model-input'), 'Settings must provide Model Name input for custom endpoints');
 });
 
 it('Universal Dispatcher routes Groq, OpenRouter, and Custom endpoints with standard OpenAI schemas', async () => {
@@ -2601,7 +2632,7 @@ it('Universal Dispatcher routes Groq, OpenRouter, and Custom endpoints with stan
   assert.equal(groqRes, 'Mock Universal Response');
   assert.equal(capturedUrl, 'https://api.groq.com/openai/v1/chat/completions');
   assert.equal(capturedHeaders['Authorization'], 'Bearer gsk_test_groq_key_123');
-  assert.equal(capturedBody.model, 'llama-3.1-8b-instant');
+  assert.equal(capturedBody.model, 'llama-3.3-70b-versatile');
   assert.equal(capturedBody.messages[0].content, 'Hello Groq');
 
   // Test OpenRouter routing & headers
@@ -2628,6 +2659,54 @@ it('Universal Dispatcher routes Groq, OpenRouter, and Custom endpoints with stan
   assert.equal(capturedUrl, 'https://api.deepseek.com/v1/chat/completions');
   assert.equal(capturedHeaders['Authorization'], 'Bearer cust-token-xyz');
   assert.equal(capturedBody.model, 'deepseek-chat');
+
+  // Clean up
+  mockWindow.localStorage.removeItem('ai_base_url');
+});
+
+it('Custom provider reads directly from DOM inputs (ai-model-input & ai-baseurl-input) and preserves values regardless of key prefix', async () => {
+  let capturedUrl = null;
+  let capturedBody = null;
+
+  mockWindow.fetch = async (url, opts = {}) => {
+    capturedUrl = url;
+    capturedBody = JSON.parse(opts.body || '{}');
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'Custom DOM Response' } }] })
+    };
+  };
+
+  // Open settings modal to instantiate DOM inputs
+  api.showSettingsModal();
+
+  const baseUrlInput = mockWindow.document.getElementById('ai-baseurl-input');
+  const modelInput = mockWindow.document.getElementById('ai-model-input');
+  const provSelect = mockWindow.document.getElementById('ai-provider-select');
+  const keyInput = mockWindow.document.getElementById('ai-api-key-input');
+
+  assert(baseUrlInput, 'ai-baseurl-input must exist in DOM');
+  assert(modelInput, 'ai-model-input must exist in DOM');
+
+  // Simulate user in Custom mode with a key that starts with "gsk_" (must NOT be overridden by auto-detection)
+  provSelect.value = 'custom';
+  mockWindow.localStorage.setItem('ai_provider', 'custom');
+  keyInput.value = 'gsk_custom_private_key_456';
+  mockWindow.localStorage.setItem('ai_api_key', 'gsk_custom_private_key_456');
+
+  baseUrlInput.value = 'https://custom-ai-host.internal/v1';
+  modelInput.value = 'mistral-large-2407';
+
+  // callAI without options must read directly from DOM inputs without hardcoded fallbacks
+  await api.callAI('Custom Model Query');
+
+  assert.equal(capturedUrl, 'https://custom-ai-host.internal/v1/chat/completions', 'Base URL must be read directly from ai-baseurl-input');
+  assert.equal(capturedBody.model, 'mistral-large-2407', 'Model name must be read directly from ai-model-input');
+
+  // Verify auto-detection on input event does not override custom mode
+  api.handleAIKeyInput('gsk_typed_key');
+  assert.equal(provSelect.value, 'custom', 'handleAIKeyInput must not override custom provider');
+  assert.equal(modelInput.value, 'mistral-large-2407', 'handleAIKeyInput must not override custom model name');
 
   // Clean up
   mockWindow.localStorage.removeItem('ai_base_url');

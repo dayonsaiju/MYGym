@@ -1,13 +1,13 @@
-const C = 'mygym-core-v6.0.1-universal-ai';
+const C = 'mygym-core-v6.0.2-ai-fix';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=6.0.1',
+  './style.css?v=6.0.2',
   './calc.js',
-  './calc.js?v=6.0.1',
+  './calc.js?v=6.0.2',
   './app.js',
-  './app.js?v=6.0.1',
+  './app.js?v=6.0.2',
   './manifest.json',
   './icon.png',
   './exercises.json',
