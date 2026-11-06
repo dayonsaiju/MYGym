@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self' https://api.openai.com https://generativelanguage.googleapis.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self'; connect-src 'self' https://generativelanguage.googleapis.com https://api.openai.com https://api.groq.com https://openrouter.ai https://api.deepseek.com https://api.together.xyz;">
   <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
   <meta name="description" content="MyGyM - Minimalist Offline-First Progressive Web App for Weightlifting">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,12 +13,12 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css?v=6.0.0">
+  <link rel="stylesheet" href="./style.css?v=6.0.1">
   <title>MyGyM</title>
   <script>
     // Self-healing force cache clear & auto-reload for iOS Safari PWA
     (function() {
-      var SHELL_VERSION = 'mygym-core-v6.0.0-production';
+      var SHELL_VERSION = 'mygym-core-v6.0.1-universal-ai';
       var cachedVersion = localStorage.getItem('mygym_shell_version');
       if (cachedVersion !== SHELL_VERSION) {
         if ('caches' in window) {
@@ -64,7 +64,7 @@
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script src="./calc.js?v=6.0.0"></script>
-  <script type="module" src="./app.js?v=6.0.0"></script>
+  <script src="./calc.js?v=6.0.1"></script>
+  <script type="module" src="./app.js?v=6.0.1"></script>
 </body>
 </html>

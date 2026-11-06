@@ -132,8 +132,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.0.0';
-const SHELL_VERSION = 'mygym-core-v6.0.0-production';
+const APP_VERSION = '6.0.1';
+const SHELL_VERSION = 'mygym-core-v6.0.1-universal-ai';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5103,6 +5103,19 @@ function expCSV() {
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
 function showSettingsModal() {
+  const savedKey = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_api_key') : '') || '';
+  const savedProv = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_provider') : '') || 'auto';
+  const savedModel = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : '') || '';
+  const savedBaseUrl = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || '';
+  const detectedKeyInfo = detectProviderFromKey(savedKey);
+
+  let keyPlaceholder = 'Paste any key (gsk_, sk-or-, AIzaSy, sk-)...';
+  if (savedProv !== 'auto' && AI_PROVIDERS[savedProv]) {
+    keyPlaceholder = AI_PROVIDERS[savedProv].placeholder || 'API Key...';
+  } else if (detectedKeyInfo) {
+    keyPlaceholder = AI_PROVIDERS[detectedKeyInfo.provider]?.placeholder || 'API Key...';
+  }
+
   modal(`
     <h2>Settings ⚙️</h2>
     <div class="settings-modal-content">
@@ -5180,34 +5193,45 @@ function showSettingsModal() {
             <label class="settings-row" style="margin-bottom:8px">
               <span class="settings-label">AI Provider</span>
               <select class="settings-select" id="ai-provider-select" data-f="ai-provider">
-                <option value="openai" ${(typeof localStorage !== 'undefined' && (localStorage.getItem('ai_provider') || 'openai') === 'openai') ? 'selected' : ''}>OpenAI (ChatGPT)</option>
-                <option value="gemini" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? 'selected' : ''}>Google Gemini</option>
+                <option value="auto" ${savedProv === 'auto' ? 'selected' : ''}>Auto-Detect from Key</option>
+                <option value="groq" ${savedProv === 'groq' ? 'selected' : ''}>Groq (Free &amp; Ultra-Fast)</option>
+                <option value="openrouter" ${savedProv === 'openrouter' ? 'selected' : ''}>OpenRouter (Free Tier)</option>
+                <option value="gemini" ${savedProv === 'gemini' ? 'selected' : ''}>Google Gemini</option>
+                <option value="openai" ${savedProv === 'openai' ? 'selected' : ''}>OpenAI (ChatGPT)</option>
+                <option value="custom" ${savedProv === 'custom' ? 'selected' : ''}>Custom / OpenAI-Compatible</option>
               </select>
             </label>
 
-            <div class="settings-divider"></div>
-
-            <label class="settings-row" style="margin-bottom:8px">
+            <div id="ai-standard-model-row" class="settings-row" style="margin-bottom:8px;${savedProv === 'custom' ? 'display:none' : 'display:flex'}">
               <span class="settings-label">Model</span>
               <select class="settings-select" id="ai-model-select" data-f="ai-model">
-                ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? `
-                  <option value="gemini-1.5-flash" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') !== 'gemini-1.5-pro') ? 'selected' : ''}>gemini-1.5-flash (Fast & Recommended)</option>
-                  <option value="gemini-1.5-pro" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') === 'gemini-1.5-pro') ? 'selected' : ''}>gemini-1.5-pro (High Reasoning)</option>
-                ` : `
-                  <option value="gpt-4o-mini" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') !== 'gpt-4o') ? 'selected' : ''}>gpt-4o-mini (Fast & Recommended)</option>
-                  <option value="gpt-4o" ${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_model') === 'gpt-4o') ? 'selected' : ''}>gpt-4o (High Reasoning)</option>
-                `}
+                ${renderAIModelOptions(savedProv, savedModel)}
               </select>
-            </label>
+            </div>
+
+            <div id="ai-custom-fields" style="${savedProv === 'custom' ? 'display:block' : 'display:none'};margin-top:4px">
+              <div class="settings-divider"></div>
+              <label class="settings-row" style="margin-bottom:8px">
+                <span class="settings-label">Base URL</span>
+                <input type="text" id="ai-base-url-input" class="txt" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="https://api.deepseek.com/v1" value="${esc(savedBaseUrl)}">
+              </label>
+              <label class="settings-row" style="margin-bottom:8px">
+                <span class="settings-label">Model Name</span>
+                <input type="text" id="ai-custom-model-input" class="txt" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc(savedModel || '')}">
+              </label>
+            </div>
 
             <div class="settings-divider"></div>
 
             <div style="margin:10px 0">
               <div class="row" style="justify-content:space-between;margin-bottom:6px">
                 <span class="settings-label">API Key</span>
-                <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle View</button>
+                <div class="row" style="gap:6px;align-items:center">
+                  <span id="ai-detected-pill" class="chip" style="font-size:10px;padding:2px 8px;display:${detectedKeyInfo ? 'inline-block' : 'none'};color:var(--gn);background:rgba(48,209,88,0.15)">${detectedKeyInfo ? '⚡ ' + esc(detectedKeyInfo.name) : ''}</span>
+                  <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle View</button>
+                </div>
               </div>
-              <input type="password" id="ai-api-key-input" class="txt" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${(typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? 'AIzaSy...' : 'sk-proj-...'}" value="${esc((typeof localStorage !== 'undefined' && localStorage.getItem('ai_api_key')) || '')}">
+              <input type="password" id="ai-api-key-input" class="txt" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
             </div>
 
             <div class="row g" style="margin-top:10px">
@@ -5339,8 +5363,180 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 }
 
 // ============================================================================
-// v6.0.0 BYOK AI ENGINE, NATIVE DIRECT ENDPOINTS & WORKOUT IMPORTER
+// v6.0.1 UNIVERSAL BYOK AI ENGINE (OPENAI-COMPATIBLE & NATIVE GEMINI)
 // ============================================================================
+
+const AI_PROVIDERS = {
+  groq: {
+    id: 'groq',
+    name: 'Groq',
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    defaultModel: 'llama-3.1-8b-instant',
+    models: [
+      { id: 'llama-3.1-8b-instant', name: 'llama-3.1-8b-instant (Free & Ultra-Fast)' },
+      { id: 'llama-3.3-70b-versatile', name: 'llama-3.3-70b-versatile (High Quality)' },
+      { id: 'mixtral-8x7b-32768', name: 'mixtral-8x7b-32768' }
+    ],
+    placeholder: 'gsk_...'
+  },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+    defaultModel: 'meta-llama/llama-3.1-8b-instruct:free',
+    models: [
+      { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'meta-llama/llama-3.1-8b-instruct:free (Free Tier)' },
+      { id: 'google/gemini-2.0-flash-exp:free', name: 'google/gemini-2.0-flash-exp:free' },
+      { id: 'mistralai/mistral-7b-instruct:free', name: 'mistralai/mistral-7b-instruct:free' }
+    ],
+    placeholder: 'sk-or-...'
+  },
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini',
+    endpoint: 'native',
+    defaultModel: 'gemini-1.5-flash',
+    models: [
+      { id: 'gemini-1.5-flash', name: 'gemini-1.5-flash (Fast & Recommended)' },
+      { id: 'gemini-1.5-pro', name: 'gemini-1.5-pro (High Reasoning)' }
+    ],
+    placeholder: 'AIzaSy...'
+  },
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    endpoint: 'https://api.openai.com/v1/chat/completions',
+    defaultModel: 'gpt-4o-mini',
+    models: [
+      { id: 'gpt-4o-mini', name: 'gpt-4o-mini (Fast & Recommended)' },
+      { id: 'gpt-4o', name: 'gpt-4o (High Reasoning)' }
+    ],
+    placeholder: 'sk-proj-... / sk-...'
+  },
+  custom: {
+    id: 'custom',
+    name: 'Custom / OpenAI-Compatible',
+    endpoint: 'custom',
+    defaultModel: 'llama-3.1-8b-instant',
+    models: [],
+    placeholder: 'API Key...'
+  }
+};
+
+function detectProviderFromKey(key) {
+  const k = String(key || '').trim();
+  if (k.startsWith('gsk_')) {
+    return { provider: 'groq', model: 'llama-3.1-8b-instant', name: 'Groq' };
+  }
+  if (k.startsWith('sk-or-')) {
+    return { provider: 'openrouter', model: 'meta-llama/llama-3.1-8b-instruct:free', name: 'OpenRouter' };
+  }
+  if (k.startsWith('AIzaSy')) {
+    return { provider: 'gemini', model: 'gemini-1.5-flash', name: 'Google Gemini' };
+  }
+  if (k.startsWith('sk-')) {
+    return { provider: 'openai', model: 'gpt-4o-mini', name: 'OpenAI' };
+  }
+  return null;
+}
+
+function resolveAIConfig() {
+  const apiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_api_key') || '') : '').trim();
+  let provider = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_provider') || 'auto') : 'auto');
+  let model = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_model') || '') : '').trim();
+  const baseUrl = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '').trim();
+
+  // If auto or unset, detect from key
+  if (provider === 'auto' || !provider) {
+    const detected = detectProviderFromKey(apiKey);
+    if (detected) {
+      provider = detected.provider;
+      if (!model) model = detected.model;
+    } else if (baseUrl) {
+      provider = 'custom';
+    } else {
+      provider = 'openai';
+    }
+  }
+
+  const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
+  const effectiveModel = model || provDef.defaultModel || 'gpt-4o-mini';
+
+  return {
+    apiKey,
+    provider,
+    providerName: provDef.name,
+    model: effectiveModel,
+    baseUrl,
+    endpoint: provDef.endpoint
+  };
+}
+
+function renderAIModelOptions(prov, currentModel) {
+  if (prov === 'auto') {
+    return `
+      <option value="llama-3.1-8b-instant" ${(!currentModel || currentModel === 'llama-3.1-8b-instant') ? 'selected' : ''}>llama-3.1-8b-instant (Groq)</option>
+      <option value="meta-llama/llama-3.1-8b-instruct:free" ${currentModel === 'meta-llama/llama-3.1-8b-instruct:free' ? 'selected' : ''}>meta-llama/llama-3.1-8b-instruct:free (OpenRouter)</option>
+      <option value="gemini-1.5-flash" ${currentModel === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Gemini)</option>
+      <option value="gpt-4o-mini" ${currentModel === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (OpenAI)</option>
+    `;
+  }
+  const p = AI_PROVIDERS[prov] || AI_PROVIDERS.openai;
+  if (!p.models || !p.models.length) return '';
+  return p.models.map(m => `
+    <option value="${esc(m.id)}" ${(currentModel === m.id || (!currentModel && m.id === p.defaultModel)) ? 'selected' : ''}>${esc(m.name)}</option>
+  `).join('');
+}
+
+function updateAIModalFields(prov, selectedModel = null) {
+  const stdRow = document.querySelector('#ai-standard-model-row');
+  const customFields = document.querySelector('#ai-custom-fields');
+  const modelSelect = document.querySelector('#ai-model-select');
+  const keyInput = document.querySelector('#ai-api-key-input');
+
+  if (prov === 'custom') {
+    if (stdRow) stdRow.style.display = 'none';
+    if (customFields) customFields.style.display = 'block';
+    if (keyInput) keyInput.placeholder = 'API Key...';
+  } else {
+    if (stdRow) stdRow.style.display = 'flex';
+    if (customFields) customFields.style.display = 'none';
+    const p = AI_PROVIDERS[prov] || AI_PROVIDERS.openai;
+    if (keyInput) keyInput.placeholder = p.placeholder || 'API Key...';
+    if (modelSelect) {
+      const activeModel = selectedModel || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || p.defaultModel;
+      modelSelect.innerHTML = renderAIModelOptions(prov, activeModel);
+      if (typeof localStorage !== 'undefined' && activeModel) {
+        localStorage.setItem('ai_model', activeModel);
+      }
+    }
+  }
+}
+
+function handleAIKeyInput(keyVal) {
+  const detected = detectProviderFromKey(keyVal);
+  const detectedPill = document.querySelector('#ai-detected-pill');
+  const provSelect = document.querySelector('#ai-provider-select');
+
+  if (detected) {
+    if (detectedPill) {
+      detectedPill.textContent = '⚡ ' + detected.name;
+      detectedPill.style.display = 'inline-block';
+    }
+    if (provSelect) {
+      provSelect.value = detected.provider;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('ai_provider', detected.provider);
+        localStorage.setItem('ai_model', detected.model);
+      }
+      updateAIModalFields(detected.provider, detected.model);
+    }
+  } else {
+    if (detectedPill) {
+      detectedPill.style.display = 'none';
+    }
+  }
+}
 
 let aiCoachHistory = [];
 let parsedAIRoutine = null;
@@ -5349,58 +5545,42 @@ function saveAISettings() {
   const keyInput = document.querySelector('#ai-api-key-input');
   const provSelect = document.querySelector('#ai-provider-select');
   const modelSelect = document.querySelector('#ai-model-select');
+  const baseUrlInput = document.querySelector('#ai-base-url-input');
+  const customModelInput = document.querySelector('#ai-custom-model-input');
   if (typeof localStorage !== 'undefined') {
     if (keyInput) localStorage.setItem('ai_api_key', keyInput.value.trim());
     if (provSelect) localStorage.setItem('ai_provider', provSelect.value);
-    if (modelSelect) localStorage.setItem('ai_model', modelSelect.value);
+    if (provSelect && provSelect.value === 'custom') {
+      if (baseUrlInput) localStorage.setItem('ai_base_url', baseUrlInput.value.trim());
+      if (customModelInput) localStorage.setItem('ai_model', customModelInput.value.trim());
+    } else if (modelSelect) {
+      localStorage.setItem('ai_model', modelSelect.value);
+    }
   }
   toast('AI Engine settings saved! 💾');
 }
 
-async function callAI(promptOrMessages, options = {}) {
-  const apiKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_api_key') || '') : '').trim();
+async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
+  const options = typeof optionsOrSystemPrompt === 'string'
+    ? { systemPrompt: optionsOrSystemPrompt }
+    : (optionsOrSystemPrompt || {});
+
+  const config = resolveAIConfig();
+  const apiKey = (options.apiKey || config.apiKey || '').trim();
   if (!apiKey) {
-    throw new Error('API key missing. Please configure your OpenAI or Gemini key in Settings (⚙️).');
+    throw new Error('API key missing. Please configure your OpenAI, Groq, OpenRouter, or Gemini key in Settings (⚙️).');
   }
-  const provider = (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_provider') || 'openai') : 'openai');
-  const model = options.model || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || (provider === 'gemini' ? 'gemini-1.5-flash' : 'gpt-4o-mini');
 
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
     throw new Error('Network Offline. An active internet connection is required to contact AI.');
   }
 
-  if (provider === 'openai') {
-    const messages = Array.isArray(promptOrMessages)
-      ? promptOrMessages
-      : [{ role: 'user', content: String(promptOrMessages) }];
+  const provider = options.provider || config.provider;
+  const model = options.model || config.model;
+  const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
+  const providerName = provDef.name || provider;
 
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
-      },
-      body: JSON.stringify({
-        model: model || 'gpt-4o-mini',
-        messages,
-        temperature: options.temperature != null ? options.temperature : 0.4,
-        ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
-      })
-    });
-
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      const errMsg = errBody?.error?.message || `HTTP ${res.status} ${res.statusText}`;
-      if (res.status === 401) throw new Error('Invalid OpenAI API Key (401). Verify your key in Settings.');
-      if (res.status === 429) throw new Error('OpenAI Rate Limit Exceeded (429). Please try again shortly.');
-      throw new Error(`OpenAI Error: ${errMsg}`);
-    }
-
-    const data = await res.json();
-    const reply = data?.choices?.[0]?.message?.content;
-    if (!reply) throw new Error('Empty response from OpenAI');
-    return reply;
-  } else {
+  if (provider === 'gemini') {
     // Google Gemini Direct Client Endpoint
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-1.5-flash')}:generateContent?key=${encodeURIComponent(apiKey)}`;
     
@@ -5411,7 +5591,11 @@ async function callAI(promptOrMessages, options = {}) {
         parts: [{ text: m.content }]
       }));
     } else {
-      contents = [{ role: 'user', parts: [{ text: String(promptOrMessages) }] }];
+      contents = [];
+      if (options.systemPrompt) {
+        contents.push({ role: 'user', parts: [{ text: `Instructions: ${options.systemPrompt}` }] });
+      }
+      contents.push({ role: 'user', parts: [{ text: String(promptOrMessages) }] });
     }
 
     const reqBody = {
@@ -5422,25 +5606,116 @@ async function callAI(promptOrMessages, options = {}) {
       }
     };
 
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reqBody)
-    });
+    let res;
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reqBody)
+      });
+    } catch (netErr) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('Network Offline. An active internet connection is required to contact AI.');
+      }
+      throw new Error('Network connection blocked or CORS issue.');
+    }
 
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       const errMsg = errBody?.error?.message || `HTTP ${res.status} ${res.statusText}`;
-      if (res.status === 400 && errMsg.includes('API_KEY_INVALID')) {
-        throw new Error('Invalid Gemini API Key. Verify your key in Settings.');
+      if (res.status === 401 || (res.status === 400 && errMsg.includes('API_KEY_INVALID'))) {
+        throw new Error(`Invalid API Key for ${providerName} (401). Verify your key in Settings.`);
       }
-      if (res.status === 429) throw new Error('Gemini Quota Exceeded (429). Please try again shortly.');
-      throw new Error(`Gemini Error: ${errMsg}`);
+      if (res.status === 429) {
+        throw new Error(`Rate limit reached for ${providerName} (429). Please retry in a few moments.`);
+      }
+      throw new Error(`${providerName} Error: ${errMsg}`);
     }
 
     const data = await res.json();
     const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!reply) throw new Error('Empty response from Gemini');
+    if (!reply) throw new Error(`Empty response from ${providerName}`);
+    return reply;
+  } else {
+    // OpenAI-Compatible standard endpoint (OpenAI, Groq, OpenRouter, Custom)
+    let endpointUrl;
+    if (provider === 'groq') {
+      endpointUrl = 'https://api.groq.com/openai/v1/chat/completions';
+    } else if (provider === 'openrouter') {
+      endpointUrl = 'https://openrouter.ai/api/v1/chat/completions';
+    } else if (provider === 'openai') {
+      endpointUrl = 'https://api.openai.com/v1/chat/completions';
+    } else if (provider === 'custom') {
+      let bUrl = options.baseUrl || config.baseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || 'https://api.openai.com/v1';
+      bUrl = (bUrl || 'https://api.openai.com/v1').trim();
+      if (!bUrl.endsWith('/chat/completions')) {
+        endpointUrl = bUrl.replace(/\/+$/, '') + '/chat/completions';
+      } else {
+        endpointUrl = bUrl;
+      }
+    } else {
+      endpointUrl = 'https://api.openai.com/v1/chat/completions';
+    }
+
+    let messages;
+    if (Array.isArray(promptOrMessages)) {
+      messages = promptOrMessages;
+    } else {
+      messages = [];
+      if (options.systemPrompt) {
+        messages.push({ role: 'system', content: options.systemPrompt });
+      }
+      messages.push({ role: 'user', content: String(promptOrMessages) });
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    };
+
+    if (provider === 'openrouter' || endpointUrl.includes('openrouter.ai')) {
+      headers['HTTP-Referer'] = (typeof window !== 'undefined' && window.location && window.location.origin)
+        ? window.location.origin
+        : 'https://mygym.app';
+      headers['X-Title'] = 'MyGyM';
+    }
+
+    const bodyPayload = {
+      model: model,
+      messages,
+      temperature: options.temperature != null ? options.temperature : 0.4,
+      ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
+    };
+
+    let res;
+    try {
+      res = await fetch(endpointUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(bodyPayload)
+      });
+    } catch (netErr) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new Error('Network Offline. An active internet connection is required to contact AI.');
+      }
+      throw new Error('Network connection blocked or CORS issue.');
+    }
+
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      const errMsg = errBody?.error?.message || errBody?.message || `HTTP ${res.status} ${res.statusText}`;
+      if (res.status === 401) {
+        throw new Error(`Invalid API Key for ${providerName} (401). Verify your key in Settings.`);
+      }
+      if (res.status === 429) {
+        throw new Error(`Rate limit reached for ${providerName} (429). Please retry in a few moments.`);
+      }
+      throw new Error(`${providerName} Error: ${errMsg}`);
+    }
+
+    const data = await res.json();
+    const reply = data?.choices?.[0]?.message?.content;
+    if (!reply) throw new Error(`Empty response from ${providerName}`);
     return reply;
   }
 }
@@ -5452,12 +5727,12 @@ async function testAIConnection() {
     statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15)">Testing direct API connection...</span>`;
   }
   try {
-    const resText = await callAI('Reply with the single word "PONG".', { temperature: 0.1 });
-    const model = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || 'AI';
+    const config = resolveAIConfig();
+    await callAI('Hi', { temperature: 0.1 });
     if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connection Successful! (${esc(model)} ready)</span>`;
+      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(config.providerName)} (${esc(config.model)})</span>`;
     }
-    toast('AI Connection Successful! 🤖');
+    toast(`✓ Connected to ${config.providerName} (${config.model})`);
   } catch (err) {
     if (statusEl) {
       statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(err.message)}</span>`;
@@ -7945,6 +8220,16 @@ document.addEventListener('input', e => {
   if (e.target.id && e.target.id.startsWith('calib-')) {
     updateCalibrationPreview();
   }
+  if (e.target.id === 'ai-api-key-input') {
+    handleAIKeyInput(e.target.value);
+  }
+});
+document.addEventListener('paste', e => {
+  if (e.target && e.target.id === 'ai-api-key-input') {
+    setTimeout(() => {
+      handleAIKeyInput(e.target.value);
+    }, 0);
+  }
 });
 document.addEventListener('blur', e => handleFieldUpdate(e.target), true);
 document.addEventListener('change', e => {
@@ -7969,30 +8254,19 @@ document.addEventListener('change', e => {
   if (t.id === 'ai-provider-select') {
     const prov = t.value;
     if (typeof localStorage !== 'undefined') localStorage.setItem('ai_provider', prov);
-    const modelSelect = document.querySelector('#ai-model-select');
-    const keyInput = document.querySelector('#ai-api-key-input');
-    if (modelSelect) {
-      if (prov === 'gemini') {
-        modelSelect.innerHTML = `
-          <option value="gemini-1.5-flash" selected>gemini-1.5-flash (Fast & Recommended)</option>
-          <option value="gemini-1.5-pro">gemini-1.5-pro (High Reasoning)</option>
-        `;
-        if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', 'gemini-1.5-flash');
-      } else {
-        modelSelect.innerHTML = `
-          <option value="gpt-4o-mini" selected>gpt-4o-mini (Fast & Recommended)</option>
-          <option value="gpt-4o">gpt-4o (High Reasoning)</option>
-        `;
-        if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', 'gpt-4o-mini');
-      }
-    }
-    if (keyInput) {
-      keyInput.placeholder = prov === 'gemini' ? 'AIzaSy...' : 'sk-proj-...';
-    }
+    updateAIModalFields(prov);
     return;
   }
   if (t.id === 'ai-model-select') {
     if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value);
+    return;
+  }
+  if (t.id === 'ai-custom-model-input') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_model', t.value.trim());
+    return;
+  }
+  if (t.id === 'ai-base-url-input') {
+    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_base_url', t.value.trim());
     return;
   }
   if (t.id === 'calib-goal') {
@@ -8239,7 +8513,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.0.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -8267,6 +8541,11 @@ if (typeof globalThis !== 'undefined') {
   globalThis.__MYGYM__ = {
     APP_VERSION,
     SHELL_VERSION,
+    AI_PROVIDERS,
+    detectProviderFromKey,
+    resolveAIConfig,
+    updateAIModalFields,
+    handleAIKeyInput,
     loadExercises,
     init,
     render,

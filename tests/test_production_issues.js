@@ -926,26 +926,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.0.0-production, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.0.0-production';"), 'sw.js must use mygym-core-v6.0.0-production cache name');
-  assert(swCode.includes("'./style.css?v=6.0.0'"), 'sw.js must precache style.css?v=6.0.0');
-  assert(swCode.includes("'./app.js?v=6.0.0'"), 'sw.js must precache app.js?v=6.0.0');
-  assert(swCode.includes("'./calc.js?v=6.0.0'"), 'sw.js must precache calc.js?v=6.0.0');
+it('sw.js cache key is bumped to mygym-core-v6.0.1-universal-ai, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.0.1-universal-ai';"), 'sw.js must use mygym-core-v6.0.1-universal-ai cache name');
+  assert(swCode.includes("'./style.css?v=6.0.1'"), 'sw.js must precache style.css?v=6.0.1');
+  assert(swCode.includes("'./app.js?v=6.0.1'"), 'sw.js must precache app.js?v=6.0.1');
+  assert(swCode.includes("'./calc.js?v=6.0.1'"), 'sw.js must precache calc.js?v=6.0.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.0.0'), 'index.html must link style.css?v=6.0.0');
-  assert(htmlCode.includes('app.js?v=6.0.0'), 'index.html must load app.js?v=6.0.0');
-  assert(htmlCode.includes('calc.js?v=6.0.0'), 'index.html must load calc.js?v=6.0.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.0-production'"), 'index.html must use mygym-core-v6.0.0-production');
+  assert(htmlCode.includes('style.css?v=6.0.1'), 'index.html must link style.css?v=6.0.1');
+  assert(htmlCode.includes('app.js?v=6.0.1'), 'index.html must load app.js?v=6.0.1');
+  assert(htmlCode.includes('calc.js?v=6.0.1'), 'index.html must load calc.js?v=6.0.1');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.1-universal-ai'"), 'index.html must use mygym-core-v6.0.1-universal-ai');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.0.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.0-production');
+  assert.equal(api.APP_VERSION, '6.0.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.1-universal-ai');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2524,6 +2524,163 @@ it('Mobile-first ergonomics: CSS input bounds min-width 72px, height 44px, font-
   // CSP verification in index.html
   assert(htmlCode.includes('https://api.openai.com'), 'index.html CSP must allow https://api.openai.com');
   assert(htmlCode.includes('https://generativelanguage.googleapis.com'), 'index.html CSP must allow https://generativelanguage.googleapis.com');
+});
+
+// TEST SUITE 21: UNIVERSAL MULTI-PROVIDER BYOK ENGINE & AUTO-DETECTION (v6.0.1)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 21: Universal Multi-Provider BYOK Engine & Auto-Detection (v6.0.1)');
+
+it('Auto-detection correctly identifies Groq, OpenRouter, Gemini, and OpenAI from key prefixes', () => {
+  const detect = api.detectProviderFromKey;
+  assert(typeof detect === 'function', 'detectProviderFromKey must be a function');
+
+  // Groq
+  const groq = detect('gsk_1234567890abcdef');
+  assert.equal(groq.provider, 'groq');
+  assert.equal(groq.model, 'llama-3.1-8b-instant');
+  assert.equal(groq.name, 'Groq');
+
+  // OpenRouter
+  const openrouter = detect('sk-or-v1-abcdef123456');
+  assert.equal(openrouter.provider, 'openrouter');
+  assert.equal(openrouter.model, 'meta-llama/llama-3.1-8b-instruct:free');
+  assert.equal(openrouter.name, 'OpenRouter');
+
+  // Google Gemini
+  const gemini = detect('AIzaSyD-1234567890abcdef');
+  assert.equal(gemini.provider, 'gemini');
+  assert.equal(gemini.model, 'gemini-1.5-flash');
+  assert.equal(gemini.name, 'Google Gemini');
+
+  // OpenAI
+  const openai = detect('sk-proj-1234567890');
+  assert.equal(openai.provider, 'openai');
+  assert.equal(openai.model, 'gpt-4o-mini');
+  assert.equal(openai.name, 'OpenAI');
+
+  // Unknown or invalid prefix
+  assert.equal(detect('random-key-xyz'), null);
+  assert.equal(detect(''), null);
+});
+
+it('Settings modal renders multi-provider dropdown and custom base URL & model name inputs', () => {
+  api.showSettingsModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('ai-provider-select'), 'Settings must include provider select');
+  assert(mHtml.includes('Auto-Detect from Key'), 'Provider select must include Auto-Detect option');
+  assert(mHtml.includes('Groq (Free &amp; Ultra-Fast)') || mHtml.includes('Groq (Free & Ultra-Fast)'), 'Provider select must include Groq');
+  assert(mHtml.includes('OpenRouter (Free Tier)'), 'Provider select must include OpenRouter');
+  assert(mHtml.includes('Custom / OpenAI-Compatible'), 'Provider select must include Custom');
+  assert(mHtml.includes('ai-base-url-input'), 'Settings must provide Base URL input for custom OpenAI-compatible endpoints');
+  assert(mHtml.includes('ai-custom-model-input'), 'Settings must provide Model Name input for custom endpoints');
+});
+
+it('Universal Dispatcher routes Groq, OpenRouter, and Custom endpoints with standard OpenAI schemas', async () => {
+  let capturedUrl = null;
+  let capturedHeaders = null;
+  let capturedBody = null;
+
+  mockWindow.fetch = async (url, opts = {}) => {
+    capturedUrl = url;
+    capturedHeaders = opts.headers || {};
+    capturedBody = JSON.parse(opts.body || '{}');
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Mock Universal Response' } }]
+      })
+    };
+  };
+
+  // Test Groq routing
+  mockWindow.localStorage.setItem('ai_api_key', 'gsk_test_groq_key_123');
+  mockWindow.localStorage.setItem('ai_provider', 'groq');
+  mockWindow.localStorage.removeItem('ai_model');
+
+  const groqRes = await api.callAI('Hello Groq');
+  assert.equal(groqRes, 'Mock Universal Response');
+  assert.equal(capturedUrl, 'https://api.groq.com/openai/v1/chat/completions');
+  assert.equal(capturedHeaders['Authorization'], 'Bearer gsk_test_groq_key_123');
+  assert.equal(capturedBody.model, 'llama-3.1-8b-instant');
+  assert.equal(capturedBody.messages[0].content, 'Hello Groq');
+
+  // Test OpenRouter routing & headers
+  mockWindow.localStorage.setItem('ai_api_key', 'sk-or-v1-test-openrouter-key');
+  mockWindow.localStorage.setItem('ai_provider', 'openrouter');
+  mockWindow.localStorage.removeItem('ai_model');
+
+  const orRes = await api.callAI('Hello OpenRouter');
+  assert.equal(orRes, 'Mock Universal Response');
+  assert.equal(capturedUrl, 'https://openrouter.ai/api/v1/chat/completions');
+  assert.equal(capturedHeaders['Authorization'], 'Bearer sk-or-v1-test-openrouter-key');
+  assert.equal(capturedHeaders['X-Title'], 'MyGyM');
+  assert(capturedHeaders['HTTP-Referer'], 'OpenRouter must include HTTP-Referer header');
+  assert.equal(capturedBody.model, 'meta-llama/llama-3.1-8b-instruct:free');
+
+  // Test Custom endpoint routing
+  mockWindow.localStorage.setItem('ai_api_key', 'cust-token-xyz');
+  mockWindow.localStorage.setItem('ai_provider', 'custom');
+  mockWindow.localStorage.setItem('ai_base_url', 'https://api.deepseek.com/v1');
+  mockWindow.localStorage.setItem('ai_model', 'deepseek-chat');
+
+  const customRes = await api.callAI('Hello DeepSeek');
+  assert.equal(customRes, 'Mock Universal Response');
+  assert.equal(capturedUrl, 'https://api.deepseek.com/v1/chat/completions');
+  assert.equal(capturedHeaders['Authorization'], 'Bearer cust-token-xyz');
+  assert.equal(capturedBody.model, 'deepseek-chat');
+
+  // Clean up
+  mockWindow.localStorage.removeItem('ai_base_url');
+});
+
+it('Error translation formats 401, 429, and network failures with user-friendly messages', async () => {
+  mockWindow.localStorage.setItem('ai_api_key', 'gsk_test_key');
+  mockWindow.localStorage.setItem('ai_provider', 'groq');
+
+  // 401 Unauthorized
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+    json: async () => ({ error: { message: 'Invalid API key' } })
+  });
+
+  await assert.rejects(
+    async () => { await api.callAI('Test 401'); },
+    /Invalid API Key for Groq \(401\)/
+  );
+
+  // 429 Rate Limit
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 429,
+    statusText: 'Too Many Requests',
+    json: async () => ({ error: { message: 'Rate limit exceeded' } })
+  });
+
+  await assert.rejects(
+    async () => { await api.callAI('Test 429'); },
+    /Rate limit reached for Groq \(429\)/
+  );
+
+  // Network Error / CORS failure
+  mockWindow.fetch = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+
+  await assert.rejects(
+    async () => { await api.callAI('Test Network'); },
+    /Network connection blocked or CORS issue/
+  );
+});
+
+it('index.html Content-Security-Policy expands connect-src for all supported AI providers', () => {
+  assert(htmlCode.includes('https://api.groq.com'), 'CSP must include https://api.groq.com');
+  assert(htmlCode.includes('https://openrouter.ai'), 'CSP must include https://openrouter.ai');
+  assert(htmlCode.includes('https://api.deepseek.com'), 'CSP must include https://api.deepseek.com');
+  assert(htmlCode.includes('https://api.together.xyz'), 'CSP must include https://api.together.xyz');
+  assert(htmlCode.includes('https://api.openai.com'), 'CSP must include https://api.openai.com');
+  assert(htmlCode.includes('https://generativelanguage.googleapis.com'), 'CSP must include https://generativelanguage.googleapis.com');
 });
 
 console.log(`\n======================================================`);
