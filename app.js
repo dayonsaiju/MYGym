@@ -132,8 +132,8 @@ let S = {
   customExercises: ls.get('customExercises') || []
 };
 
-const APP_VERSION = '6.0.2';
-const SHELL_VERSION = 'mygym-core-v6.0.2-ai-fix';
+const APP_VERSION = '6.0.3';
+const SHELL_VERSION = 'mygym-core-v6.0.3-stable';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -5948,14 +5948,14 @@ function openAIImportModal() {
           </div>
         ` : ''}
 
-        <div style="margin-bottom:10px">
+        <div style="margin-bottom:12px">
           <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Workout Text / Notes</label>
-          <textarea id="ai-import-text" class="ai-import-textarea" rows="6" placeholder="Paste your workout notes here, e.g.:&#10;Upper Hypertrophy:&#10;1. Barbell Bench Press: 4 sets x 8 reps (80kg)&#10;2. Incline Dumbbell Press: 3 sets x 10 reps (26kg)&#10;3. Lat Pulldown: 3 sets x 12 reps (65kg)&#10;4. Triceps Cable Pushdown: 3 sets x 15 reps (25kg)"></textarea>
+          <textarea id="ai-import-textarea" data-id="ai-import-text" class="ai-import-textarea" style="min-height:150px;font-size:15px;border-radius:8px" placeholder="Paste your workout routine here directly (e.g. from WhatsApp, ChatGPT, or Notes):&#10;Upper A:&#10;- Incline Dumbbell Press: 3 sets x 8-10 reps&#10;- Lat Pulldown: 3 sets x 10 reps..."></textarea>
         </div>
 
         <div class="row" style="margin-bottom:14px;align-items:center;justify-content:space-between">
           <label class="btn s sm-btn" style="cursor:pointer;font-size:12px">
-            📁 Upload Text/JSON File
+            📁 Or Upload Text / JSON File
             <input type="file" id="ai-import-file" accept=".txt,.json,.md,.csv" style="display:none">
           </label>
           <span id="ai-import-file-name" class="t2 sm"></span>
@@ -5965,7 +5965,7 @@ function openAIImportModal() {
       <div id="ai-import-status" style="margin-bottom:10px"></div>
 
       <div style="flex:none">
-        <button class="btn finish-save-btn" data-a="parse-ai-workout" style="width:100%;margin-bottom:8px">⚡ Parse & Build Routine</button>
+        <button class="btn finish-save-btn" data-a="run-ai-import" style="width:100%;margin-bottom:8px">🪄 Parse &amp; Import Workout</button>
         <button class="btn s outline" data-a="closemodal" style="width:100%">Cancel</button>
       </div>
     </div>
@@ -5973,10 +5973,29 @@ function openAIImportModal() {
 }
 
 async function parseAIWorkoutFromInput() {
-  const textEl = document.querySelector('#ai-import-text');
-  const rawText = (textEl ? textEl.value : '').trim();
+  const textEl = document.querySelector('#ai-import-textarea') || document.querySelector('#ai-import-text');
+  let rawText = (textEl ? textEl.value : '').trim();
+  const fileInput = document.querySelector('#ai-import-file');
+
+  // If textarea is empty but a file was selected, read the file contents using FileReader
+  if (!rawText && fileInput && fileInput.files && fileInput.files[0]) {
+    try {
+      rawText = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = ev => resolve(ev.target.result || '');
+        reader.onerror = err => reject(err);
+        reader.readAsText(fileInput.files[0]);
+      });
+      rawText = (rawText || '').trim();
+      if (textEl) textEl.value = rawText;
+    } catch (e) {
+      toast('Failed to read the uploaded file.');
+      return;
+    }
+  }
+
   if (!rawText) {
-    toast('Please paste workout text or upload a file first');
+    toast('Please paste your workout routine or upload a file.');
     return;
   }
 
@@ -7853,6 +7872,7 @@ document.addEventListener('click', e => {
       }
       return;
     }
+    case 'run-ai-import':
     case 'parse-ai-workout': {
       parseAIWorkoutFromInput();
       return;
@@ -8331,7 +8351,7 @@ document.addEventListener('change', e => {
     if (nameEl) nameEl.textContent = file.name;
     const reader = new FileReader();
     reader.onload = ev => {
-      const textEl = document.querySelector('#ai-import-text');
+      const textEl = document.querySelector('#ai-import-textarea') || document.querySelector('#ai-import-text');
       if (textEl) textEl.value = ev.target.result;
     };
     reader.readAsText(file);
@@ -8595,7 +8615,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.0.2').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.0.3').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

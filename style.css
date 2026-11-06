@@ -4554,15 +4554,17 @@ textarea.note:focus {
 
 .ai-import-textarea {
   width: 100%;
-  border-radius: 12px;
+  min-height: 150px;
+  border-radius: 8px;
   padding: 12px;
   background: var(--c2);
   border: 1px solid var(--bd);
   color: #FFFFFF;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.4;
   resize: vertical;
   box-sizing: border-box;
+  font-family: inherit;
 }
 
 .ai-preview-card {

@@ -957,26 +957,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.0.2-ai-fix, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.0.2-ai-fix';"), 'sw.js must use mygym-core-v6.0.2-ai-fix cache name');
-  assert(swCode.includes("'./style.css?v=6.0.2'"), 'sw.js must precache style.css?v=6.0.2');
-  assert(swCode.includes("'./app.js?v=6.0.2'"), 'sw.js must precache app.js?v=6.0.2');
-  assert(swCode.includes("'./calc.js?v=6.0.2'"), 'sw.js must precache calc.js?v=6.0.2');
+it('sw.js cache key is bumped to mygym-core-v6.0.3-stable, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.0.3-stable';"), 'sw.js must use mygym-core-v6.0.3-stable cache name');
+  assert(swCode.includes("'./style.css?v=6.0.3'"), 'sw.js must precache style.css?v=6.0.3');
+  assert(swCode.includes("'./app.js?v=6.0.3'"), 'sw.js must precache app.js?v=6.0.3');
+  assert(swCode.includes("'./calc.js?v=6.0.3'"), 'sw.js must precache calc.js?v=6.0.3');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.0.2'), 'index.html must link style.css?v=6.0.2');
-  assert(htmlCode.includes('app.js?v=6.0.2'), 'index.html must load app.js?v=6.0.2');
-  assert(htmlCode.includes('calc.js?v=6.0.2'), 'index.html must load calc.js?v=6.0.2');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.2-ai-fix'"), 'index.html must use mygym-core-v6.0.2-ai-fix');
+  assert(htmlCode.includes('style.css?v=6.0.3'), 'index.html must link style.css?v=6.0.3');
+  assert(htmlCode.includes('app.js?v=6.0.3'), 'index.html must load app.js?v=6.0.3');
+  assert(htmlCode.includes('calc.js?v=6.0.3'), 'index.html must load calc.js?v=6.0.3');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.0.3-stable'"), 'index.html must use mygym-core-v6.0.3-stable');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.0.2');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.2-ai-fix');
+  assert.equal(api.APP_VERSION, '6.0.3');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.0.3-stable');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2439,9 +2439,17 @@ it('Workout routine importer: openAIImportModal renders textarea/file upload and
   api.openAIImportModal();
   const mHtml = elementsMap['#m'].innerHTML;
   assert(mHtml.includes('Import Workout via AI'), 'Modal must have Import Workout via AI header');
-  assert(mHtml.includes('id="ai-import-text"'), 'Modal must include multi-line text input');
+  assert(mHtml.includes('ai-import-textarea') || mHtml.includes('id="ai-import-text"'), 'Modal must include multi-line text input');
   assert(mHtml.includes('id="ai-import-file"'), 'Modal must include file upload input');
-  assert(mHtml.includes('data-a="parse-ai-workout"'), 'Modal must include parse workout action');
+  assert(mHtml.includes('data-a="run-ai-import"') || mHtml.includes('data-a="parse-ai-workout"'), 'Modal must include parse workout action');
+
+  // Verify empty input trigger produces warning toast
+  elementsMap['#toast'].innerHTML = '';
+  const txtArea = mockWindow.document.getElementById('ai-import-textarea') || mockWindow.document.getElementById('ai-import-text');
+  if (txtArea) txtArea.value = '';
+  api.parseAIWorkoutFromInput();
+  const toastHtml = elementsMap['#toast'].innerHTML;
+  assert(toastHtml.includes('Please paste your workout routine or upload a file'), 'Empty input must prompt user to paste routine or upload file');
 
   // Test local parser fallback for natural language input
   const sampleText = `Push Hypertrophy:
