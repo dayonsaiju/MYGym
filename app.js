@@ -116,7 +116,7 @@ let S = {
 };
 
 const APP_VERSION = '5.8.1';
-const SHELL_VERSION = 'mygym-core-v5.8.1-finishfix';
+const SHELL_VERSION = 'mygym-core-v5.8.1-hotfix';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -790,15 +790,15 @@ const scoreSet = (id, s) => {
   const w = Number(s?.w) || 0;
   const r = Number(s?.r) || 0;
   if (r <= 0) return 0;
-  if (e.t === 't') return r;
-  if (e.t === 'b') return w > 0 ? e1(w, r) + 1000 : r;
+  if (e?.t === 't') return r;
+  if (e?.t === 'b') return w > 0 ? e1(w, r) + 1000 : r;
   return e1(w, r);
 };
 
 const bestSet = id => {
   let b = null, m = -1;
-  for (const l of S.logs) {
-    for (const x of l.ex) {
+  for (const l of (S.logs || [])) {
+    for (const x of (l.ex || [])) {
       if (String(x.id) === String(id) && Array.isArray(x.sets)) {
         for (const s of x.sets) {
           const v = scoreSet(id, s);
@@ -840,7 +840,7 @@ const dk = t => {
 };
 
 function streak() {
-  const s = new Set(S.logs.map(l => dk(l.date)));
+  const s = new Set((S.logs || []).map(l => dk(l.date)));
   const d = new Date();
   let n = 0;
   if (!s.has(dk(d))) d.setDate(d.getDate() - 1);
@@ -2328,6 +2328,9 @@ const startWorkTimer = () => {
       workTimerInterval = null;
       return;
     }
+    // Decouple timer ticks from DOM while any modal or sheet is open
+    const m = $('#m');
+    if (m && !m.hidden && m.innerHTML.trim()) return;
     const timerEl = $('#work-live-timer');
     if (timerEl && S.act) {
       const allSets = S.act.ex.flatMap(x => x.sets);
@@ -3180,6 +3183,7 @@ function vWork() {
         <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
       </div>
       <div class="work-top-actions">
+        <button class="btn sm-btn chip-success" data-a="directsave" title="Emergency Direct Save: bypass confirmation and save immediately">⚡ Direct Save</button>
         <button class="btn s sm-btn red" data-a="cancel">Discard</button>
       </div>
     </div>
@@ -3209,7 +3213,7 @@ function vWork() {
       </div>
       <div class="work-top-actions">
         <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
-        <button class="btn sm-btn chip-success" data-a="forcefinish" title="Emergency Direct Finish: bypass confirmation and save immediately">⚡ Force Finish &amp; Save</button>
+        <button class="btn sm-btn chip-success" data-a="directsave" title="Emergency Direct Save: bypass confirmation and save immediately">⚡ Direct Save</button>
         <button class="btn sm-btn" data-a="promptfin">Finish</button>
         <button class="btn s sm-btn red" data-a="promptcancel">✕</button>
       </div>
@@ -5205,7 +5209,12 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 }
 
 // ---- Finish Workout ----
+let isCommitting = false;
+
 function finishWorkout() {
+  if (isCommitting) return;
+  isCommitting = true;
+
   try {
     const a = S.act;
     if (!a) {
@@ -5213,182 +5222,215 @@ function finishWorkout() {
       return;
     }
 
-    // Auto-complete sets if none explicitly marked done, so clicking Finish never hangs or fails silently
+    try {
+      localStorage.setItem('backup_act_' + Date.now(), JSON.stringify(a));
+    } catch (_) {}
+
     const exercises = Array.isArray(a.ex) ? a.ex : [];
-    const hasCompletedSet = exercises.some(x => Array.isArray(x.sets) && x.sets.some(s => s && (s.done || (x.uni && (s.sideL || s.sideR)))));
-    if (!hasCompletedSet) {
-      let autoCompletedAny = false;
-      exercises.forEach(x => {
-        if (Array.isArray(x.sets)) {
-          x.sets.forEach(s => {
-            if (s && (Number(s.w) > 0 || Number(s.r) > 0) && !autoCompletedAny) {
-              s.done = true;
-              autoCompletedAny = true;
-            }
-          });
-        }
-      });
-      if (!autoCompletedAny && exercises.length && Array.isArray(exercises[0].sets) && exercises[0].sets.length) {
-        if (exercises[0].sets[0]) {
-          exercises[0].sets[0].done = true;
-          if (!Number(exercises[0].sets[0].r)) exercises[0].sets[0].r = 10;
-        }
-      }
-    }
-
-    const ex = exercises.map(x => ({
-      id: x.id,
-      note: x.note || '',
-      uni: !!x.uni,
-      sets: (Array.isArray(x.sets) ? x.sets : []).filter(s => s && (s.done || (x.uni && (s.sideL || s.sideR)))).map(s => {
-        const rirVal = s.rir != null && s.rir !== '' ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
-        const isDone = s.done || (x.uni && s.sideL && s.sideR);
-        return {
-          w: Math.max(0, Number(s.w) || 0),
-          r: Math.max(0, Number(s.r) || 0),
-          rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
-          rir: rirVal,
-          uni: !!x.uni,
-          sideL: !!s.sideL,
-          sideR: !!s.sideR,
-          done: !!isDone
-        };
-      })
-    })).filter(x => x.sets.length > 0);
-
-    if (!ex.length) {
-      closeModal();
-      return toast('Complete at least one set first');
-    }
-
-    // Detect PRs achieved during active session
-    const sessionPRs = [];
-    ex.forEach(x => {
-      const e = X(x.id);
-      (x.sets || []).forEach((s, idx) => {
-        try {
-          const pr = checkSetPR(x.id, s, x.uni);
-          if (pr) {
-            sessionPRs.push({
-              exName: e?.name || cleanExName(x.id),
-              setIdx: idx + 1,
-              type: pr.type,
-              desc: pr.desc,
-              w: s.w,
-              r: s.r
-            });
-          }
-        } catch (prErr) {
-          console.warn('PR check error:', prErr);
-        }
-      });
-    });
-
-    const r = Array.isArray(S.routines) ? S.routines.find(rt => rt && rt.id === a.rid) : null;
-    const notes = [];
-    if (r && Array.isArray(r.ex)) {
-      lastRoutineSyncBackup = {
-        rid: r.id,
-        backup: r.ex.map(rx => ({
-          id: rx.id,
-          sets: Array.isArray(rx.sets) ? rx.sets.map(s => ({ ...s })) : rx.sets
-        })),
-        appliedEx: ex
-      };
-
-      // By default (checked), update routine base weights with today's completed weights
-      ex.forEach(completedEx => {
-        const rx = r.ex.find(q => q && String(q.id) === String(completedEx.id));
-        if (rx && Array.isArray(rx.sets)) {
-          completedEx.sets.forEach((s, idx) => {
-            if (rx.sets[idx] && s.w > 0) {
-              rx.sets[idx].w = s.w;
-            }
-          });
-        }
-      });
-
-      exercises.forEach(x => {
-        const rx = r.ex.find(q => q && String(q.id) === String(x.id));
-        if (rx) {
-          if (x.note !== undefined) rx.note = x.note;
-          if (x.uni !== undefined) rx.uni = x.uni;
-          if (Array.isArray(x.sets) && x.sets.some(s => s && (s.done || s.sideL || s.sideR))) {
-            try {
-              const pRes = prog(rx, x.sets);
-              if (pRes) notes.push((X(x.id)?.name || cleanExName(x.id)) + ': ' + pRes);
-            } catch (pErr) {
-              console.warn('prog error:', pErr);
-            }
-          }
-        }
-      });
-    }
-
-    // RIR & Fatigue Session Summary
-    const allLoggedSets = ex.flatMap(x => x.sets || []);
-    const setsWithRir = allLoggedSets.filter(s => s.rir != null);
-    let rirSummaryHtml = '';
-    if (setsWithRir.length) {
-      const sumRir = setsWithRir.reduce((acc, s) => acc + s.rir, 0);
-      const avgRir = Math.round((sumRir / setsWithRir.length) * 10) / 10;
-      let zoneTitle = '';
-      let zoneColor = 'var(--gn)';
-      if (avgRir <= 1.0) {
-        zoneTitle = 'High Strain / Peaking Zone';
-        zoneColor = 'var(--rd)';
-      } else if (avgRir <= 2.5) {
-        zoneTitle = 'Optimal Hypertrophy Zone';
-        zoneColor = 'var(--gn)';
-      } else {
-        zoneTitle = 'Submaximal / Recovery Zone';
-        zoneColor = 'var(--bl)';
-      }
-      rirSummaryHtml = `<div class="row" style="margin-top:6px"><b>Fatigue & Intensity:</b> <span style="font-weight:600;color:${zoneColor}">${zoneTitle}: Avg RIR ${avgRir}</span></div>`;
-    }
-
-    const failSetsCount = allLoggedSets.filter(s => s.rir === 0 || s.rpe >= 10).length;
-    const failureHtml = failSetsCount > 0 ? `<div class="row" style="margin-top:6px"><b>High Fatigue Sets:</b> <span style="color:var(--rd)">💥 ${failSetsCount} set(s) taken to Failure (RIR 0)</span></div>` : '';
-
-    const isDeload = !!a.isDeload;
-    const deloadHtml = isDeload ? `<div class="row" style="margin-top:6px"><b>Protocol:</b> <span style="color:var(--gn)">Deload Recovery Session (-50% target sets)</span></div>` : '';
-
-    // Compare vs Last Session of same routine or previous log
-    S.logs = S.logs || [];
-    const prevLog = S.logs.filter(l => l && l.name === a.name).at(-1) || S.logs.at(-1);
-    const curVol = ex.reduce((sum, x) => sum + (x.sets || []).reduce((sSum, s) => sSum + ((Number(s.w) || 0) * (Number(s.r) || 0) * (x.uni ? 2 : 1)), 0), 0);
-    let volDeltaHtml = '';
-    if (prevLog) {
-      const prevVol = vol(prevLog);
-      if (prevVol > 0) {
-        const dVol = curVol - prevVol;
-        const pctVol = Math.round((dVol / prevVol) * 1000) / 10;
-        if (dVol > 0) {
-          volDeltaHtml = `<span class="delta-pos">+${dVol} kg (+${pctVol}%) vs last session</span>`;
-        } else if (dVol < 0) {
-          volDeltaHtml = `<span class="delta-neg">${dVol} kg (${pctVol}%) vs last session</span>`;
-        } else {
-          volDeltaHtml = `<span class="delta-flat">0 kg (0%) vs last session</span>`;
-        }
-      }
-    }
-
     const t0 = a.t0 || (Date.now() - 3600000);
     const curDur = Math.max(1000, Date.now() - t0);
     const curDurMin = Math.round(curDur / 60000);
-    let durDeltaHtml = '';
-    if (prevLog && prevLog.dur) {
-      const prevDurMin = Math.round(prevLog.dur / 60000);
-      const diffDur = curDurMin - prevDurMin;
-      durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
-    }
+    const isDeload = !!a.isDeload;
 
-    const totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
+    let ex = [];
+    let curVol = 0;
+    let totalSetsCount = 0;
+    let sessionPRs = [];
+    let notes = [];
+    let volDeltaHtml = '';
+    let durDeltaHtml = '';
     let setsDeltaHtml = '';
-    if (prevLog && Array.isArray(prevLog.ex)) {
-      const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + (Array.isArray(x.sets) ? x.sets.length : 0), 0);
-      const diffSets = totalSetsCount - prevSetsCount;
-      setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
+    let rirSummaryHtml = '';
+    let failureHtml = '';
+    let deloadHtml = isDeload ? `<div class="row" style="margin-top:6px"><b>Protocol:</b> <span style="color:var(--gn)">Deload Recovery Session (-50% target sets)</span></div>` : '';
+    let microInc = 0.3;
+    let r = null;
+
+    try {
+      // 1. Process exercises and completed sets
+      ex = exercises.map(x => ({
+        id: x.id,
+        note: x.note || '',
+        uni: !!x.uni,
+        sets: (Array.isArray(x.sets) ? x.sets : []).filter(s => s && (s.done || (x.uni && (s.sideL || s.sideR)))).map(s => {
+          const rirVal = s.rir != null && s.rir !== '' ? Number(s.rir) : (s.rpe != null && s.rpe !== '' ? Math.max(0, 10 - Number(s.rpe)) : null);
+          const isDone = s.done || (x.uni && s.sideL && s.sideR);
+          return {
+            w: Math.max(0, Number(s.w) || 0),
+            r: Math.max(0, Number(s.r) || 0),
+            rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
+            rir: rirVal,
+            uni: !!x.uni,
+            sideL: !!s.sideL,
+            sideR: !!s.sideR,
+            done: !!isDone
+          };
+        })
+      })).filter(x => x.sets.length > 0);
+
+      // If no sets completed, preserve all exercises with logged sets so 0 completed sets still saves safely
+      if (!ex.length) {
+        ex = exercises.map(x => ({
+          id: x.id,
+          note: x.note || '',
+          uni: !!x.uni,
+          sets: (Array.isArray(x.sets) ? x.sets : []).map(s => ({
+            w: Math.max(0, Number(s.w) || 0),
+            r: Math.max(0, Number(s.r) || 0),
+            rpe: s.rpe === '' || s.rpe == null ? null : Number(s.rpe),
+            rir: s.rir != null && s.rir !== '' ? Number(s.rir) : null,
+            uni: !!x.uni,
+            sideL: !!s.sideL,
+            sideR: !!s.sideR,
+            done: Boolean(s.done || (x.uni && s.sideL && s.sideR))
+          }))
+        }));
+      }
+
+      // Detect PRs achieved during active session
+      ex.forEach(x => {
+        const e = X(x.id);
+        (x.sets || []).forEach((s, idx) => {
+          try {
+            const pr = checkSetPR(x.id, s, x.uni);
+            if (pr) {
+              sessionPRs.push({
+                exName: e?.name || cleanExName(x.id),
+                setIdx: idx + 1,
+                type: pr.type,
+                desc: pr.desc,
+                w: s.w,
+                r: s.r
+              });
+            }
+          } catch (prErr) {
+            console.warn('PR check error:', prErr);
+          }
+        });
+      });
+
+      r = Array.isArray(S.routines) ? S.routines.find(rt => rt && rt.id === a.rid) : null;
+      if (r && Array.isArray(r.ex)) {
+        lastRoutineSyncBackup = {
+          rid: r.id,
+          backup: r.ex.map(rx => ({
+            id: rx.id,
+            sets: Array.isArray(rx.sets) ? rx.sets.map(s => ({ ...s })) : rx.sets
+          })),
+          appliedEx: ex
+        };
+
+        ex.forEach(completedEx => {
+          const rx = r.ex.find(q => q && String(q.id) === String(completedEx.id));
+          if (rx && Array.isArray(rx.sets)) {
+            completedEx.sets.forEach((s, idx) => {
+              if (rx.sets[idx] && s.w > 0) {
+                rx.sets[idx].w = s.w;
+              }
+            });
+          }
+        });
+
+        exercises.forEach(x => {
+          const rx = r.ex.find(q => q && String(q.id) === String(x.id));
+          if (rx) {
+            if (x.note !== undefined) rx.note = x.note;
+            if (x.uni !== undefined) rx.uni = x.uni;
+            if (Array.isArray(x.sets) && x.sets.some(s => s && (s.done || s.sideL || s.sideR))) {
+              try {
+                const pRes = prog(rx, x.sets);
+                if (pRes) notes.push((X(x.id)?.name || cleanExName(x.id)) + ': ' + pRes);
+              } catch (pErr) {
+                console.warn('prog error:', pErr);
+              }
+            }
+          }
+        });
+      }
+
+      // RIR & Fatigue Session Summary
+      const allLoggedSets = ex.flatMap(x => x.sets || []);
+      const setsWithRir = allLoggedSets.filter(s => s.rir != null);
+      if (setsWithRir.length) {
+        const sumRir = setsWithRir.reduce((acc, s) => acc + s.rir, 0);
+        const avgRir = Math.round((sumRir / setsWithRir.length) * 10) / 10;
+        let zoneTitle = '';
+        let zoneColor = 'var(--gn)';
+        if (avgRir <= 1.0) {
+          zoneTitle = 'High Strain / Peaking Zone';
+          zoneColor = 'var(--rd)';
+        } else if (avgRir <= 2.5) {
+          zoneTitle = 'Optimal Hypertrophy Zone';
+          zoneColor = 'var(--gn)';
+        } else {
+          zoneTitle = 'Submaximal / Recovery Zone';
+          zoneColor = 'var(--bl)';
+        }
+        rirSummaryHtml = `<div class="row" style="margin-top:6px"><b>Fatigue & Intensity:</b> <span style="font-weight:600;color:${zoneColor}">${zoneTitle}: Avg RIR ${avgRir}</span></div>`;
+      }
+
+      const failSetsCount = allLoggedSets.filter(s => s.rir === 0 || s.rpe >= 10).length;
+      if (failSetsCount > 0) {
+        failureHtml = `<div class="row" style="margin-top:6px"><b>High Fatigue Sets:</b> <span style="color:var(--rd)">💥 ${failSetsCount} set(s) taken to Failure (RIR 0)</span></div>`;
+      }
+
+      // Volume & Deltas
+      S.logs = S.logs || [];
+      const prevLog = S.logs.filter(l => l && l.name === a.name).at(-1) || S.logs.at(-1);
+      curVol = ex.reduce((sum, x) => sum + (x.sets || []).reduce((sSum, s) => sSum + ((Number(s.w) || 0) * (Number(s.r) || 0) * (x.uni ? 2 : 1)), 0), 0);
+      if (prevLog) {
+        const prevVol = vol(prevLog);
+        if (prevVol > 0) {
+          const dVol = curVol - prevVol;
+          const pctVol = Math.round((dVol / prevVol) * 1000) / 10;
+          if (dVol > 0) {
+            volDeltaHtml = `<span class="delta-pos">+${dVol} kg (+${pctVol}%) vs last session</span>`;
+          } else if (dVol < 0) {
+            volDeltaHtml = `<span class="delta-neg">${dVol} kg (${pctVol}%) vs last session</span>`;
+          } else {
+            volDeltaHtml = `<span class="delta-flat">0 kg (0%) vs last session</span>`;
+          }
+        }
+        if (prevLog.dur) {
+          const prevDurMin = Math.round(prevLog.dur / 60000);
+          const diffDur = curDurMin - prevDurMin;
+          durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
+        }
+        if (Array.isArray(prevLog.ex)) {
+          const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + (Array.isArray(x.sets) ? x.sets.length : 0), 0);
+          totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
+          const diffSets = totalSetsCount - prevSetsCount;
+          setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
+        }
+      }
+      totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
+
+      // Micro-progress increment
+      const baseInc = 0.3;
+      const volBonus = curVol >= 3500 ? 0.1 : 0;
+      const streakBonus = streak() >= 2 ? 0.1 : 0;
+      microInc = Math.min(0.5, Math.round((baseInc + volBonus + streakBonus) * 10) / 10);
+      if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(S.cfg.bodyModel);
+      S.cfg.physique.microProgressBonus = Math.round(((S.cfg.physique.microProgressBonus || 0) + microInc) * 10) / 10;
+    } catch (statsErr) {
+      console.warn('finishWorkout stats calculation failed, falling back to raw session log:', statsErr);
+      ex = exercises.map(x => ({
+        id: x.id,
+        note: x.note || '',
+        uni: !!x.uni,
+        sets: (Array.isArray(x.sets) ? x.sets : []).map(s => ({
+          w: Math.max(0, Number(s.w) || 0),
+          r: Math.max(0, Number(s.r) || 0),
+          rpe: Number(s.rpe) || null,
+          rir: Number(s.rir) || null,
+          uni: !!x.uni,
+          sideL: !!s.sideL,
+          sideR: !!s.sideR,
+          done: Boolean(s.done || (x.uni && s.sideL && s.sideR))
+        }))
+      }));
+      curVol = 0;
+      totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
     }
 
     const completedWorkout = {
@@ -5400,102 +5442,125 @@ function finishWorkout() {
       isDeload
     };
 
-    // Ensure S.logs is initialized and properly push the completed workout object: S.logs.unshift(completedWorkout);
+    // Commit sequence:
+    // 1. Push to S.logs and save('logs', S.logs)
     S.logs = S.logs || [];
     S.logs.push(completedWorkout);
+    save('logs', S.logs);
+
+    // 2. S.act = null; localStorage.removeItem('act'); save('act', null)
     S.act = null;
     ls.set('act', null);
     try { localStorage.removeItem('act'); } catch (_) {}
     try { localStorage.removeItem('lift_act'); } catch (_) {}
-
-    // Calculate micro-progress increment (+0.3% to +0.5% based on workout volume and consistency)
-    const baseInc = 0.3;
-    const volBonus = curVol >= 3500 ? 0.1 : 0;
-    const streakBonus = streak() >= 2 ? 0.1 : 0;
-    const microInc = Math.min(0.5, Math.round((baseInc + volBonus + streakBonus) * 10) / 10);
-
-    if (!S.cfg.physique) S.cfg.physique = getDefaultPhysiqueConfig(S.cfg.bodyModel);
-    S.cfg.physique.microProgressBonus = Math.round(((S.cfg.physique.microProgressBonus || 0) + microInc) * 10) / 10;
-
-    save('logs', S.logs);
     save('act', null);
-    save('routines');
-    save('cfg');
-    stopRest();
-    wl?.release?.();
+    try { save('routines'); } catch (_) {}
+    try { save('cfg'); } catch (_) {}
+    try { stopRest(); } catch (_) {}
+    try { wl?.release?.(); } catch (_) {}
 
+    // 3. Close modal immediately
     closeModal();
 
-    modal(`<h2>Workout Complete! 🏆</h2>
-      <div class="transformation-celebration-banner">
-        <span class="tcb-fire">🔥</span>
-        <div class="tcb-body">
-          <div class="tcb-title">Transformation Progress: +${microInc}% today!</div>
-          <div class="tcb-sub">1 workout closer to your goal physique 🔥</div>
-        </div>
-      </div>
-      ${mmLog(completedWorkout)}
-      <div class="card" style="margin:12px 0;padding:12px">
-        <div class="row">
-          <b>Total Volume:</b>
-          <div style="text-align:right">
-            <span>${curVol} kg</span>
-            ${volDeltaHtml ? `<br>${volDeltaHtml}` : ''}
+    // 4. Trigger summary celebration and render()
+    view = 'train';
+    try {
+      modal(`<h2>Workout Complete! 🏆</h2>
+        <div class="transformation-celebration-banner">
+          <span class="tcb-fire">🔥</span>
+          <div class="tcb-body">
+            <div class="tcb-title">Transformation Progress: +${microInc}% today!</div>
+            <div class="tcb-sub">1 workout closer to your goal physique 🔥</div>
           </div>
         </div>
-        <div class="row" style="margin-top:8px">
-          <b>Duration:</b>
-          <span>${curDurMin} min${durDeltaHtml}</span>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <b>Completed Exercises:</b>
-          <span>${completedWorkout.ex.length}</span>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <b>Completed Sets:</b>
-          <span>${totalSetsCount}${setsDeltaHtml}</span>
-        </div>
-        ${rirSummaryHtml}
-        ${failureHtml}
-        ${deloadHtml}
-        <div class="row" style="margin-top:8px">
-          <b>Active Streak:</b>
-          <span>${streak()} days 🔥</span>
-        </div>
-      </div>
-      ${r ? `
+        ${mmLog(completedWorkout)}
         <div class="card" style="margin:12px 0;padding:12px">
-          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600">
-            <input type="checkbox" id="sync-routine-weights-toggle" data-a="togglesyncweights" checked style="width:20px;height:20px;accent-color:var(--ac)">
-            <span>Update routine base weights with today's completed weights</span>
-          </label>
-        </div>
-      ` : ''}
-      ${sessionPRs.length ? `
-        <h2 style="color:var(--accent-achievement);display:flex;align-items:center;gap:6px">
-          <span>🏆</span> New Personal Records!
-        </h2>
-        <div style="margin-bottom:12px">
-          ${sessionPRs.map(p => `
-            <div class="pr-trophy-card">
-              <div class="pr-trophy-icon">🏆</div>
-              <div class="pr-trophy-content">
-                <div class="pr-trophy-title">${esc(p.exName)} · Set ${p.setIdx}</div>
-                <div class="pr-trophy-desc">${esc(p.desc)} (${p.w > 0 ? p.w + ' kg × ' : ''}${p.r} reps)</div>
-              </div>
+          <div class="row">
+            <b>Total Volume:</b>
+            <div style="text-align:right">
+              <span>${curVol} kg</span>
+              ${volDeltaHtml ? `<br>${volDeltaHtml}` : ''}
             </div>
-          `).join('')}
+          </div>
+          <div class="row" style="margin-top:8px">
+            <b>Duration:</b>
+            <span>${curDurMin} min${durDeltaHtml}</span>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <b>Completed Exercises:</b>
+            <span>${completedWorkout.ex.length}</span>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <b>Completed Sets:</b>
+            <span>${totalSetsCount}${setsDeltaHtml}</span>
+          </div>
+          ${rirSummaryHtml}
+          ${failureHtml}
+          ${deloadHtml}
+          <div class="row" style="margin-top:8px">
+            <b>Active Streak:</b>
+            <span>${streak()} days 🔥</span>
+          </div>
         </div>
-      ` : ''}
-      ${notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''}
-    `);
-    view = 'train';
+        ${r ? `
+          <div class="card" style="margin:12px 0;padding:12px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:600">
+              <input type="checkbox" id="sync-routine-weights-toggle" data-a="togglesyncweights" checked style="width:20px;height:20px;accent-color:var(--ac)">
+              <span>Update routine base weights with today's completed weights</span>
+            </label>
+          </div>
+        ` : ''}
+        ${sessionPRs.length ? `
+          <h2 style="color:var(--accent-achievement);display:flex;align-items:center;gap:6px">
+            <span>🏆</span> New Personal Records!
+          </h2>
+          <div style="margin-bottom:12px">
+            ${sessionPRs.map(p => `
+              <div class="pr-trophy-card">
+                <div class="pr-trophy-icon">🏆</div>
+                <div class="pr-trophy-content">
+                  <div class="pr-trophy-title">${esc(p.exName)} · Set ${p.setIdx}</div>
+                  <div class="pr-trophy-desc">${esc(p.desc)} (${p.w > 0 ? p.w + ' kg × ' : ''}${p.r} reps)</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+        ${notes.length ? `<h2>Next Session Targets 📈</h2>${notes.map(p => `<div class="card t2" style="padding:10px">${esc(p)}</div>`).join('')}` : ''}
+      `);
+    } catch (modalErr) {
+      console.warn('Summary celebration modal rendering error:', modalErr);
+      toast('🏆 Workout saved successfully!');
+    }
+
     render();
   } catch (err) {
     console.error('finishWorkout error:', err);
-    if (typeof alert === 'function') {
-      alert('Save error: ' + err.message);
+    try {
+      if (S.act) {
+        const fallbackWorkout = {
+          id: uid(),
+          date: Date.now(),
+          name: S.act.name || 'Workout',
+          dur: 60000,
+          ex: S.act.ex || []
+        };
+        S.logs = S.logs || [];
+        S.logs.push(fallbackWorkout);
+        save('logs', S.logs);
+        S.act = null;
+        save('act', null);
+        try { localStorage.removeItem('act'); } catch (_) {}
+      }
+      closeModal();
+      view = 'train';
+      render();
+      toast('🏆 Workout saved (recovered)!');
+    } catch (_) {
+      closeModal();
     }
+  } finally {
+    isCommitting = false;
   }
 }
 
@@ -6523,6 +6588,7 @@ document.addEventListener('click', e => {
       }
       return;
     }
+    case 'directsave':
     case 'forcefinish':
     case 'commit-finish':
     case 'confirmfin':

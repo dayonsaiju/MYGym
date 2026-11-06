@@ -1,4 +1,4 @@
-const C = 'mygym-core-v5.8.1-finishfix';
+const C = 'mygym-core-v5.8.1-hotfix';
 const ASSETS = [
   './',
   './index.html',

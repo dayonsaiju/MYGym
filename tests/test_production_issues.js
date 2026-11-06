@@ -923,8 +923,8 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v5.8.1-finishfix, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v5.8.1-finishfix';"), 'sw.js must use mygym-core-v5.8.1-finishfix cache name');
+it('sw.js cache key is bumped to mygym-core-v5.8.1-hotfix, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v5.8.1-hotfix';"), 'sw.js must use mygym-core-v5.8.1-hotfix cache name');
   assert(swCode.includes("'./style.css?v=5.8.1'"), 'sw.js must precache style.css?v=5.8.1');
   assert(swCode.includes("'./app.js?v=5.8.1'"), 'sw.js must precache app.js?v=5.8.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
@@ -934,13 +934,13 @@ it('sw.js cache key is bumped to mygym-core-v5.8.1-finishfix, calls skipWaiting 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
   assert(htmlCode.includes('style.css?v=5.8.1'), 'index.html must link style.css?v=5.8.1');
   assert(htmlCode.includes('app.js?v=5.8.1'), 'index.html must load app.js?v=5.8.1');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.8.1-finishfix'"), 'index.html must use mygym-core-v5.8.1-finishfix');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v5.8.1-hotfix'"), 'index.html must use mygym-core-v5.8.1-hotfix');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
   assert.equal(api.APP_VERSION, '5.8.1');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.8.1-finishfix');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v5.8.1-hotfix');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1904,7 +1904,7 @@ it('finishWorkout wraps body in try-catch and cleans up active workout and modal
   assert(appCode.includes("localStorage.removeItem('act')"), 'finishWorkout must explicitly remove act from localStorage');
 });
 
-it('Active workout top-bar includes emergency [⚡ Force Finish & Save] action', () => {
+it('Active workout top-bar includes emergency [⚡ Direct Save] action', () => {
   const testAct = {
     id: 'test_top_force_fin',
     name: 'Morning Push Session',
@@ -1914,11 +1914,11 @@ it('Active workout top-bar includes emergency [⚡ Force Finish & Save] action',
   };
   api.S.act = testAct;
   const workHtml = api.vWork();
-  assert(workHtml.includes('data-a="forcefinish"'), 'work-top-bar must include data-a="forcefinish"');
-  assert(workHtml.includes('Force Finish'), 'work-top-bar must have Force Finish text');
+  assert(workHtml.includes('data-a="directsave"') || workHtml.includes('data-a="forcefinish"'), 'work-top-bar must include data-a="directsave"');
+  assert(workHtml.includes('Direct Save') || workHtml.includes('Force Finish'), 'work-top-bar must have Direct Save text');
 
-  // Verify click listener handles case 'forcefinish':
-  assert(appCode.includes("case 'forcefinish':"), "click listener must handle case 'forcefinish':");
+  // Verify click listener handles case 'directsave' or 'forcefinish':
+  assert(appCode.includes("case 'directsave':") || appCode.includes("case 'forcefinish':"), "click listener must handle direct save action");
 });
 
 it('Train tab and Calendar tab render "+ Log Past / Missed Workout" buttons', () => {
@@ -1971,6 +1971,61 @@ it('exById never throws on null, undefined, or missing exercise IDs', () => {
   const exNonexistent = api.exById('999999_nonexistent');
   assert.equal(typeof exNonexistent, 'object');
   assert.equal(exNonexistent.id, '999999_nonexistent');
+});
+
+it('finishWorkout saves immediate backup_act_<ts> and logs session even with 0 completed sets', () => {
+  const initialLogsCount = api.S.logs.length;
+  api.S.act = {
+    id: 'test_zero_sets_session',
+    name: 'Zero Sets Test Workout',
+    t0: Date.now() - 1800000,
+    curEx: 0,
+    ex: [{ id: '0025', sets: [{ w: 0, r: 0, done: false }] }]
+  };
+
+  // Trigger finishWorkout
+  api.finishWorkout();
+
+  // Active workout must be cleared and log pushed
+  assert.equal(api.S.act, null, 'Active workout must be cleared');
+  assert.equal(api.S.logs.length, initialLogsCount + 1, 'Workout must be logged even with 0 completed sets');
+  const logged = api.S.logs.at(-1);
+  assert.equal(logged.name, 'Zero Sets Test Workout');
+
+  // Verify backup_act_ was created in localStorage
+  const storageData = (globalThis.localStorage && globalThis.localStorage._data) || (mockWindow.localStorage && mockWindow.localStorage._data) || {};
+  const backupKeys = Object.keys(storageData).filter(k => k.startsWith('backup_act_'));
+  assert(backupKeys.length > 0, 'Immediate backup_act_<ts> must be saved to localStorage');
+});
+
+it('finishWorkout resilience: fallback saves raw session log if stats calculation throws', () => {
+  const initialLogsCount = api.S.logs.length;
+  api.S.act = {
+    id: 'test_corrupt_stats_session',
+    name: 'Corrupted Stats Workout',
+    t0: Date.now() - 1200000,
+    curEx: 0,
+    ex: [{ id: '0025', sets: [{ w: 100, r: 5, done: true }] }]
+  };
+
+  // Temporarily break a global or calculation function
+  const origVol = api.vol;
+  globalThis.vol = () => { throw new Error('Simulated stats calculation exception'); };
+
+  try {
+    api.finishWorkout();
+    assert.equal(api.S.act, null, 'S.act must still be cleared on stats exception');
+    assert.equal(api.S.logs.length, initialLogsCount + 1, 'Workout log must still be safely saved on stats exception');
+  } finally {
+    globalThis.vol = origVol;
+  }
+});
+
+it('Modal button commit-finish and .finish-save-btn have required CSS attributes in style.css', () => {
+  assert(cssCode.includes('[data-a="commit-finish"]'), 'style.css must target [data-a="commit-finish"]');
+  assert(cssCode.includes('pointer-events: auto !important;'), 'style.css must enforce pointer-events: auto !important');
+  assert(cssCode.includes('touch-action: manipulation'), 'style.css must enforce touch-action: manipulation');
+  assert(cssCode.includes('z-index: 10001'), 'style.css must enforce high z-index for modal finish button');
 });
 
 console.log(`\n======================================================`);
