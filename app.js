@@ -130,16 +130,28 @@ let S = {
   sched: {},
   act: ls.get('act') || null,
   deload: { active: false, startedAt: null, lastDeloadDate: null },
-  customExercises: ls.get('customExercises') || []
+  customExercises: ls.get('customExercises') || [],
+  nutrition: ls.get('nutrition') || {
+    targetCals: 2100,
+    targetProtein: 140,
+    targetCarbs: 240,
+    targetFat: 60,
+    targetFiber: 35,
+    meals: {}
+  }
 };
 
-const APP_VERSION = '6.1.2';
-const SHELL_VERSION = 'mygym-core-v6.1.2-hotfix';
+const APP_VERSION = '6.2.0';
+const SHELL_VERSION = 'mygym-core-v6.2.0-nutrition';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
 let swapQuery = '', swapCategory = 'All', swapIdx = 0;
 let bodyMetricView = 'both'; // 'both', 'weight', 'waist'
+let bodySubTab = 'physique'; // 'physique', 'nutrition'
+let nutritionSelectedDate = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+  ? Calc.toLocalDateKey(new Date())
+  : new Date().toISOString().slice(0, 10);
 let histQuery = '', histRoutine = 'All';
 let workGifCollapsed = false;
 let lastRoutineSyncBackup = null;
@@ -4412,8 +4424,527 @@ function renderAchievementsCard(logs = S.logs) {
   `;
 }
 
+// ---- Daily Nutrition & Scientific Calorie Engine (v6.2.0) ----
+function formatNutritionDateDisplay(dateKey) {
+  const todayKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(new Date())
+    : new Date().toISOString().slice(0, 10);
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yestKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(yesterday)
+    : yesterday.toISOString().slice(0, 10);
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(tomorrow)
+    : tomorrow.toISOString().slice(0, 10);
+
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const formatted = dateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+
+  if (dateKey === todayKey) return `Today · ${formatted}`;
+  if (dateKey === yestKey) return `Yesterday · ${formatted}`;
+  if (dateKey === tomKey) return `Tomorrow · ${formatted}`;
+  return formatted;
+}
+
+function getNutritionData(dateKey = nutritionSelectedDate) {
+  if (!S.nutrition || typeof S.nutrition !== 'object') {
+    S.nutrition = {
+      targetCals: 2100,
+      targetProtein: 140,
+      targetCarbs: 240,
+      targetFat: 60,
+      targetFiber: 35,
+      meals: {}
+    };
+  }
+  if (!S.nutrition.meals) S.nutrition.meals = {};
+  if (!S.nutrition.meals[dateKey]) {
+    S.nutrition.meals[dateKey] = {
+      breakfast: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      lunch: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      dinner: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      snacks: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
+    };
+  }
+  const dayMeals = S.nutrition.meals[dateKey];
+  ['breakfast', 'lunch', 'dinner', 'snacks'].forEach(m => {
+    if (!dayMeals[m]) {
+      dayMeals[m] = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+    }
+  });
+
+  const targetCals = Math.max(500, Number(S.nutrition.targetCals) || 2100);
+  const targetProtein = Math.max(10, Number(S.nutrition.targetProtein) || 140);
+  const targetCarbs = Math.max(10, Number(S.nutrition.targetCarbs) || 240);
+  const targetFat = Math.max(10, Number(S.nutrition.targetFat) || 60);
+  const targetFiber = Math.max(5, Number(S.nutrition.targetFiber) || 35);
+
+  const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  ['breakfast', 'lunch', 'dinner', 'snacks'].forEach(m => {
+    const meal = dayMeals[m];
+    totals.calories += Number(meal.calories) || 0;
+    totals.protein += Number(meal.protein) || 0;
+    totals.carbs += Number(meal.carbs) || 0;
+    totals.fat += Number(meal.fat) || 0;
+    totals.fiber += Number(meal.fiber) || 0;
+  });
+  totals.calories = Math.round(totals.calories);
+  totals.protein = Math.round(totals.protein);
+  totals.carbs = Math.round(totals.carbs);
+  totals.fat = Math.round(totals.fat);
+  totals.fiber = Math.round(totals.fiber);
+
+  return {
+    dateKey,
+    dayMeals,
+    targets: { targetCals, targetProtein, targetCarbs, targetFat, targetFiber },
+    totals
+  };
+}
+
+function changeNutritionDate(deltaDays) {
+  const [y, m, d] = (nutritionSelectedDate || '').split('-').map(Number);
+  const cur = (y && m && d) ? new Date(y, m - 1, d) : new Date();
+  cur.setDate(cur.getDate() + deltaDays);
+  nutritionSelectedDate = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(cur)
+    : cur.toISOString().slice(0, 10);
+  render();
+}
+
+function resetNutritionDateToToday() {
+  nutritionSelectedDate = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(new Date())
+    : new Date().toISOString().slice(0, 10);
+  render();
+}
+
+function renderNutritionPreviewCard() {
+  const todayKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(new Date())
+    : new Date().toISOString().slice(0, 10);
+  const data = getNutritionData(todayKey);
+  const { targets, totals } = data;
+  const pct = targets.targetCals > 0 ? Math.round((totals.calories / targets.targetCals) * 100) : 0;
+
+  return `
+    <div class="card" style="margin-bottom:14px;padding:12px 14px;cursor:pointer" data-a="body-subtab" data-tab="nutrition">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:22px">🥗</span>
+          <div>
+            <div style="font-weight:700;font-size:14px">Daily Nutrition & Macros</div>
+            <div class="t2 sm" style="margin-top:2px">
+              ${totals.calories} / ${targets.targetCals} kcal (${pct}%) · ${totals.protein}g Protein
+            </div>
+          </div>
+        </div>
+        <span class="chip" style="color:var(--ac);font-weight:600;font-size:12px">Track Food ›</span>
+      </div>
+    </div>
+  `;
+}
+
+function renderNutritionDashboard() {
+  const data = getNutritionData(nutritionSelectedDate);
+  const { dateKey, dayMeals, targets, totals } = data;
+  const todayKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+    ? Calc.toLocalDateKey(new Date())
+    : new Date().toISOString().slice(0, 10);
+
+  const ratio = targets.targetCals > 0 ? (totals.calories / targets.targetCals) : 0;
+  let statusColor = 'var(--ac)';
+  let statusBadge = '';
+
+  if (ratio > 1.0) {
+    statusColor = '#FF453A';
+    statusBadge = `<span class="chip" style="color:#FF453A;background:rgba(255,69,58,0.15);font-weight:700">⚠️ Exceeded Limit (+${totals.calories - targets.targetCals} kcal)</span>`;
+  } else if (ratio >= 0.95 && ratio <= 1.05) {
+    statusColor = '#30D158';
+    statusBadge = `<span class="chip" style="color:#30D158;background:rgba(48,209,88,0.15);font-weight:700">✓ Target Met (±5%)</span>`;
+  } else {
+    statusColor = 'var(--ac)';
+    const remaining = Math.max(0, targets.targetCals - totals.calories);
+    statusBadge = `<span class="chip" style="color:var(--ac);background:rgba(10,132,255,0.15);font-weight:700">${remaining} kcal remaining</span>`;
+  }
+
+  const fillPct = Math.min(100, Math.round(ratio * 100));
+
+  const pPct = targets.targetProtein > 0 ? Math.min(100, Math.round((totals.protein / targets.targetProtein) * 100)) : 0;
+  const cPct = targets.targetCarbs > 0 ? Math.min(100, Math.round((totals.carbs / targets.targetCarbs) * 100)) : 0;
+  const fPct = targets.targetFat > 0 ? Math.min(100, Math.round((totals.fat / targets.targetFat) * 100)) : 0;
+  const fibPct = targets.targetFiber > 0 ? Math.min(100, Math.round((totals.fiber / targets.targetFiber) * 100)) : 0;
+
+  const mealDefs = [
+    { key: 'breakfast', name: 'Breakfast', icon: '🍳' },
+    { key: 'lunch', name: 'Lunch', icon: '🥗' },
+    { key: 'dinner', name: 'Dinner', icon: '🍲' },
+    { key: 'snacks', name: 'Snacks', icon: '🍎' }
+  ];
+
+  return `
+    <div class="nutrition-dashboard">
+      <!-- Day Switcher -->
+      <div class="nutrition-day-switcher">
+        <button class="chip" data-a="prev-nutrition-day" style="min-height:36px;min-width:44px">‹ Prev Day</button>
+        <div style="text-align:center">
+          <div class="nutrition-date-label">${formatNutritionDateDisplay(dateKey)}</div>
+          ${dateKey !== todayKey ? `<button class="chip" data-a="today-nutrition-day" style="font-size:11px;min-height:22px;padding:2px 8px;margin-top:2px">Today</button>` : ''}
+        </div>
+        <button class="chip" data-a="next-nutrition-day" style="min-height:36px;min-width:44px">Next Day ›</button>
+      </div>
+
+      <!-- Main Calorie Visualizer -->
+      <div class="nutrition-calorie-card">
+        <div class="nutrition-cals-header">
+          <div>
+            <span class="nutrition-cals-num" style="color:${statusColor}">${totals.calories}</span>
+            <span class="nutrition-cals-target">/ ${targets.targetCals} kcal</span>
+          </div>
+          <button class="chip" data-a="open-nutrition-targets" style="font-weight:600">🎯 Adjust Targets</button>
+        </div>
+
+        <div class="nutrition-progress-track">
+          <div class="nutrition-progress-bar" style="width:${fillPct}%;background:${statusColor}"></div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+          <span class="t2">${fillPct}% of daily target</span>
+          ${statusBadge}
+        </div>
+      </div>
+
+      <!-- 4 Compact Macro Linear Progress Bars -->
+      <div class="macro-grid">
+        <div class="macro-card">
+          <div class="macro-label-row">
+            <span class="macro-label">Protein</span>
+            <span class="macro-val">${totals.protein} / ${targets.targetProtein}g</span>
+          </div>
+          <div class="macro-track">
+            <div class="macro-fill" style="width:${pPct}%;background:#FF9F0A"></div>
+          </div>
+        </div>
+
+        <div class="macro-card">
+          <div class="macro-label-row">
+            <span class="macro-label">Carbs</span>
+            <span class="macro-val">${totals.carbs} / ${targets.targetCarbs}g</span>
+          </div>
+          <div class="macro-track">
+            <div class="macro-fill" style="width:${cPct}%;background:#0A84FF"></div>
+          </div>
+        </div>
+
+        <div class="macro-card">
+          <div class="macro-label-row">
+            <span class="macro-label">Fat</span>
+            <span class="macro-val">${totals.fat} / ${targets.targetFat}g</span>
+          </div>
+          <div class="macro-track">
+            <div class="macro-fill" style="width:${fPct}%;background:#FF375F"></div>
+          </div>
+        </div>
+
+        <div class="macro-card">
+          <div class="macro-label-row">
+            <span class="macro-label">Fiber</span>
+            <span class="macro-val">${totals.fiber} / ${targets.targetFiber}g</span>
+          </div>
+          <div class="macro-track">
+            <div class="macro-fill" style="width:${fibPct}%;background:#30D158"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Modular Meal Cards -->
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px">
+        <h3 style="margin:0;font-size:16px;font-weight:700">Meals & Snacks</h3>
+        <span class="t2 sm">Tap to quick-add or edit</span>
+      </div>
+
+      <div class="meal-cards-container">
+        ${mealDefs.map(m => {
+          const meal = dayMeals[m.key] || { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+          const hasFood = meal.calories > 0 || meal.protein > 0;
+          return `
+            <div class="meal-card" data-a="open-meal-modal" data-meal="${m.key}">
+              <div class="meal-info">
+                <div class="meal-title-row">
+                  <span>${m.icon} ${m.name}</span>
+                </div>
+                <div class="meal-macros-row">
+                  ${hasFood ? `P: ${meal.protein}g · C: ${meal.carbs}g · F: ${meal.fat}g · Fib: ${meal.fiber}g` : 'No food logged yet'}
+                </div>
+              </div>
+              <div class="meal-cals-badge">
+                <div class="meal-cals-val">${meal.calories} kcal</div>
+                <span class="chip" style="font-size:11px;min-height:24px;padding:2px 8px">${hasFood ? '✏️ Edit' : '+ Add'}</span>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function showMealModal(mealKey) {
+  const dateKey = nutritionSelectedDate;
+  const data = getNutritionData(dateKey);
+  const meal = data.dayMeals[mealKey] || { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+  const mealNames = {
+    breakfast: { title: 'Breakfast', icon: '🍳' },
+    lunch: { title: 'Lunch', icon: '🥗' },
+    dinner: { title: 'Dinner', icon: '🍲' },
+    snacks: { title: 'Snacks', icon: '🍎' }
+  };
+  const mInfo = mealNames[mealKey] || { title: mealKey, icon: '🍽️' };
+
+  modal(`
+    <div class="confirm-sheet" style="text-align:left">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="margin:0">${mInfo.icon} Log ${mInfo.title}</h2>
+        <span class="chip">${formatNutritionDateDisplay(dateKey)}</span>
+      </div>
+
+      <div class="nutrition-input-group">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <label class="nutrition-input-label" for="meal-cals-input" style="margin:0">Calories (kcal)</label>
+          <button class="chip" data-a="autocalc-meal-cals" style="font-size:11px;min-height:22px;padding:2px 8px">⚡ Auto-calc from Macros</button>
+        </div>
+        <input id="meal-cals-input" class="nutrition-input" type="number" inputmode="decimal" placeholder="e.g. 550" value="${meal.calories > 0 ? meal.calories : ''}">
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="meal-protein-input">Protein (g)</label>
+          <input id="meal-protein-input" class="nutrition-input" type="number" inputmode="decimal" placeholder="e.g. 40" value="${meal.protein > 0 ? meal.protein : ''}">
+        </div>
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="meal-carbs-input">Carbs (g)</label>
+          <input id="meal-carbs-input" class="nutrition-input" type="number" inputmode="decimal" placeholder="e.g. 55" value="${meal.carbs > 0 ? meal.carbs : ''}">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="meal-fat-input">Fat (g)</label>
+          <input id="meal-fat-input" class="nutrition-input" type="number" inputmode="decimal" placeholder="e.g. 15" value="${meal.fat > 0 ? meal.fat : ''}">
+        </div>
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="meal-fiber-input">Fiber (g)</label>
+          <input id="meal-fiber-input" class="nutrition-input" type="number" inputmode="decimal" placeholder="e.g. 8" value="${meal.fiber > 0 ? meal.fiber : ''}">
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:16px">
+        <button class="btn" data-a="save-meal" data-meal="${esc(mealKey)}" style="flex:2">💾 Save Meal</button>
+        ${meal.calories > 0 || meal.protein > 0 ? `<button class="btn s red" data-a="clear-meal" data-meal="${esc(mealKey)}" style="flex:1">🗑️ Clear</button>` : ''}
+        <button class="btn s" data-a="closemodal" style="flex:1">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+function saveMealFromModal(mealKey) {
+  const dateKey = nutritionSelectedDate;
+  const calsEl = $('#meal-cals-input');
+  const protEl = $('#meal-protein-input');
+  const carbEl = $('#meal-carbs-input');
+  const fatEl = $('#meal-fat-input');
+  const fibEl = $('#meal-fiber-input');
+
+  const p = Math.max(0, parseFloat(protEl?.value) || 0);
+  const c = Math.max(0, parseFloat(carbEl?.value) || 0);
+  const f = Math.max(0, parseFloat(fatEl?.value) || 0);
+  const fib = Math.max(0, parseFloat(fibEl?.value) || 0);
+
+  let cals = parseFloat(calsEl?.value);
+  if (isNaN(cals) || cals <= 0) {
+    if (p > 0 || c > 0 || f > 0) {
+      cals = Math.round(p * 4 + c * 4 + f * 9);
+    } else {
+      cals = 0;
+    }
+  } else {
+    cals = Math.round(cals);
+  }
+
+  if (!S.nutrition) S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
+  if (!S.nutrition.meals) S.nutrition.meals = {};
+  if (!S.nutrition.meals[dateKey]) {
+    S.nutrition.meals[dateKey] = {
+      breakfast: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      lunch: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      dinner: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+      snacks: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
+    };
+  }
+
+  S.nutrition.meals[dateKey][mealKey] = {
+    calories: cals,
+    protein: Math.round(p * 10) / 10,
+    carbs: Math.round(c * 10) / 10,
+    fat: Math.round(f * 10) / 10,
+    fiber: Math.round(fib * 10) / 10
+  };
+
+  save('nutrition', S.nutrition);
+  closeModal();
+  toast('Meal logged ✓');
+  render();
+}
+
+function clearMealFromModal(mealKey) {
+  const dateKey = nutritionSelectedDate;
+  if (S.nutrition?.meals?.[dateKey]?.[mealKey]) {
+    S.nutrition.meals[dateKey][mealKey] = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
+    save('nutrition', S.nutrition);
+  }
+  closeModal();
+  toast('Meal cleared');
+  render();
+}
+
+function autocalcMealCals() {
+  const protEl = $('#meal-protein-input');
+  const carbEl = $('#meal-carbs-input');
+  const fatEl = $('#meal-fat-input');
+  const calsEl = $('#meal-cals-input');
+
+  const p = Math.max(0, parseFloat(protEl?.value) || 0);
+  const c = Math.max(0, parseFloat(carbEl?.value) || 0);
+  const f = Math.max(0, parseFloat(fatEl?.value) || 0);
+
+  const estimated = Math.round(p * 4 + c * 4 + f * 9);
+  if (calsEl) {
+    calsEl.value = estimated > 0 ? estimated : '';
+  }
+}
+
+function showNutritionTargetsModal() {
+  if (!S.nutrition) S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
+  const n = S.nutrition;
+
+  modal(`
+    <div class="confirm-sheet" style="text-align:left">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h2 style="margin:0">🎯 Daily Macro Targets</h2>
+        <button class="x" data-a="closemodal">${ic('x', 20)}</button>
+      </div>
+
+      <div class="nutrition-input-group">
+        <label class="nutrition-input-label" for="target-cals-input">Daily Calorie Target (kcal)</label>
+        <input id="target-cals-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetCals || 2100}">
+      </div>
+
+      <div style="display:flex;gap:6px;margin-bottom:14px">
+        <button class="chip" data-a="preset-target-deficit" style="flex:1">Deficit (-20%)</button>
+        <button class="chip" data-a="preset-target-maint" style="flex:1">Maintenance</button>
+        <button class="chip" data-a="preset-target-surplus" style="flex:1">Surplus (+10%)</button>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="target-protein-input">Protein (g)</label>
+          <input id="target-protein-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetProtein || 140}">
+        </div>
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="target-carbs-input">Carbs (g)</label>
+          <input id="target-carbs-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetCarbs || 240}">
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="target-fat-input">Fat (g)</label>
+          <input id="target-fat-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetFat || 60}">
+        </div>
+        <div class="nutrition-input-group">
+          <label class="nutrition-input-label" for="target-fiber-input">Fiber (g)</label>
+          <input id="target-fiber-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetFiber || 35}">
+        </div>
+      </div>
+
+      <button class="btn" data-a="save-nutrition-targets" style="margin-top:14px;width:100%">💾 Save Macro Targets</button>
+    </div>
+  `);
+}
+
+function saveNutritionTargetsFromModal() {
+  const calsEl = $('#target-cals-input');
+  const protEl = $('#target-protein-input');
+  const carbEl = $('#target-carbs-input');
+  const fatEl = $('#target-fat-input');
+  const fibEl = $('#target-fiber-input');
+
+  if (!S.nutrition) S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
+  S.nutrition.targetCals = Math.max(500, Math.min(10000, parseInt(calsEl?.value, 10) || 2100));
+  S.nutrition.targetProtein = Math.max(10, Math.min(1000, parseInt(protEl?.value, 10) || 140));
+  S.nutrition.targetCarbs = Math.max(0, Math.min(1500, parseInt(carbEl?.value, 10) || 240));
+  S.nutrition.targetFat = Math.max(5, Math.min(500, parseInt(fatEl?.value, 10) || 60));
+  S.nutrition.targetFiber = Math.max(5, Math.min(200, parseInt(fibEl?.value, 10) || 35));
+
+  save('nutrition', S.nutrition);
+  closeModal();
+  toast('Macro targets saved ✓');
+  render();
+}
+
+function applyMacroPreset(type) {
+  let baseTdee = 2200;
+  let weightKg = 75;
+  if (typeof getPhysiqueState === 'function') {
+    const p = getPhysiqueState();
+    if (p.weight) weightKg = p.weight;
+    if (Calc.calcTDEE && Calc.calcBMR) {
+      const bmr = Calc.calcBMR(p.gender, p.weight, p.height, p.age);
+      baseTdee = Calc.calcTDEE(bmr, p.activityLevel);
+    }
+  }
+
+  let targetCals = baseTdee;
+  if (type === 'deficit') targetCals = Math.round(baseTdee * 0.8);
+  else if (type === 'surplus') targetCals = Math.round(baseTdee * 1.1);
+  else targetCals = Math.round(baseTdee);
+
+  let p = Math.round(weightKg * 2.0); // 2g per kg
+  let f = Math.round((targetCals * 0.25) / 9); // 25% calories from fat
+  let c = Math.max(0, Math.round((targetCals - (p * 4) - (f * 9)) / 4));
+  let fib = Math.max(25, Math.round((targetCals / 1000) * 14)); // 14g fiber per 1000 kcal
+
+  const calsEl = $('#target-cals-input');
+  const protEl = $('#target-protein-input');
+  const carbEl = $('#target-carbs-input');
+  const fatEl = $('#target-fat-input');
+  const fibEl = $('#target-fiber-input');
+
+  if (calsEl) calsEl.value = targetCals;
+  if (protEl) protEl.value = p;
+  if (carbEl) carbEl.value = c;
+  if (fatEl) fatEl.value = f;
+  if (fibEl) fibEl.value = fib;
+}
+
 function vBody() {
   const p = getPhysiqueState();
+  const subtabHeader = `
+    <div class="segmented-control" style="margin:6px 0 14px">
+      <button class="seg-btn ${bodySubTab === 'physique' ? 'active' : ''}" data-a="body-subtab" data-tab="physique">⚡ Physique & Roadmap</button>
+      <button class="seg-btn ${bodySubTab === 'nutrition' ? 'active' : ''}" data-a="body-subtab" data-tab="nutrition">🥗 Daily Nutrition</button>
+    </div>
+  `;
+
+  if (bodySubTab === 'nutrition') {
+    return viewHeader('Body & Nutrition') + subtabHeader + renderNutritionDashboard();
+  }
+
+  const nutritionPreviewHtml = renderNutritionPreviewCard();
   const roadmapHtml = renderTransformationRoadmapCard();
   const sorted = [...S.weights].sort((a, b) => a.t - b.t);
   const weightsArr = sorted.filter(x => x.w != null && x.w > 0).map(x => x.w);
@@ -4541,7 +5072,9 @@ function vBody() {
 
   const netWeightClass = diffW != null ? (isBulk ? (diffW > 0 ? 'text-green' : (diffW < 0 ? 'text-orange' : '')) : (diffW < 0 ? 'text-green' : (diffW > 0 ? 'text-orange' : ''))) : '';
 
-  return viewHeader('Body & Transformation') +
+  return viewHeader('Body & Nutrition') +
+    subtabHeader +
+    nutritionPreviewHtml +
     roadmapHtml +
     renderAchievementsCard(S.logs) +
     renderWeeklyMuscleFrequencyCard(S.logs) +
@@ -4665,7 +5198,7 @@ const vHist = () => {
               <span class="t2 sm">${dateStr}</span>
             </div>
             <div class="t2 sm" style="margin-top:4px">
-              ⏱️ ${durMin} min · 📦 ${volume} kg volume · 🏋️ ${l.ex.length} exercises
+              ⏱️ ${durMin} min · 📦 ${volume} kg volume · 🏋️ ${l.ex.length} exercises${l.burn?.totalBurn ? ` · 🔥 ${l.burn.totalBurn} kcal` : ''}
             </div>
             <div class="routine-summary-list" style="margin-top:8px">
               ${l.ex.slice(0, 3).map(x => `
@@ -5150,7 +5683,7 @@ const valid = o => {
 };
 
 function exp() {
-  const b = new Blob([JSON.stringify({ app: 'lift', v: 1, exported: Date.now(), routines: S.routines, logs: S.logs, weights: S.weights, cfg: S.cfg, sched: S.sched || {} }, null, 2)], { type: 'application/json' });
+  const b = new Blob([JSON.stringify({ app: 'lift', v: 1, exported: Date.now(), routines: S.routines, logs: S.logs, weights: S.weights, cfg: S.cfg, sched: S.sched || {}, nutrition: S.nutrition || {} }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b);
   a.download = `mygym-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -5272,7 +5805,18 @@ async function imp(f) {
       }
     }
 
-    await save('routines', 'logs', 'weights', 'cfg', 'sched');
+    if (o.nutrition && typeof o.nutrition === 'object' && !Array.isArray(o.nutrition)) {
+      S.nutrition = {
+        targetCals: Math.max(500, Number(o.nutrition.targetCals) || 2100),
+        targetProtein: Math.max(10, Number(o.nutrition.targetProtein) || 140),
+        targetCarbs: Math.max(0, Number(o.nutrition.targetCarbs) || 240),
+        targetFat: Math.max(5, Number(o.nutrition.targetFat) || 60),
+        targetFiber: Math.max(5, Number(o.nutrition.targetFiber) || 35),
+        meals: (o.nutrition.meals && typeof o.nutrition.meals === 'object') ? o.nutrition.meals : {}
+      };
+    }
+
+    await save('routines', 'logs', 'weights', 'cfg', 'sched', 'nutrition');
     toast('Backup restored');
     render();
   } catch (err) {
@@ -7012,6 +7556,11 @@ function finishWorkout() {
       totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
     }
 
+    const userWeight = (S.weights && S.weights.filter(x => x.w > 0).at(-1)?.w) || (S.cfg?.physique?.weight) || 75;
+    const burn = (Calc.calcWorkoutCalorieBurn)
+      ? Calc.calcWorkoutCalorieBurn(curDur, userWeight, 5.5, curVol)
+      : { activeCals: 0, epocCals: 0, totalBurn: 0 };
+
     const completedWorkout = {
       id: uid(),
       date: Date.now(),
@@ -7019,7 +7568,8 @@ function finishWorkout() {
       dur: curDur,
       note: a.note || '',
       ex,
-      isDeload
+      isDeload,
+      burn
     };
 
     // Commit sequence:
@@ -7065,6 +7615,15 @@ function finishWorkout() {
           </div>
         </div>
         ${mmLog(completedWorkout)}
+        <div class="card" style="margin:12px 0;padding:12px;background:rgba(255,159,10,0.08);border:1px solid rgba(255,159,10,0.25);border-radius:14px">
+          <div style="display:flex;align-items:center;gap:12px">
+            <span style="font-size:24px">🔥</span>
+            <div>
+              <div style="font-weight:700;font-size:15px;color:var(--am)">Calories Burned: ${burn.totalBurn} kcal</div>
+              <div class="t2 sm" style="margin-top:2px">${burn.activeCals} kcal (Active) + ${burn.epocCals} kcal (EPOC Afterburn) = Total ${burn.totalBurn} kcal</div>
+            </div>
+          </div>
+        </div>
         <div class="card" style="margin:12px 0;padding:12px">
           <div class="row">
             <b>Total Volume:</b>
@@ -7662,6 +8221,61 @@ document.addEventListener('click', e => {
       toast('Entry deleted');
       render();
       break;
+    }
+
+    // Daily Nutrition & Macro Tracker Actions
+    case 'body-subtab': {
+      bodySubTab = t.dataset.tab || 'physique';
+      render();
+      return;
+    }
+    case 'prev-nutrition-day': {
+      changeNutritionDate(-1);
+      return;
+    }
+    case 'next-nutrition-day': {
+      changeNutritionDate(1);
+      return;
+    }
+    case 'today-nutrition-day': {
+      resetNutritionDateToToday();
+      return;
+    }
+    case 'open-nutrition-targets': {
+      showNutritionTargetsModal();
+      return;
+    }
+    case 'save-nutrition-targets': {
+      saveNutritionTargetsFromModal();
+      return;
+    }
+    case 'preset-target-deficit': {
+      applyMacroPreset('deficit');
+      return;
+    }
+    case 'preset-target-maint': {
+      applyMacroPreset('maintenance');
+      return;
+    }
+    case 'preset-target-surplus': {
+      applyMacroPreset('surplus');
+      return;
+    }
+    case 'open-meal-modal': {
+      showMealModal(t.dataset.meal);
+      return;
+    }
+    case 'save-meal': {
+      saveMealFromModal(t.dataset.meal);
+      return;
+    }
+    case 'clear-meal': {
+      clearMealFromModal(t.dataset.meal);
+      return;
+    }
+    case 'autocalc-meal-cals': {
+      autocalcMealCals();
+      return;
     }
 
     // Exercise Swap
@@ -8604,7 +9218,8 @@ document.addEventListener('click', e => {
     case 'wipe-step1': showWipeConfirmModal(); return;
     case 'wipe-confirm': {
       S.routines = []; S.logs = []; S.weights = []; S.act = null; S.sched = {};
-      save('routines', 'logs', 'weights', 'cfg', 'sched', 'act');
+      S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
+      save('routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'nutrition');
       stopRest();
       close();
       toast('All data erased');
@@ -9052,13 +9667,23 @@ async function init() {
   await loadExercises();
 
   // 2. Load stored state from IndexedDB / localStorage
-  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises']) {
+  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises', 'nutrition']) {
     try {
       const v = await get(k);
       if (k === 'cfg' && v && typeof v === 'object') {
         S.cfg = { ...S.cfg, ...v };
       } else if (k === 'deload' && v && typeof v === 'object') {
         S.deload = { ...S.deload, ...v };
+      } else if (k === 'nutrition' && v && typeof v === 'object') {
+        S.nutrition = {
+          targetCals: 2100,
+          targetProtein: 140,
+          targetCarbs: 240,
+          targetFat: 60,
+          targetFiber: 35,
+          meals: {},
+          ...v
+        };
       } else if (v != null) {
         S[k] = v;
       }
@@ -9070,6 +9695,9 @@ async function init() {
   mergeCustomExercises();
   if (!S.sched || typeof S.sched !== 'object') S.sched = {};
   if (!S.deload || typeof S.deload !== 'object') S.deload = { active: false, startedAt: null, lastDeloadDate: null };
+  if (!S.nutrition || typeof S.nutrition !== 'object') {
+    S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
+  }
 
   // 3. Seed starter routines & split schedule if fresh install or empty routines
   if ((await get('seeded')) == null || !S.routines || !S.routines.length) {
@@ -9128,7 +9756,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.1.2').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.2.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -9302,7 +9930,24 @@ if (typeof globalThis !== 'undefined') {
     matchesExerciseSearch,
     SEARCH_SYNONYMS,
     showExerciseHistoryModal,
-    sanitizeAndValidateAIRoutine
+    sanitizeAndValidateAIRoutine,
+    get nutritionSelectedDate() { return nutritionSelectedDate; },
+    set nutritionSelectedDate(v) { nutritionSelectedDate = v; },
+    get bodySubTab() { return bodySubTab; },
+    set bodySubTab(v) { bodySubTab = v; },
+    formatNutritionDateDisplay,
+    getNutritionData,
+    changeNutritionDate,
+    resetNutritionDateToToday,
+    renderNutritionDashboard,
+    renderNutritionPreviewCard,
+    showMealModal,
+    saveMealFromModal,
+    clearMealFromModal,
+    autocalcMealCals,
+    showNutritionTargetsModal,
+    saveNutritionTargetsFromModal,
+    applyMacroPreset
   };
 }
 

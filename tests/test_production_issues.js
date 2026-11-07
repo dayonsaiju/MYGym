@@ -962,26 +962,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.1.2-hotfix, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.1.2-hotfix';"), 'sw.js must use mygym-core-v6.1.2-hotfix cache name');
-  assert(swCode.includes("'./style.css?v=6.1.2'"), 'sw.js must precache style.css?v=6.1.2');
-  assert(swCode.includes("'./app.js?v=6.1.2'"), 'sw.js must precache app.js?v=6.1.2');
-  assert(swCode.includes("'./calc.js?v=6.1.2'"), 'sw.js must precache calc.js?v=6.1.2');
+it('sw.js cache key is bumped to mygym-core-v6.2.0-nutrition, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.2.0-nutrition';"), 'sw.js must use mygym-core-v6.2.0-nutrition cache name');
+  assert(swCode.includes("'./style.css?v=6.2.0'"), 'sw.js must precache style.css?v=6.2.0');
+  assert(swCode.includes("'./app.js?v=6.2.0'"), 'sw.js must precache app.js?v=6.2.0');
+  assert(swCode.includes("'./calc.js?v=6.2.0'"), 'sw.js must precache calc.js?v=6.2.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.1.2'), 'index.html must link style.css?v=6.1.2');
-  assert(htmlCode.includes('app.js?v=6.1.2'), 'index.html must load app.js?v=6.1.2');
-  assert(htmlCode.includes('calc.js?v=6.1.2'), 'index.html must load calc.js?v=6.1.2');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.1.2-hotfix'"), 'index.html must use mygym-core-v6.1.2-hotfix');
+  assert(htmlCode.includes('style.css?v=6.2.0'), 'index.html must link style.css?v=6.2.0');
+  assert(htmlCode.includes('app.js?v=6.2.0'), 'index.html must load app.js?v=6.2.0');
+  assert(htmlCode.includes('calc.js?v=6.2.0'), 'index.html must load calc.js?v=6.2.0');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.2.0-nutrition'"), 'index.html must use mygym-core-v6.2.0-nutrition');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.1.2');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.1.2-hotfix');
+  assert.equal(api.APP_VERSION, '6.2.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.2.0-nutrition');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -3034,6 +3034,132 @@ it('callAI suggests fallback models when receiving a 404 from Groq', async () =>
     async () => { await api.callAI('Test query'); },
     /Model not available on your Groq tier\. Please select 'llama3-70b-8192' or 'llama3-8b-8192'/
   );
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 13: SCIENTIFIC CALORIE BURN, EPOC & NUTRITION ENGINE (v6.2.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 13: Scientific Calorie Burn, EPOC & Nutrition Engine (v6.2.0)');
+
+it('calcWorkoutCalorieBurn and calcEPOCBurn calculate scientifically accurate active & afterburn calories', () => {
+  // Test EPOC calculation: ~12% of active session calories
+  assert.equal(Calc.calcEPOCBurn(100), 12);
+  assert.equal(Calc.calcEPOCBurn(250), 30);
+  assert.equal(Calc.calcEPOCBurn(0), 0);
+
+  // Test standard resistance session: 60 min (3600000 ms), 75 kg, MET 5.5, volume 3000 kg
+  // Active = ((5.5 * 3.5 * 75) / 200) * 60 = 7.21875 * 60 = 433.125 -> 433 kcal
+  // EPOC = Math.round(433.125 * 0.12) = 52 kcal
+  // Total = 433 + 52 = 485 kcal
+  const burnNormal = Calc.calcWorkoutCalorieBurn(3600000, 75, 5.5, 3000);
+  assert.equal(burnNormal.activeCals, 433);
+  assert.equal(burnNormal.epocCals, 52);
+  assert.equal(burnNormal.totalBurn, 485);
+
+  // Test high mechanical tension session (>5000 kg volume scales MET to 6.0):
+  // Active = ((6.0 * 3.5 * 80) / 200) * 60 = 8.4 * 60 = 504 kcal
+  // EPOC = Math.round(504 * 0.12) = 60 kcal
+  // Total = 504 + 60 = 564 kcal
+  const burnHeavy = Calc.calcWorkoutCalorieBurn(3600000, 80, 5.5, 8000);
+  assert.equal(burnHeavy.activeCals, 504);
+  assert.equal(burnHeavy.epocCals, 60);
+  assert.equal(burnHeavy.totalBurn, 564);
+
+  // Zero duration or invalid inputs return 0 safely
+  const burnZero = Calc.calcWorkoutCalorieBurn(0, 75);
+  assert.equal(burnZero.totalBurn, 0);
+  assert.equal(burnZero.activeCals, 0);
+  assert.equal(burnZero.epocCals, 0);
+});
+
+it('finishWorkout calculates, displays and persists burn object in S.logs', () => {
+  api.S.act = {
+    id: 'test_act_burn',
+    rid: null,
+    name: 'Strength Calorie Test',
+    t0: Date.now() - 3600000, // 60 min session
+    ex: [
+      {
+        id: '0025', // Barbell Bench Press
+        sets: [
+          { w: 100, r: 10, done: true },
+          { w: 100, r: 10, done: true },
+          { w: 100, r: 10, done: true }
+        ]
+      }
+    ]
+  };
+
+  api.finishWorkout();
+  const lastLog = api.S.logs.at(-1);
+  assert(lastLog, 'Last log must exist in S.logs');
+  assert(lastLog.burn, 'Completed workout must store burn object');
+  assert(lastLog.burn.activeCals > 0, 'Active calories must be > 0');
+  assert(lastLog.burn.epocCals > 0, 'EPOC calories must be > 0');
+  assert.equal(lastLog.burn.totalBurn, lastLog.burn.activeCals + lastLog.burn.epocCals);
+
+  // Verify modal celebration includes dedicated burn card
+  const modalContent = elementsMap['#m'].innerHTML;
+  assert(modalContent.includes('Calories Burned:'), 'Celebration modal must display Calories Burned');
+  assert(modalContent.includes('EPOC Afterburn'), 'Celebration modal must detail EPOC Afterburn');
+});
+
+it('Daily Nutrition tracker maintains schema, day switching, and meal calculation', () => {
+  // 1. Verify schema default initialization
+  assert(api.S.nutrition, 'S.nutrition must be initialized');
+  assert.equal(typeof api.S.nutrition.targetCals, 'number');
+  assert.equal(typeof api.S.nutrition.targetProtein, 'number');
+  assert.equal(typeof api.S.nutrition.targetCarbs, 'number');
+  assert.equal(typeof api.S.nutrition.targetFat, 'number');
+  assert.equal(typeof api.S.nutrition.targetFiber, 'number');
+  assert(api.S.nutrition.meals && typeof api.S.nutrition.meals === 'object');
+
+  // 2. Day switcher and meals calculation
+  const dateKey = '2026-11-07';
+  api.nutritionSelectedDate = dateKey;
+  const initialData = api.getNutritionData(dateKey);
+  assert.equal(initialData.dateKey, dateKey);
+  assert.equal(initialData.totals.calories, 0);
+
+  // 3. Log a meal into breakfast and lunch
+  api.S.nutrition.meals[dateKey].breakfast = {
+    calories: 500,
+    protein: 40,
+    carbs: 50,
+    fat: 15,
+    fiber: 8
+  };
+  api.S.nutrition.meals[dateKey].lunch = {
+    calories: 700,
+    protein: 50,
+    carbs: 70,
+    fat: 20,
+    fiber: 10
+  };
+
+  const updatedData = api.getNutritionData(dateKey);
+  assert.equal(updatedData.totals.calories, 1200);
+  assert.equal(updatedData.totals.protein, 90);
+  assert.equal(updatedData.totals.carbs, 120);
+  assert.equal(updatedData.totals.fat, 35);
+  assert.equal(updatedData.totals.fiber, 18);
+
+  // 4. Render Nutrition Dashboard HTML validation
+  const dashHtml = api.renderNutritionDashboard();
+  assert(dashHtml.includes('nutrition-dashboard'), 'Dashboard must contain .nutrition-dashboard');
+  assert(dashHtml.includes('1200'), 'Dashboard must display total calories');
+  assert(dashHtml.includes('Breakfast'), 'Dashboard must display Breakfast card');
+  assert(dashHtml.includes('Lunch'), 'Dashboard must display Lunch card');
+  assert(dashHtml.includes('Dinner'), 'Dashboard must display Dinner card');
+  assert(dashHtml.includes('Snacks'), 'Dashboard must display Snacks card');
+  assert(dashHtml.includes('data-a="prev-nutrition-day"'), 'Dashboard must include prev day action');
+  assert(dashHtml.includes('data-a="next-nutrition-day"'), 'Dashboard must include next day action');
+  assert(dashHtml.includes('data-a="open-nutrition-targets"'), 'Dashboard must include adjust targets action');
+
+  // 5. CSS animation and input verification
+  assert(cssCode.includes('.nutrition-progress-bar'), 'style.css must define .nutrition-progress-bar');
+  assert(cssCode.includes('transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1)'), 'Progress bars must animate with cubic-bezier transition');
+  assert(cssCode.includes('min-height: 44px'), 'Nutrition inputs must have 44px min touch target');
 });
 
 console.log(`\n======================================================`);

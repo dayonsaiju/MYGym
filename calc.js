@@ -650,6 +650,39 @@
     };
   };
 
+  // 13. Scientific Calorie Burn & Resistance EPOC Engine
+  const calcEPOCBurn = activeCalories => {
+    const cals = Math.max(0, Number(activeCalories) || 0);
+    // Resistance training afterburn (EPOC) is ~12% of total active session calories
+    return Math.round(cals * 0.12);
+  };
+
+  const calcWorkoutCalorieBurn = (durationMs, weightKg = 75, avgMET = 5.5, volumeKg = 0) => {
+    const dur = Math.max(0, Number(durationMs) || 0);
+    const wt = Math.max(0, Number(weightKg) || 75);
+    let met = Math.max(0, Number(avgMET) || 5.5);
+    const volume = Math.max(0, Number(volumeKg) || 0);
+
+    if (dur <= 0 || wt <= 0) {
+      return { activeCals: 0, epocCals: 0, totalBurn: 0 };
+    }
+
+    // High mechanical tension / high volume session scales MET up to 6.0
+    if (volume > 5000 && met < 6.0) {
+      met = 6.0;
+    }
+
+    // Active Calories = ((MET * 3.5 * weightKg) / 200) * (durationMs / 60000)
+    const activeCals = ((met * 3.5 * wt) / 200) * (dur / 60000);
+    const epocCals = calcEPOCBurn(activeCals);
+
+    return {
+      activeCals: Math.round(activeCals),
+      epocCals: Math.round(epocCals),
+      totalBurn: Math.round(activeCals + epocCals)
+    };
+  };
+
   return {
     roundWeight,
     rd,
@@ -684,7 +717,9 @@
     calcNavyBodyFat,
     calcBMR,
     calcTDEE,
-    calcMacros
+    calcMacros,
+    calcEPOCBurn,
+    calcWorkoutCalorieBurn
   };
 });
 
