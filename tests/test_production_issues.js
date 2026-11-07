@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 const calcCode = fs.readFileSync(path.join(rootDir, 'calc.js'), 'utf8');
 const aiConfigCode = fs.readFileSync(path.join(rootDir, 'ai-config.js'), 'utf8');
+const shellCode = fs.readFileSync(path.join(rootDir, 'shell.js'), 'utf8');
 const appCode = fs.readFileSync(path.join(rootDir, 'app.js'), 'utf8');
 const swCode = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
 const htmlCode = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -974,26 +975,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.2.2, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.2.2';"), 'sw.js must use mygym-core-v6.2.2 cache name');
-  assert(swCode.includes("'./style.css?v=6.2.2'"), 'sw.js must precache style.css?v=6.2.2');
-  assert(swCode.includes("'./app.js?v=6.2.2'"), 'sw.js must precache app.js?v=6.2.2');
-  assert(swCode.includes("'./calc.js?v=6.2.2'"), 'sw.js must precache calc.js?v=6.2.2');
+it('sw.js cache key is bumped to mygym-core-v6.3.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.3.0';"), 'sw.js must use mygym-core-v6.3.0 cache name');
+  assert(swCode.includes("'./style.css?v=6.3.0'"), 'sw.js must precache style.css?v=6.3.0');
+  assert(swCode.includes("'./app.js?v=6.3.0'"), 'sw.js must precache app.js?v=6.3.0');
+  assert(swCode.includes("'./calc.js?v=6.3.0'"), 'sw.js must precache calc.js?v=6.3.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
-it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.2.2'), 'index.html must link style.css?v=6.2.2');
-  assert(htmlCode.includes('app.js?v=6.2.2'), 'index.html must load app.js?v=6.2.2');
-  assert(htmlCode.includes('calc.js?v=6.2.2'), 'index.html must load calc.js?v=6.2.2');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.2.2'"), 'index.html must use mygym-core-v6.2.2');
-  assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
+it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
+  assert(htmlCode.includes('style.css?v=6.3.0'), 'index.html must link style.css?v=6.3.0');
+  assert(htmlCode.includes('shell.js?v=6.3.0'), 'index.html must load shell.js?v=6.3.0');
+  assert(htmlCode.includes('app.js?v=6.3.0'), 'index.html must load app.js?v=6.3.0');
+  assert(htmlCode.includes('calc.js?v=6.3.0'), 'index.html must load calc.js?v=6.3.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v6.3.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.2.2');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.2.2');
+  assert.equal(api.APP_VERSION, '6.3.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.3.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2466,7 +2468,7 @@ it('Direct client-side endpoints: callAI points directly to OpenAI and Google Ge
 it('Workout routine importer: openAIImportModal renders textarea/file upload and parses structured exercises', () => {
   api.openAIImportModal();
   const mHtml = elementsMap['#m'].innerHTML;
-  assert(mHtml.includes('Import Workout via AI'), 'Modal must have Import Workout via AI header');
+  assert(mHtml.includes('Import Workout Routine') || mHtml.includes('Import Workout via AI'), 'Modal must have Import Workout header');
   assert(mHtml.includes('ai-import-textarea') || mHtml.includes('id="ai-import-text"'), 'Modal must include multi-line text input');
   assert(mHtml.includes('id="ai-import-file"'), 'Modal must include file upload input');
   assert(mHtml.includes('data-a="run-ai-import"') || mHtml.includes('data-a="parse-ai-workout"'), 'Modal must include parse workout action');
@@ -2538,7 +2540,7 @@ it('In-App AI Coach slide-over drawer: ephemeral session history, active workout
   // Open AI coach drawer
   api.openAICoachDrawer();
   const mHtml = elementsMap['#m'].innerHTML;
-  assert(mHtml.includes('MyGyM AI Coach'), 'Drawer must display MyGyM AI Coach');
+  assert(mHtml.includes('Workout Coach') || mHtml.includes('MyGyM AI Coach'), 'Drawer must display Workout Coach');
   assert(mHtml.includes('ai-chat-messages'), 'Drawer must render chat message container');
   assert(mHtml.includes('ai-quick-chips'), 'Drawer must provide quick action chips');
   assert(mHtml.includes('💡 Form Cues'), 'Drawer must offer Form Cues chip');
@@ -2869,9 +2871,10 @@ it('index.html Content-Security-Policy expands connect-src for all supported AI 
 // -----------------------------------------------------------------------------
 console.log('\nSuite 10: Production Hardening, Security & Mobile Parity (v6.1.0)');
 
-it('index.html contains anti-reload loop guard and active workout reload guard', () => {
-  assert(htmlCode.includes('sessionStorage.getItem(\'mygym_reload_attempts\')'), 'index.html must check sessionStorage for reload attempts');
-  assert(htmlCode.includes('localStorage.getItem(\'lift_act\')'), 'index.html must check for active workout in storage before self-healing reload');
+it('shell.js contains anti-reload loop guard and active workout reload guard', () => {
+  assert(shellCode.includes('sessionStorage.getItem(\'mygym_reload_attempts\')'), 'shell.js must check sessionStorage for reload attempts');
+  assert(shellCode.includes('localStorage.getItem(\'lift_act\')'), 'shell.js must check for active workout in storage before self-healing reload');
+  assert(htmlCode.includes('shell.js?v='), 'index.html must load shell.js');
 });
 
 it('sw.js verifies index.html presence in new cache before purging old caches', () => {
@@ -3852,6 +3855,130 @@ it('Deterministic calendar & date math: DST transitions, Monday vs Sunday, month
   assert.equal(lightBar.perSide, 0);
   assert.equal(lightBar.plates.length, 0);
   assert.equal(lightBar.loadedWeight, 20);
+});
+
+// ==============================================================================
+// SUITE 22: Phase 3 & 4 Security, Tagged Template, Design System & Accessibility
+// ==============================================================================
+console.log('\nSuite 22: Phase 3 & 4 Security, Tagged Template, Design System & Accessibility');
+
+it('Safe HTML tagged template escapes untrusted strings while preserving SafeHTML and arrays', () => {
+  const { html, SafeHTML, esc } = api;
+  assert.equal(typeof html, 'function');
+  assert.equal(typeof SafeHTML, 'function');
+  assert.equal(typeof esc, 'function');
+
+  // String escaping
+  const evil = '<script>alert("xss")</script>';
+  const res = html`<div class="user">${evil}</div>`;
+  assert.ok(res instanceof SafeHTML);
+  assert.equal(res.toString(), '<div class="user">&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;</div>');
+
+  // Raw HTML inclusion
+  const rawHtml = html.raw('<span>Trusted <b>formatting</b></span>');
+  assert.ok(rawHtml instanceof SafeHTML);
+  const nested = html`<div>${rawHtml}</div>`;
+  assert.equal(nested.toString(), '<div><span>Trusted <b>formatting</b></span></div>');
+
+  // Array of SafeHTML / strings
+  const items = ['Item <1>', html.raw('<b>Item 2</b>')];
+  const list = html`<ul>${items.map(it => html`<li>${it}</li>`)}</ul>`;
+  assert.equal(list.toString(), '<ul><li>Item &lt;1&gt;</li><li><b>Item 2</b></li></ul>');
+});
+
+it('Inline Script Purge and Strict Content Security Policy in index.html and shell.js', () => {
+  // Check index.html for strict CSP
+  assert.ok(htmlCode.includes("script-src 'self'"), "CSP script-src must be strictly 'self'");
+  assert.ok(!htmlCode.includes("script-src 'self' 'unsafe-inline'"), "CSP script-src must NOT include 'unsafe-inline'");
+  assert.ok(htmlCode.includes("object-src 'none'"), "CSP must include object-src 'none'");
+  assert.ok(htmlCode.includes("base-uri 'none'"), "CSP must include base-uri 'none'");
+
+  // Check that index.html contains ZERO inline script blocks
+  const inlineScripts = (htmlCode.match(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi) || []);
+  assert.equal(inlineScripts.length, 0, 'index.html must contain zero inline <script> blocks');
+
+  // Verify shell.js is referenced
+  assert.ok(htmlCode.includes('src="./shell.js?v='), 'index.html must load shell.js with cache-busting query');
+
+  // Verify shell.js contents
+  assert.ok(shellCode.includes('mygym_reload_attempts'), 'shell.js must handle reload loop prevention');
+  assert.ok(shellCode.includes('lift_act'), 'shell.js must guard active workout from unexpected reloads');
+});
+
+it('Vector Icon System (icon helper, accessibility labels, and Lucide/Phosphor IC paths)', () => {
+  const { icon, IC, ic } = api;
+  assert.equal(typeof icon, 'function');
+  assert.equal(typeof IC, 'object');
+  assert.equal(typeof ic, 'function');
+
+  // Basic icon rendering (aria-hidden by default)
+  const timerIcon = icon('timer', { size: 16 });
+  assert.ok(timerIcon.toString().includes('width="16"'));
+  assert.ok(timerIcon.toString().includes('height="16"'));
+  assert.ok(timerIcon.toString().includes('aria-hidden="true"'));
+  assert.ok(timerIcon.toString().includes('viewBox="0 0 24 24"'));
+
+  // Accessible labeled icon
+  const labeled = icon('dumbbell', { size: 24, label: 'Weight Training', className: 'primary-icon' });
+  assert.ok(labeled.toString().includes('role="img"'));
+  assert.ok(labeled.toString().includes('aria-label="Weight Training"'));
+  assert.ok(labeled.toString().includes('class="primary-icon"'));
+
+  // Backward-compatible ic helper
+  const legacy = ic('gear', 20);
+  assert.ok(typeof legacy === 'string');
+  assert.ok(legacy.includes('width="20"'));
+
+  // Check key vector icon dictionary entries
+  const requiredIcons = ['act', 'cal', 'timer', 'clock', 'dumbbell', 'flame', 'zap', 'target', 'trophy', 'gear', 'trash', 'lock', 'shield', 'apple', 'message', 'sparkles'];
+  for (const name of requiredIcons) {
+    assert.ok(IC[name], `IC dictionary must contain vector path for '${name}'`);
+  }
+});
+
+it('Privacy Notices & Copy Polish in AI Import Modal and Workout Coach', () => {
+  // Test AI Import Modal privacy notice and title
+  api.openAIImportModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('Privacy Note: Workout text is sent directly to your configured AI provider via HTTPS'), 'Import modal must include privacy notice');
+  assert.ok(mHtml.includes('Import Workout Routine'), 'Title must be cleanly formatted as Import Workout Routine');
+  assert.ok(!mHtml.includes('🪄 Ultra-Fast Biomechanical'), 'Hype copy must be removed');
+
+  // Test Workout Coach privacy notice and title
+  api.openAICoachDrawer();
+  const coachHtml = elementsMap['#m'].innerHTML;
+  assert.ok(coachHtml.includes('Privacy Note: Messages are sent directly to your configured AI provider'), 'Coach drawer must include privacy notice');
+  assert.ok(coachHtml.includes('Workout Coach'), 'Title must be Workout Coach');
+});
+
+it('Design System Tokens, Tabular Figures, Reduced Motion, and Web App Manifest in CSS & Manifest', () => {
+  const css = fs.readFileSync('style.css', 'utf8');
+  const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+
+  // Design Tokens
+  assert.ok(css.includes('--elevation-1:'), 'style.css must define --elevation-1 token');
+  assert.ok(css.includes('--elevation-2:'), 'style.css must define --elevation-2 token');
+  assert.ok(css.includes('--elevation-3:'), 'style.css must define --elevation-3 token');
+  assert.ok(css.includes('--sp-1:') && css.includes('--sp-8:'), 'style.css must define 4-pt spacing grid (--sp-1 to --sp-8)');
+  assert.ok(css.includes('font-variant-numeric: tabular-nums'), 'style.css must enforce tabular numbers on metrics');
+  assert.ok(css.includes('@media (prefers-reduced-motion: reduce)'), 'style.css must respect prefers-reduced-motion');
+
+  // Manifest split icons
+  assert.equal(manifest.name, 'MyGyM');
+  assert.equal(manifest.short_name, 'MyGyM');
+  assert.ok(manifest.icons.some(i => i.purpose === 'any'), 'manifest.json must have icons with explicit purpose "any"');
+  assert.ok(manifest.icons.some(i => i.purpose === 'maskable'), 'manifest.json must have icons with explicit purpose "maskable"');
+});
+
+it('Modal Accessibility: dialog role, aria-modal, and focus trapping', () => {
+  api.modal('<div id="test-content"><input id="modal-inp" type="text"><button id="modal-act">Submit</button></div>');
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('class="sheet"'), 'Modal must create a .sheet container');
+  assert.ok(mHtml.includes('role="dialog"'), 'Sheet must have role="dialog"');
+  assert.ok(mHtml.includes('aria-modal="true"'), 'Sheet must have aria-modal="true"');
+  assert.ok(mHtml.includes('tabindex="-1"'), 'Sheet must have tabindex="-1"');
+  api.closeModal();
+  assert.equal(elementsMap['#m'].hidden, true, 'closeModal must hide #m');
 });
 
 console.log(`\n======================================================`);

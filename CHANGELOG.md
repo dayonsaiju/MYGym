@@ -2,6 +2,37 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [6.3.0] - Phase 3 & 4: Security, Design System, Icons & Accessibility - 2026-11-07
+- **Inline Script Purge & Strict Content Security Policy**:
+  - Extracted inline self-healing and shell-reset script from `index.html` into a dedicated `shell.js` module.
+  - Hardened Content-Security-Policy in `index.html`: locked `script-src` strictly to `'self'` (zero `'unsafe-inline'`), added `object-src 'none'; base-uri 'none';`.
+  - Added `shell.js` to precached Service Worker assets in `sw.js` and automated version bumping in `scripts/bump-version.js`.
+- **Safe HTML Tagged Template (`html` & `SafeHTML`)**:
+  - Introduced `SafeHTML` class and `html` tagged template function in `app.js` with `html.raw()` support.
+  - Automatically escapes untrusted strings via `esc()`, while preserving nested `SafeHTML` components, raw HTML fragments, and arrays without double-escaping.
+  - Exported `SafeHTML`, `html`, `icon`, `ic`, and `IC` on `globalThis.__MYGYM__`.
+- **Lucide / Phosphor Vector Icon System**:
+  - Created stroke-based SVG vector icon engine with comprehensive `IC` path dictionary on 24x24 viewBox (1.75px stroke width).
+  - Implemented `icon(name, opts)` generating accessible SVGs (`aria-hidden="true"` by default or `role="img" aria-label="..."` when labeled).
+  - Maintained backward-compatible `ic(n, s)` helper delegating to `icon()`.
+  - Replaced raw emoji icons across UI buttons, headers, rest timer, cards, and modal dialogs.
+- **Copy Polish & AI Privacy Notices**:
+  - Removed hype terminology across the app: changed "🪄 Ultra-Fast Biomechanical Routine Importer" to "Import Workout Routine", "Biomechanical Matching" to "Target Muscle Groups", and "MyGyM AI Coach" to "Workout Coach".
+  - Added explicit, transparent privacy notices to the AI routine importer and coach drawers stating that workout data and messages are transmitted directly over HTTPS to the selected provider using the user's API key without server-side retention.
+  - Enhanced markdown fence stripping (`replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1')`) and brace substring extraction in `sanitizeAndValidateAIRoutine()`.
+- **Design Tokens & Accessibility in CSS**:
+  - Added semantic elevation tokens (`--elevation-1`, `--elevation-2`, `--elevation-3`), 4-pt spacing grid (`--sp-1` through `--sp-8`), radii, and high-contrast text tokens in `style.css`.
+  - Enforced `font-variant-numeric: tabular-nums` across inputs, metric values, rest timers, tables, and set rows.
+  - Implemented `@media (prefers-reduced-motion: reduce)` disabling non-essential transitions and animations for users requesting reduced motion.
+  - Split `manifest.json` icons into explicit `"any"` and `"maskable"` purposes with canonical name `"MyGyM"`.
+- **Modal Accessibility & Focus Management**:
+  - Added `role="dialog" aria-modal="true" tabindex="-1"` to `.sheet` modal containers.
+  - Implemented `Escape` key listener to dismiss active modals, focus trapping (cycling `Tab` and `Shift+Tab` within focusable controls), and automatic focus restoration upon modal close.
+  - Added `window.visualViewport` resize listener adapting sheet height when the virtual keyboard appears on mobile devices.
+- **Verification & Test Suite**:
+  - Added Suite 22 with 6 comprehensive assertion tests in `tests/test_production_issues.js`, bringing total passing assertions to 148/148 (100% passing).
+  - Bumped version to v6.3.0 (`mygym-core-v6.3.0`).
+
 ## [Phase 2: Correctness Fixes] - 2026-11-07
 - **Set Type Persistence & Canonical Normalization**: Persisted explicit `type` (`normal`, `warmup`, `drop`, `failure`, `amrap`) on every set in `finishWorkout()`. Excluded warmup sets from volume, 1RM, and PR calculations; flagged drop and failure sets so they count toward volume and fatigue without polluting standard rep PR comparisons.
 - **Ordered Migration Runner (`S.schemaVersion`)**: Implemented an ordered migration framework running in `init()`:

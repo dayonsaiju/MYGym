@@ -1,6 +1,6 @@
 {
-  "name": "Lift",
-  "short_name": "Lift",
+  "name": "MyGyM",
+  "short_name": "MyGyM",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -12,8 +12,14 @@
       "src": "./icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
-  "version": "6.2.2"
+  "version": "6.3.0"
 }

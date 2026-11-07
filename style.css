@@ -5,6 +5,20 @@
   --bg-raised: #1F2024;    /* Modals, popovers, active controls */
   --surface-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
 
+  /* Semantic Elevation Tokens */
+  --elevation-1: 0 1px 3px rgba(0, 0, 0, 0.6);
+  --elevation-2: 0 4px 12px rgba(0, 0, 0, 0.7);
+  --elevation-3: 0 8px 24px rgba(0, 0, 0, 0.85);
+
+  /* 4-pt Spacing Grid */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
   /* Semantic Color Tokens */
   --accent-primary: #0A84FF;      /* Apple iOS Action Blue */
   --accent-achievement: #FF9F0A;  /* Warm Amber / Gold for Streaks, PRs, and Trophies */
@@ -14,7 +28,8 @@
   /* Standardized Corner Radii */
   --r-sm: 8px;   /* Chips, set pills, micro-inputs */
   --r-md: 14px;  /* Cards, section containers */
-  --r-lg: 24px;  /* Modals, bottom sheets */
+  --r-lg: 20px;  /* Modals, bottom sheets */
+  --r-full: 9999px;
 
   /* Standardized 5-Step Typography Scale */
   --font-display: 700 28px/1.25 -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
@@ -23,11 +38,12 @@
   --font-caption: 400 13px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
   --font-micro: 600 11px/1.2 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
 
-  /* Backward Compatibility Mappings */
+  /* High-Contrast Mappings (min 4.5:1 against #0A0A0B) */
   --c1: var(--bg-surface);
   --c2: var(--bg-raised);
   --bd: #2C2C32;
-  --t2: #8E8E93;
+  --t2: #98989D;
+  --t3: #8E8E93;
   --ac: var(--accent-primary);
   --rd: var(--accent-destructive);
   --gn: var(--accent-success);
@@ -380,6 +396,9 @@ input[type="checkbox"] {
   position: absolute;
   font-size: 13px;
   pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .rest-text-col {
@@ -4869,5 +4888,21 @@ textarea.note:focus {
   border-color: var(--ac);
   box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
 }
+
+/* Phase 4: Tabular figures for numbers across user inputs and metrics */
+body, input, button, select, textarea, .set-row, .metric-val, .rest-text-col, table, .stat-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Accessibility: Respect user reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 
 

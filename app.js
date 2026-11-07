@@ -16,6 +16,33 @@ const esc = s => String(s ?? '').replace(/[&<>'"]/g, c => ({
   "'": '&#39;'
 }[c]));
 
+class SafeHTML {
+  constructor(str) { this.str = String(str ?? ''); }
+  toString() { return this.str; }
+  valueOf() { return this.str; }
+}
+
+const html = (strings, ...values) => {
+  let out = '';
+  for (let i = 0; i < strings.length; i++) {
+    out += strings[i];
+    if (i < values.length) {
+      const v = values[i];
+      if (v instanceof SafeHTML) {
+        out += v.str;
+      } else if (Array.isArray(v)) {
+        out += v.map(item => (item instanceof SafeHTML ? item.str : esc(item))).join('');
+      } else if (v === null || v === undefined) {
+        // empty interpolation
+      } else {
+        out += esc(v);
+      }
+    }
+  }
+  return new SafeHTML(out);
+};
+html.raw = str => new SafeHTML(str ?? '');
+
 // ---- Storage: IndexedDB with synchronous & persistent localStorage fallback for Safari private browsing / quota limits ----
 const memStore = new Map();
 const ls = {
@@ -215,8 +242,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '6.2.2';
-const SHELL_VERSION = 'mygym-core-v6.2.2';
+const APP_VERSION = '6.3.0';
+const SHELL_VERSION = 'mygym-core-v6.3.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -645,21 +672,75 @@ const isCardioOrMobilityExercise = exId => {
   return false;
 };
 
-// ---- Icons ----
+// ---- Icons (Lucide / Phosphor style vector icons) ----
 const IC = {
   act: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+  activity: '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
   list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
   cal: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
+  calendar: '<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
   weight: '<path d="m21.3 8.7-12.6 12.6a1 1 0 0 1-1.4 0l-5.6-5.6a1 1 0 0 1 0-1.4L14.3 1.7a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4z"/><path d="m7.5 10.5 2 2"/><path d="m10.5 7.5 2 2"/><path d="m13.5 4.5 2 2"/><path d="m4.5 13.5 2 2"/>',
+  dumbbell: '<path d="m6.5 6.5 11 11"/><path d="m21 21-1-1a3 3 0 0 0-4.24 0l-1.42 1.42a1 1 0 0 1-1.42 0L9.17 18.66a1 1 0 0 1 0-1.42L10.59 15.82a3 3 0 0 0 0-4.24L9.59 10.58"/><path d="m3 3 1 1a3 3 0 0 0 4.24 0l1.42-1.42a1 1 0 0 1 1.42 0l4.75 4.76a1 1 0 0 1 0 1.42l-1.42 1.42a3 3 0 0 0 0 4.24l1 1"/>',
   clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  timer: '<line x1="10" y1="2" x2="14" y2="2"/><line x1="12" y1="14" x2="15" y2="11"/><circle cx="12" cy="14" r="8"/>',
   sl: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
   chk: '<polyline points="20 6 9 17 4 12"/>',
+  check: '<polyline points="20 6 9 17 4 12"/>',
   plus: '<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>',
   trash: '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  disc: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>'
+  disc: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>',
+  close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3z"/>',
+  zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+  trophy: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.45 1-1 1H8c-.55 0-1 .45-1 1v1h10v-1c0-.55-.45-1-1-1h-1c-.55 0-1-.45-1-1v-2.34"/><path d="M6 4h12v6a6 6 0 0 1-12 0V4z"/>',
+  award: '<circle cx="12" cy="8" r="6"/><path d="M15.477 12.89 17 22l-5-3-5 3 1.523-9.11"/>',
+  edit: '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>',
+  pencil: '<line x1="18" y1="2" x2="22" y2="6"/><path d="M7.5 20.5 19 9l-4-4L3.5 16.5 2 22z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
+  info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+  alert: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+  lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+  shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+  chevronRight: '<polyline points="9 18 15 12 9 6"/>',
+  chevronLeft: '<polyline points="15 18 9 12 15 6"/>',
+  chevronDown: '<polyline points="6 9 12 15 18 9"/>',
+  chevronUp: '<polyline points="18 15 12 9 6 15"/>',
+  arrowRight: '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
+  arrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
+  undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
+  refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+  copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
+  folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
+  fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+  message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  play: '<polygon points="5 3 19 12 5 21 5 3"/>',
+  pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
+  skip: '<polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/>',
+  swap: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
+  sparkles: '<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>',
+  apple: '<path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/>',
+  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
 };
-const ic = (n, s = 22) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${IC[n] || ''}</svg>`;
+
+const icon = (name, opts = {}) => {
+  const size = typeof opts === 'number' ? opts : (opts?.size || 18);
+  const cls = (typeof opts === 'object' && opts?.className) ? ` class="${esc(opts.className)}"` : '';
+  const sw = (typeof opts === 'object' && opts?.strokeWidth) ? opts.strokeWidth : 1.75;
+  const label = (typeof opts === 'object' && opts?.label) ? opts.label : '';
+  const a11y = label
+    ? ` role="img" aria-label="${esc(label)}"`
+    : ' aria-hidden="true"';
+  const path = IC[name] || IC.disc || '';
+  return html.raw(`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"${cls}${a11y}>${path}</svg>`);
+};
+
+const ic = (n, s = 22) => icon(n, { size: s, strokeWidth: 2 }).toString();
 
 // ---- Anatomical Muscle Map Heatmap (Front & Back Dual View + Interactive Discovery) ----
 const ANATOMY_MUSCLES = {
@@ -1462,16 +1543,88 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+let modalKeydownHandler = null;
+let modalViewportHandler = null;
+let prevActiveElement = null;
+
 const modal = (h, opts = {}) => {
-  const showX = opts?.hideClose ? '' : '<button class="x" data-a="close">Close</button>';
-  $('#m').innerHTML = `<div class="sheet">${showX}${h}</div>`;
-  $('#m').hidden = false;
+  const m = $('#m');
+  if (!m) return;
+  if (typeof document !== 'undefined') {
+    prevActiveElement = document.activeElement;
+  }
+  const showX = opts?.hideClose ? '' : '<button class="x" data-a="close" aria-label="Close dialog">Close</button>';
+  const content = (h && typeof h === 'object' && h instanceof SafeHTML) ? h.str : String(h ?? '');
+  m.innerHTML = `<div class="sheet" role="dialog" aria-modal="true" tabindex="-1">${showX}${content}</div>`;
+  m.hidden = false;
+
+  const sheet = m.querySelector('.sheet');
+  if (sheet && typeof sheet.focus === 'function') {
+    sheet.focus();
+  }
+
+  // Focus trapping and ESC key listener
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    if (modalKeydownHandler && typeof document.removeEventListener === 'function') {
+      document.removeEventListener('keydown', modalKeydownHandler);
+    }
+    modalKeydownHandler = e => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeModal();
+        return;
+      }
+      if (e.key === 'Tab') {
+        const focusables = m.querySelectorAll ? m.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])') : [];
+        if (!focusables || !focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
+    };
+    document.addEventListener('keydown', modalKeydownHandler);
+  }
+
+  // visualViewport resize listener for virtual keyboard adjustment
+  if (typeof window !== 'undefined' && window.visualViewport && sheet && typeof window.visualViewport.addEventListener === 'function') {
+    if (modalViewportHandler && typeof window.visualViewport.removeEventListener === 'function') {
+      window.visualViewport.removeEventListener('resize', modalViewportHandler);
+    }
+    modalViewportHandler = () => {
+      const vvHeight = window.visualViewport.height;
+      if (vvHeight < window.innerHeight) {
+        sheet.style.maxHeight = `${Math.max(200, vvHeight - 20)}px`;
+      } else {
+        sheet.style.maxHeight = '';
+      }
+    };
+    window.visualViewport.addEventListener('resize', modalViewportHandler);
+  }
 };
+
 const closeModal = () => {
   const m = $('#m');
+  if (typeof document !== 'undefined' && modalKeydownHandler && typeof document.removeEventListener === 'function') {
+    document.removeEventListener('keydown', modalKeydownHandler);
+    modalKeydownHandler = null;
+  }
+  if (typeof window !== 'undefined' && window.visualViewport && modalViewportHandler && typeof window.visualViewport.removeEventListener === 'function') {
+    window.visualViewport.removeEventListener('resize', modalViewportHandler);
+    modalViewportHandler = null;
+  }
   if (m) {
     m.hidden = true;
     m.innerHTML = '';
+  }
+  if (prevActiveElement && typeof prevActiveElement.focus === 'function') {
+    try { prevActiveElement.focus(); } catch (_) {}
+    prevActiveElement = null;
   }
 };
 const close = closeModal;
@@ -7042,17 +7195,21 @@ function openAIImportModal() {
     <div class="ai-import-sheet">
       <div style="flex:none">
         <h2 style="display:flex;align-items:center;gap:8px">
-          <span>🪄</span> Import Workout via AI
+          ${icon('download', { size: 20 })} <span>Import Workout Routine</span>
         </h2>
-        <p class="t2 sm" style="margin-top:2px;margin-bottom:12px">
-          Paste text copied from ChatGPT, Instagram, notes, or upload a routine file. AI extracts exercises, sets, reps, and weights, mapping them to your library.
+        <p class="t2 sm" style="margin-top:2px;margin-bottom:10px">
+          Paste text copied from workouts, notes, or upload a routine file. Exercises, sets, reps, and weights are extracted and mapped to your library.
         </p>
+
+        <div style="font-size:11px;color:var(--t3);margin-bottom:12px;line-height:1.4;display:flex;align-items:flex-start;gap:6px">
+          ${icon('lock', { size: 14 })} <span>Privacy Note: Workout text is sent directly to your configured AI provider via HTTPS using your API key. No workout data is stored on third-party servers.</span>
+        </div>
 
         ${!hasKey ? `
           <div class="card" style="margin-bottom:12px;padding:10px 12px;background:rgba(255,159,10,0.12);border:1px solid rgba(255,159,10,0.3)">
             <div style="font-weight:700;font-size:13px;color:var(--am);margin-bottom:2px">⚠️ No API Key Configured</div>
-            <div class="t2 sm">Configure your OpenAI or Gemini key in Settings (⚙️) for automatic AI parsing, or paste JSON below for instant offline import.</div>
-            <button class="btn s sm-btn" data-a="opensettings" style="margin-top:8px">Open Settings ⚙️</button>
+            <div class="t2 sm">Configure your API key in Settings for automatic AI parsing, or paste JSON below for instant offline import.</div>
+            <button class="btn s sm-btn" data-a="opensettings" style="margin-top:8px">Open Settings</button>
           </div>
         ` : ''}
 
@@ -7073,7 +7230,7 @@ function openAIImportModal() {
       <div id="ai-import-status" style="margin-bottom:10px"></div>
 
       <div style="flex:none">
-        <button class="btn finish-save-btn" data-a="run-ai-import" style="width:100%;margin-bottom:8px">🪄 Parse &amp; Import Workout</button>
+        <button class="btn finish-save-btn" data-a="run-ai-import" style="width:100%;margin-bottom:8px">Parse &amp; Import Workout</button>
         <button class="btn s outline" data-a="closemodal" style="width:100%">Cancel</button>
       </div>
     </div>
@@ -7083,8 +7240,14 @@ function openAIImportModal() {
 function sanitizeAndValidateAIRoutine(data) {
   if (typeof data === 'string') {
     let cleaned = data.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```[a-z]*\s*/i, '').replace(/```\s*$/i, '').trim();
+    // Enhanced markdown fence removal and brace substring extraction
+    cleaned = cleaned.replace(/```(?:json)?\s*([\s\S]*?)\s*```/gi, '$1').trim();
+    if (!cleaned.startsWith('{') && cleaned.includes('{')) {
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start !== -1 && end !== -1 && end > start) {
+        cleaned = cleaned.slice(start, end + 1);
+      }
     }
     data = JSON.parse(cleaned);
   }
@@ -7168,7 +7331,7 @@ async function parseAIWorkoutFromInput() {
     statusEl.innerHTML = `<div class="card" style="text-align:center;padding:14px;background:rgba(0,122,255,0.1);border:1px solid rgba(0,122,255,0.3)">
       <div style="font-size:24px;margin-bottom:6px">🤖</div>
       <b>Analyzing routine with AI...</b>
-      <div class="t2 sm" style="margin-top:2px">Extracting exercises, volume, and biomechanical targets</div>
+      <div class="t2 sm" style="margin-top:2px">Extracting exercises, volume, and target muscle groups</div>
     </div>`;
   }
 
@@ -7396,7 +7559,7 @@ function openAICoachDrawer(initialPrompt = null) {
   if (!aiCoachHistory.length) {
     aiCoachHistory.push({
       role: 'assistant',
-      content: `👋 Hi! I'm your MyGyM Coach (${model}). Ask me for real-time form cues, warm-up set breakdowns, alternative exercises, or progressive overload advice.`
+      content: `Hi! I'm your Workout Coach (${model}). Ask me for real-time form cues, warm-up set breakdowns, alternative exercises, or progressive overload advice.`
     });
   }
 
@@ -7404,30 +7567,34 @@ function openAICoachDrawer(initialPrompt = null) {
     <div class="ai-coach-sheet">
       <div class="ai-coach-header">
         <div class="ai-coach-title-group">
-          <div class="ai-coach-avatar">🤖</div>
+          <div class="ai-coach-avatar">${icon('message', { size: 18 })}</div>
           <div>
             <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px">
-              <span>MyGyM AI Coach</span>
+              <span>Workout Coach</span>
               <span class="chip on" style="font-size:10px;padding:1px 6px">${esc(model)}</span>
             </div>
             <div class="t2 sm">${S.act ? `Active Session: ${esc(S.act.name)}` : 'On-Demand Training Assistant'}</div>
           </div>
         </div>
-        <button class="btn s sm-btn outline" data-a="closemodal" style="padding:4px 10px">✕</button>
+        <button class="btn s sm-btn outline" data-a="closemodal" style="padding:4px 10px" aria-label="Close coach drawer">✕</button>
+      </div>
+
+      <div style="font-size:11px;color:var(--t3);margin:8px 0 2px;line-height:1.4;display:flex;align-items:center;gap:6px">
+        ${icon('lock', { size: 12 })} <span>Privacy Note: Messages are sent directly to your configured AI provider using your API key.</span>
       </div>
 
       ${!hasKey ? `
         <div class="card" style="margin:10px 0 0;padding:10px;background:rgba(255,159,10,0.12);border:1px solid rgba(255,159,10,0.3)">
           <div style="font-weight:700;font-size:12px;color:var(--am)">⚠️ API Key Needed for Live Answers</div>
-          <div class="t2 sm" style="margin-top:2px">Configure your OpenAI or Gemini key in Settings (⚙️) to chat with the coach.</div>
-          <button class="btn s sm-btn" data-a="opensettings" style="margin-top:6px;font-size:11px">Open Settings ⚙️</button>
+          <div class="t2 sm" style="margin-top:2px">Configure your API key in Settings to chat with the coach.</div>
+          <button class="btn s sm-btn" data-a="opensettings" style="margin-top:6px;font-size:11px">Open Settings</button>
         </div>
       ` : ''}
 
       <div class="ai-chat-messages" id="ai-chat-messages">
         ${aiCoachHistory.map(m => `
           <div class="ai-msg ${m.role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant'}">
-            ${m.role === 'assistant' ? '<div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px">🤖 COACH</div>' : ''}
+            ${m.role === 'assistant' ? `<div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">${icon('message', { size: 12 })} <span>COACH</span></div>` : ''}
             <div>${esc(m.content).replace(/\n/g, '<br>')}</div>
           </div>
         `).join('')}
@@ -10075,7 +10242,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.2.2').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.3.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -10108,6 +10275,12 @@ if (typeof globalThis !== 'undefined') {
   globalThis.__MYGYM__ = {
     APP_VERSION,
     SHELL_VERSION,
+    SafeHTML,
+    html,
+    esc,
+    icon,
+    ic,
+    IC,
     AI_PROVIDERS,
     detectProviderFromKey,
     resolveAIConfig,
@@ -10122,6 +10295,7 @@ if (typeof globalThis !== 'undefined') {
     vCal,
     finishWorkout,
     finish: finishWorkout,
+    modal,
     closeModal,
     showSettingsModal,
     openPastWorkoutModal,

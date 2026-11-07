@@ -36,18 +36,28 @@ console.log('✓ Updated app.js');
 const htmlPath = path.join(rootDir, 'index.html');
 let htmlCode = fs.readFileSync(htmlPath, 'utf8');
 htmlCode = htmlCode.replace(/href=["']\.\/style\.css\?v=[^"']+["']/, `href="./style.css?v=${targetVersion}"`);
-htmlCode = htmlCode.replace(/var SHELL_VERSION = ['"][^'"]+['"];/, `var SHELL_VERSION = '${shellVersion}';`);
+htmlCode = htmlCode.replace(/src=["']\.\/shell\.js\?v=[^"']+["']/, `src="./shell.js?v=${targetVersion}"`);
 htmlCode = htmlCode.replace(/src=["']\.\/calc\.js\?v=[^"']+["']/, `src="./calc.js?v=${targetVersion}"`);
 htmlCode = htmlCode.replace(/src=["']\.\/ai-config\.js\?v=[^"']+["']/, `src="./ai-config.js?v=${targetVersion}"`);
 htmlCode = htmlCode.replace(/src=["']\.\/app\.js\?v=[^"']+["']/, `src="./app.js?v=${targetVersion}"`);
 fs.writeFileSync(htmlPath, htmlCode);
 console.log('✓ Updated index.html');
 
+// 2b. shell.js
+const shellPath = path.join(rootDir, 'shell.js');
+if (fs.existsSync(shellPath)) {
+  let shellCode = fs.readFileSync(shellPath, 'utf8');
+  shellCode = shellCode.replace(/var SHELL_VERSION = ['"][^'"]+['"];/, `var SHELL_VERSION = '${shellVersion}';`);
+  fs.writeFileSync(shellPath, shellCode);
+  console.log('✓ Updated shell.js');
+}
+
 // 3. sw.js
 const swPath = path.join(rootDir, 'sw.js');
 let swCode = fs.readFileSync(swPath, 'utf8');
 swCode = swCode.replace(/const C = ['"][^'"]+['"];/, `const C = '${shellVersion}';`);
 swCode = swCode.replace(/['"]\.\/style\.css\?v=[^'"]+['"]/, `'./style.css?v=${targetVersion}'`);
+swCode = swCode.replace(/['"]\.\/shell\.js\?v=[^'"]+['"]/, `'./shell.js?v=${targetVersion}'`);
 swCode = swCode.replace(/['"]\.\/calc\.js\?v=[^"']+['"]/, `'./calc.js?v=${targetVersion}'`);
 swCode = swCode.replace(/['"]\.\/ai-config\.js\?v=[^"']+['"]/, `'./ai-config.js?v=${targetVersion}'`);
 swCode = swCode.replace(/['"]\.\/app\.js\?v=[^"']+['"]/, `'./app.js?v=${targetVersion}'`);
@@ -69,6 +79,7 @@ if (fs.existsSync(testPath)) {
   testCode = testCode.replace(/const C = ['"][^'"]+['"];/, `const C = '${shellVersion}';`);
   testCode = testCode.replace(/sw\.js must use [^ ]+ cache name/, `sw.js must use ${shellVersion} cache name`);
   testCode = testCode.replace(/style\.css\?v=[^'"]+/g, `style.css?v=${targetVersion}`);
+  testCode = testCode.replace(/shell\.js\?v=[^'"]+/g, `shell.js?v=${targetVersion}`);
   testCode = testCode.replace(/app\.js\?v=[^'"]+/g, `app.js?v=${targetVersion}`);
   testCode = testCode.replace(/calc\.js\?v=[^'"]+/g, `calc.js?v=${targetVersion}`);
   testCode = testCode.replace(/SHELL_VERSION = ['"][^'"]+['"]/, `SHELL_VERSION = '${shellVersion}'`);
