@@ -2,6 +2,10 @@ const Calc = (typeof window !== 'undefined' && (window.MYGYM_CALC || window.Calc
              (typeof globalThis !== 'undefined' && (globalThis.MYGYM_CALC || globalThis.Calc)) ||
              (typeof require === 'function' ? require('./calc.js') : null) || {};
 
+const AIConfig = (typeof window !== 'undefined' && (window.AIConfig || window.MYGYM_AI_CONFIG)) ||
+                 (typeof globalThis !== 'undefined' && (globalThis.AIConfig || globalThis.MYGYM_AI_CONFIG)) ||
+                 (typeof require === 'function' ? require('./ai-config.js') : null) || {};
+
 const $ = s => document.querySelector(s);
 const uid = () => Math.random().toString(36).slice(2, 9);
 const esc = s => String(s ?? '').replace(/[&<>'"]/g, c => ({
@@ -108,8 +112,10 @@ const put = async (k, v) => {
   }
 };
 
+const SCHEMA_VERSION = 3;
+
 let S = {
-  schemaVersion: 1,
+  schemaVersion: SCHEMA_VERSION,
   routines: [],
   logs: [],
   weights: [],
@@ -141,8 +147,76 @@ let S = {
   }
 };
 
-const APP_VERSION = '6.2.0';
-const SHELL_VERSION = 'mygym-core-v6.2.0-nutrition';
+const MIGRATIONS = [
+  {
+    version: 2,
+    name: 'Normalize legacy set types to canonical strings',
+    up(state) {
+      if (!state || !Array.isArray(state.logs)) return;
+      const mapSetType = (t) => {
+        if (!t) return 'normal';
+        const low = String(t).toLowerCase();
+        if (low === 'w' || low === 'warmup') return 'warmup';
+        if (low === 'd' || low === 'drop') return 'drop';
+        if (low === 'f' || low === 'failure') return 'failure';
+        if (low === 'a' || low === 'amrap') return 'amrap';
+        return 'normal';
+      };
+      for (const l of state.logs) {
+        if (!l || !Array.isArray(l.ex)) continue;
+        for (const x of l.ex) {
+          if (!x || !Array.isArray(x.sets)) continue;
+          for (const s of x.sets) {
+            if (s) s.type = mapSetType(s.type);
+          }
+        }
+      }
+    }
+  },
+  {
+    version: 3,
+    name: 'Default includeBodyweightInVolume to false and ensure unit is kg',
+    up(state) {
+      if (!state || !state.cfg || typeof state.cfg !== 'object') {
+        if (state) state.cfg = {};
+      }
+      if (state.cfg.includeBodyweightInVolume === undefined) {
+        state.cfg.includeBodyweightInVolume = false;
+      }
+      if (!state.cfg.unit) {
+        state.cfg.unit = 'kg';
+      }
+    }
+  }
+];
+
+async function runMigrations(state = S) {
+  if (!state) return SCHEMA_VERSION;
+  let currentVersion = Number(state.schemaVersion) || 1;
+  let mutated = false;
+  for (const m of MIGRATIONS) {
+    if (m.version > currentVersion) {
+      try {
+        m.up(state);
+        currentVersion = m.version;
+        state.schemaVersion = currentVersion;
+        mutated = true;
+      } catch (err) {
+        console.error(`Migration v${m.version} (${m.name}) failed:`, err);
+        break;
+      }
+    }
+  }
+  if (mutated) {
+    try {
+      await save('schemaVersion', 'logs', 'cfg');
+    } catch (_) {}
+  }
+  return state.schemaVersion;
+}
+
+const APP_VERSION = '6.2.2';
+const SHELL_VERSION = 'mygym-core-v6.2.2';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -155,6 +229,9 @@ let nutritionSelectedDate = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
 let histQuery = '', histRoutine = 'All';
 let workGifCollapsed = false;
 let lastRoutineSyncBackup = null;
+let _lastDeletedLog = null;
+let _lastDeletedRoutine = null;
+let _pendingBackupData = null;
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -242,9 +319,10 @@ const mapBodyPartToGroup = bp => {
 };
 
 const normalizeExercise = e => {
-  const isCardio = e.bp === 'cardio' || e.t === 't';
-  const isBodyweight = e.eq === 'body weight' || e.t === 'b';
-  const modality = isCardio ? 'timed_cardio' : (isBodyweight ? 'bodyweight' : 'strength');
+  const kind = e.kind || (e.bp === 'cardio' || e.t === 't' ? 'cardio' : (e.eq === 'body weight' || e.t === 'b' ? 'bodyweight' : 'strength'));
+  const isCardio = kind === 'cardio' || kind === 'timed';
+  const isBodyweight = kind === 'bodyweight' || kind === 'assisted';
+  const modality = isCardio ? 'timed_cardio' : (isBodyweight ? (kind === 'assisted' ? 'assisted' : 'bodyweight') : 'strength');
   return {
     id: String(e.id || '').replace(/[^a-zA-Z0-9_-]/g, ''),
     name: cleanExName(e.n || e.name || e.id || ''),
@@ -258,6 +336,7 @@ const normalizeExercise = e => {
     gif: String(e.gif || '').replace(/[^a-zA-Z0-9_.-]/g, ''),
     t: isCardio ? 't' : (isBodyweight ? 'b' : 'w'),
     type: modality,
+    kind,
     u: false
   };
 };
@@ -1477,10 +1556,52 @@ const vol = l => {
   }, 0));
 };
 
+const ACWR_UI_MAP = {
+  calibrating: (calibDay) => ({
+    status: `⚡ Calibrating Baseline (Day ${calibDay} of 14) 🔵`,
+    color: 'var(--bl)',
+    desc: 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.',
+    tooltip: 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.'
+  }),
+  under: () => ({
+    status: 'Recovery / Underreaching Zone 🔵',
+    color: 'var(--bl)',
+    desc: 'Low acute fatigue · Volume progression recommended',
+    tooltip: 'Workload is lower than usual. Ideal for recovery or volume progression.'
+  }),
+  optimal: () => ({
+    status: 'Optimal Progress Zone 🟢',
+    color: 'var(--gn)',
+    desc: 'Sweet spot for hypertrophy and safe progression',
+    tooltip: 'Workload is in the sweet spot (0.8 - 1.3) for safe, progressive overload.'
+  }),
+  caution: () => ({
+    status: 'Overreaching Caution Zone 🟡',
+    color: 'var(--am)',
+    desc: 'Fatigue accumulating faster than recovery',
+    tooltip: 'Workload is high (1.3 - 1.5). Monitor fatigue and recovery closely.'
+  }),
+  danger: () => ({
+    status: 'High Injury Risk / Deload Zone 🔴',
+    color: 'var(--rd)',
+    desc: 'Workload spike detected · Consider a deload session',
+    tooltip: 'Workload spike (> 1.5). High fatigue accumulation, deload recommended.'
+  })
+};
+
 // ---- 100% Offline Deterministic Recovery & ACWR Engine ----
 const calcWorkload = (logs = S.logs) => {
   if (Calc.calcACWR) {
-    return Calc.calcACWR(logs, Date.now(), S.cfg, S.cfg?.weight || 75, X);
+    const raw = Calc.calcACWR(logs, Date.now(), S.cfg, S.cfg?.weight || 75, X);
+    const getUi = ACWR_UI_MAP[raw.zoneCode] || ACWR_UI_MAP.optimal;
+    const ui = getUi(raw.calibDay || 1);
+    return {
+      ...raw,
+      status: ui.status,
+      color: ui.color,
+      desc: ui.desc,
+      tooltip: ui.tooltip
+    };
   }
   const now = Date.now();
   const dayMs = 86400000;
@@ -2990,7 +3111,7 @@ function renderWorkHeroCard(a, curIdx) {
             <!-- Col 1: Compact Set # Badge & Set Type Toggle -->
             <div class="set-col set-col-num">
               <button class="n set-num-badge set-type-btn set-type-${s.type ? s.type.toLowerCase() : 'normal'}" data-a="togglesettype" data-i="${curIdx}" data-j="${j}" title="Tap to toggle set type (Normal, Warm-up, Drop set, Failure, AMRAP)">
-                ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${pr.desc}">🏆</span>` : ''}
+                ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${esc(pr.desc)}">🏆</span>` : ''}
               </button>
             </div>
 
@@ -4675,7 +4796,7 @@ function renderNutritionDashboard() {
             <div class="meal-card" data-a="open-meal-modal" data-meal="${m.key}">
               <div class="meal-info">
                 <div class="meal-title-row">
-                  <span>${m.icon} ${m.name}</span>
+                  <span>${m.icon} ${esc(m.name)}</span>
                 </div>
                 <div class="meal-macros-row">
                   ${hasFood ? `P: ${meal.protein}g · C: ${meal.carbs}g · F: ${meal.fat}g · Fib: ${meal.fiber}g` : 'No food logged yet'}
@@ -4708,7 +4829,7 @@ function showMealModal(mealKey) {
   modal(`
     <div class="confirm-sheet" style="text-align:left">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-        <h2 style="margin:0">${mInfo.icon} Log ${mInfo.title}</h2>
+        <h2 style="margin:0">${mInfo.icon} Log ${esc(mInfo.title)}</h2>
         <span class="chip">${formatNutritionDateDisplay(dateKey)}</span>
       </div>
 
@@ -4903,8 +5024,20 @@ function applyMacroPreset(type) {
     const p = getPhysiqueState();
     if (p.weight) weightKg = p.weight;
     if (Calc.calcTDEE && Calc.calcBMR) {
-      const bmr = Calc.calcBMR(p.gender, p.weight, p.height, p.age);
-      baseTdee = Calc.calcTDEE(bmr, p.activityLevel);
+      const bmrRes = Calc.calcBMR(p.gender, p.weight, p.height, p.age);
+      if (bmrRes && typeof bmrRes === 'object' && bmrRes.status === 'needs_profile') {
+        toast('⚠️ Profile setup needed: please enter height, weight, and age in Profile');
+        showPhysiqueCalibrationModal();
+        return;
+      }
+      const bmr = typeof bmrRes === 'number' ? bmrRes : bmrRes?.bmr;
+      const tdeeRes = Calc.calcTDEE(bmr, p.activityLevel);
+      if (tdeeRes && typeof tdeeRes === 'object' && tdeeRes.status === 'needs_profile') {
+        toast('⚠️ Profile setup needed: please enter height, weight, and age in Profile');
+        showPhysiqueCalibrationModal();
+        return;
+      }
+      baseTdee = typeof tdeeRes === 'number' ? tdeeRes : (tdeeRes?.tdee || 2200);
     }
   }
 
@@ -5682,8 +5815,20 @@ const valid = o => {
   return true;
 };
 
+function sanitizeCfgForExport(cfg) {
+  if (!cfg || typeof cfg !== 'object') return {};
+  const copy = { ...cfg };
+  delete copy.aiKey;
+  delete copy.aiProvider;
+  delete copy.aiModel;
+  delete copy.apiKey;
+  delete copy.ai_api_key;
+  return copy;
+}
+
 function exp() {
-  const b = new Blob([JSON.stringify({ app: 'lift', v: 1, exported: Date.now(), routines: S.routines, logs: S.logs, weights: S.weights, cfg: S.cfg, sched: S.sched || {}, nutrition: S.nutrition || {} }, null, 2)], { type: 'application/json' });
+  const cleanCfg = sanitizeCfgForExport(S.cfg);
+  const b = new Blob([JSON.stringify({ app: 'lift', v: 1, exported: Date.now(), routines: S.routines, logs: S.logs, weights: S.weights, cfg: cleanCfg, sched: S.sched || {}, nutrition: S.nutrition || {} }, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(b);
   a.download = `mygym-backup-${new Date().toISOString().slice(0, 10)}.json`;
@@ -5745,84 +5890,108 @@ async function imp(f) {
     }
 
     if (!valid(o)) throw new Error('Invalid schema structure');
-    if (!confirm('Replace all current data with this backup?')) return;
 
-    // Deep sanitize & reconstruct objects with strictly whitelisted properties
-    S.routines = o.routines.map(r => ({
-      id: String(r.id).slice(0, 50),
-      name: String(r.name).slice(0, 100),
-      ex: r.ex.map(x => ({
-        id: String(x.id).slice(0, 50),
-        sets: Math.max(1, Math.min(50, parseInt(x.sets, 10) || 1)),
-        reps: Math.max(1, Math.min(200, parseInt(x.reps, 10) || 1)),
-        reps2: Math.max(1, Math.min(200, parseInt(x.reps2, 10) || parseInt(x.reps, 10) || 1)),
-        w: Math.max(0, Math.min(1000, parseFloat(x.w) || 0)),
-        inc: Math.max(0.25, Math.min(50, parseFloat(x.inc) || 2.5)),
-        prog: ['linear', 'gslp', 'double'].includes(x.prog) ? x.prog : 'linear',
-        cur: Math.max(1, Math.min(200, parseInt(x.cur, 10) || parseInt(x.reps, 10) || 1)),
-        stalls: Math.max(0, Math.min(10, parseInt(x.stalls, 10) || 0)),
-        ss: Boolean(x.ss)
-      }))
-    }));
-
-    S.logs = o.logs.map(l => ({
-      id: String(l.id).slice(0, 50),
-      date: Number(l.date) || Date.now(),
-      name: String(l.name).slice(0, 100),
-      dur: Math.max(0, Number(l.dur) || 0),
-      ex: l.ex.map(x => ({
-        id: String(x.id).slice(0, 50),
-        note: String(x.note || '').slice(0, 500),
-        sets: x.sets.map(s => ({
-          w: Math.max(0, Math.min(1000, Number(s.w) || 0)),
-          r: Math.max(0, Math.min(500, Number(s.r) || 0)),
-          rpe: s.rpe != null && s.rpe !== '' && !isNaN(+s.rpe) ? Math.min(10, Math.max(1, +s.rpe)) : null
-        }))
-      }))
-    }));
-
-    if (Array.isArray(o.weights)) {
-      S.weights = o.weights.map(w => ({
-        id: String(w.id).slice(0, 50),
-        date: String(w.date).slice(0, 10),
-        w: w.w != null && Number.isFinite(+w.w) ? rd(Math.max(10, Math.min(500, +w.w))) : null,
-        waist: w.waist != null && Number.isFinite(+w.waist) ? rd(Math.max(10, Math.min(300, +w.waist))) : null,
-        t: Number(w.t) || new Date(w.date + 'T12:00:00').getTime() || Date.now()
-      }));
+    _pendingBackupData = o;
+    if (typeof window !== 'undefined' && window.__AUTO_CONFIRM_BACKUP__) {
+      await applySanitizedBackup(o);
+      _pendingBackupData = null;
+      return;
     }
 
-    if (o.cfg && typeof o.cfg === 'object' && !Array.isArray(o.cfg)) {
-      if (Number.isFinite(o.cfg.rest)) S.cfg.rest = Math.max(5, Math.min(600, +o.cfg.rest));
-      if (typeof o.cfg.flash === 'boolean') S.cfg.flash = o.cfg.flash;
-      if (o.cfg.bodyModel) S.cfg.bodyModel = o.cfg.bodyModel === 'female' ? 'female' : 'male';
-      if (o.cfg.physique && typeof o.cfg.physique === 'object') S.cfg.physique = { ...o.cfg.physique };
-    }
-
-    if (o.sched && typeof o.sched === 'object' && !Array.isArray(o.sched)) {
-      S.sched = {};
-      for (const [day, rid] of Object.entries(o.sched)) {
-        if (typeof rid === 'string' && rid.length <= 50) S.sched[day] = rid;
-      }
-    }
-
-    if (o.nutrition && typeof o.nutrition === 'object' && !Array.isArray(o.nutrition)) {
-      S.nutrition = {
-        targetCals: Math.max(500, Number(o.nutrition.targetCals) || 2100),
-        targetProtein: Math.max(10, Number(o.nutrition.targetProtein) || 140),
-        targetCarbs: Math.max(0, Number(o.nutrition.targetCarbs) || 240),
-        targetFat: Math.max(5, Number(o.nutrition.targetFat) || 60),
-        targetFiber: Math.max(5, Number(o.nutrition.targetFiber) || 35),
-        meals: (o.nutrition.meals && typeof o.nutrition.meals === 'object') ? o.nutrition.meals : {}
-      };
-    }
-
-    await save('routines', 'logs', 'weights', 'cfg', 'sched', 'nutrition');
-    toast('Backup restored');
-    render();
+    modal(`
+      <div class="destructive-confirm-modal">
+        <div style="font-size:36px;margin-bottom:8px">📥</div>
+        <h2 style="margin-bottom:8px">Restore Backup?</h2>
+        <p class="t2 sm" style="margin-bottom:16px;line-height:1.5">
+          This backup contains ${o.routines ? o.routines.length : 0} routines and ${o.logs ? o.logs.length : 0} workouts. Restoring will replace your current routines and workout history.
+        </p>
+        <div class="row g">
+          <button class="btn s" data-a="close" style="flex:1">Cancel</button>
+          <button class="btn s red" data-a="confirm-restore-backup" style="flex:1">Confirm Restore</button>
+        </div>
+      </div>
+    `);
   } catch (err) {
     console.warn('Backup import blocked:', err.message);
     toast('Invalid backup file');
   }
+}
+
+async function applySanitizedBackup(o) {
+  if (!o) return;
+  // Deep sanitize & reconstruct objects with strictly whitelisted properties
+  S.routines = o.routines.map(r => ({
+    id: String(r.id).slice(0, 50),
+    name: String(r.name).slice(0, 100),
+    ex: r.ex.map(x => ({
+      id: String(x.id).slice(0, 50),
+      sets: Math.max(1, Math.min(50, parseInt(x.sets, 10) || 1)),
+      reps: Math.max(1, Math.min(200, parseInt(x.reps, 10) || 1)),
+      reps2: Math.max(1, Math.min(200, parseInt(x.reps2, 10) || parseInt(x.reps, 10) || 1)),
+      w: Math.max(0, Math.min(1000, parseFloat(x.w) || 0)),
+      inc: Math.max(0.25, Math.min(50, parseFloat(x.inc) || 2.5)),
+      prog: ['linear', 'gslp', 'double'].includes(x.prog) ? x.prog : 'linear',
+      cur: Math.max(1, Math.min(200, parseInt(x.cur, 10) || parseInt(x.reps, 10) || 1)),
+      stalls: Math.max(0, Math.min(10, parseInt(x.stalls, 10) || 0)),
+      ss: Boolean(x.ss)
+    }))
+  }));
+
+  S.logs = o.logs.map(l => ({
+    id: String(l.id).slice(0, 50),
+    date: Number(l.date) || Date.now(),
+    name: String(l.name).slice(0, 100),
+    dur: Math.max(0, Number(l.dur) || 0),
+    ex: l.ex.map(x => ({
+      id: String(x.id).slice(0, 50),
+      note: String(x.note || '').slice(0, 500),
+      sets: x.sets.map(s => ({
+        w: Math.max(0, Math.min(1000, Number(s.w) || 0)),
+        r: Math.max(0, Math.min(500, Number(s.r) || 0)),
+        rpe: s.rpe != null && s.rpe !== '' && !isNaN(+s.rpe) ? Math.min(10, Math.max(1, +s.rpe)) : null,
+        type: s.type || 'normal'
+      }))
+    }))
+  }));
+
+  if (Array.isArray(o.weights)) {
+    S.weights = o.weights.map(w => ({
+      id: String(w.id).slice(0, 50),
+      date: String(w.date).slice(0, 10),
+      w: w.w != null && Number.isFinite(+w.w) ? rd(Math.max(10, Math.min(500, +w.w))) : null,
+      waist: w.waist != null && Number.isFinite(+w.waist) ? rd(Math.max(10, Math.min(300, +w.waist))) : null,
+      t: Number(w.t) || new Date(w.date + 'T12:00:00').getTime() || Date.now()
+    }));
+  }
+
+  if (o.cfg && typeof o.cfg === 'object' && !Array.isArray(o.cfg)) {
+    if (Number.isFinite(o.cfg.rest)) S.cfg.rest = Math.max(5, Math.min(600, +o.cfg.rest));
+    if (typeof o.cfg.flash === 'boolean') S.cfg.flash = o.cfg.flash;
+    if (o.cfg.bodyModel) S.cfg.bodyModel = o.cfg.bodyModel === 'female' ? 'female' : 'male';
+    if (o.cfg.physique && typeof o.cfg.physique === 'object') S.cfg.physique = { ...o.cfg.physique };
+  }
+
+  if (o.sched && typeof o.sched === 'object' && !Array.isArray(o.sched)) {
+    S.sched = {};
+    for (const [day, rid] of Object.entries(o.sched)) {
+      if (typeof rid === 'string' && rid.length <= 50) S.sched[day] = rid;
+    }
+  }
+
+  if (o.nutrition && typeof o.nutrition === 'object' && !Array.isArray(o.nutrition)) {
+    S.nutrition = {
+      targetCals: Math.max(500, Number(o.nutrition.targetCals) || 2100),
+      targetProtein: Math.max(10, Number(o.nutrition.targetProtein) || 140),
+      targetCarbs: Math.max(0, Number(o.nutrition.targetCarbs) || 240),
+      targetFat: Math.max(5, Number(o.nutrition.targetFat) || 60),
+      targetFiber: Math.max(5, Number(o.nutrition.targetFiber) || 35),
+      meals: (o.nutrition.meals && typeof o.nutrition.meals === 'object') ? o.nutrition.meals : {}
+    };
+  }
+
+  await save('routines', 'logs', 'weights', 'cfg', 'sched', 'nutrition');
+  toast('Backup restored');
+  render();
 }
 
 // ---- Data Management & CSV Export ----
@@ -5868,17 +6037,19 @@ function expCSV() {
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
 function showSettingsModal() {
-  const savedKey = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key')) : '') || '';
-  const savedProv = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider')) : '') || 'auto';
-  const savedModel = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model')) : '') || '';
-  const savedBaseUrl = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || '';
+  const aiSettings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { provider: 'auto', models: {}, baseUrl: '', rememberKey: true };
+  const savedKey = (typeof AIConfig !== 'undefined' && AIConfig.getAIKey) ? AIConfig.getAIKey() : ((typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key')) : '') || '');
+  const savedProv = aiSettings.provider || 'auto';
+  const savedModel = (aiSettings.models && aiSettings.models[savedProv]) || ((typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS[savedProv]?.defaultModel) || '');
+  const savedBaseUrl = aiSettings.baseUrl || '';
   const detectedKeyInfo = detectProviderFromKey(savedKey);
 
   let keyPlaceholder = 'Paste any key (gsk_, sk-or-, AIzaSy, sk-)...';
-  if (savedProv !== 'auto' && AI_PROVIDERS[savedProv]) {
-    keyPlaceholder = AI_PROVIDERS[savedProv].placeholder || 'API Key...';
+  const providers = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS) ? AIConfig.AI_PROVIDERS : {};
+  if (savedProv !== 'auto' && providers[savedProv]) {
+    keyPlaceholder = providers[savedProv].keyPlaceholder || providers[savedProv].placeholder || 'API Key...';
   } else if (detectedKeyInfo) {
-    keyPlaceholder = AI_PROVIDERS[detectedKeyInfo.provider]?.placeholder || 'API Key...';
+    keyPlaceholder = providers[detectedKeyInfo.provider]?.keyPlaceholder || providers[detectedKeyInfo.provider]?.placeholder || 'API Key...';
   }
 
   modal(`
@@ -5952,7 +6123,7 @@ function showSettingsModal() {
         <div class="card settings-card">
           <div style="padding:10px 0 6px">
             <div class="t2 sm" style="margin-bottom:12px;line-height:1.4">
-              Bring Your Own Key (BYOK) for smart workout importing and real-time AI coaching. Keys are stored <b>strictly in localStorage on this device</b> and connect directly to the provider. Zero backend proxies.
+              Bring Your Own Key (BYOK) for smart workout importing and real-time AI coaching. Keys are stored <b>strictly in ${aiSettings.rememberKey !== false ? 'localStorage' : 'sessionStorage'} on this device</b> and connect directly to the provider. Zero backend proxies.
             </div>
 
             <label class="settings-row" style="margin-bottom:8px">
@@ -5960,18 +6131,19 @@ function showSettingsModal() {
               <select class="settings-select" id="ai-provider-select" data-f="ai-provider">
                 <option value="auto" ${savedProv === 'auto' ? 'selected' : ''}>Auto-Detect from Key</option>
                 <option value="groq" ${savedProv === 'groq' ? 'selected' : ''}>Groq (Free &amp; Ultra-Fast)</option>
+                <option value="openai" ${savedProv === 'openai' ? 'selected' : ''}>OpenAI (ChatGPT)</option>
                 <option value="openrouter" ${savedProv === 'openrouter' ? 'selected' : ''}>OpenRouter (Free Tier)</option>
                 <option value="gemini" ${savedProv === 'gemini' ? 'selected' : ''}>Google Gemini</option>
-                <option value="openai" ${savedProv === 'openai' ? 'selected' : ''}>OpenAI (ChatGPT)</option>
                 <option value="custom" ${savedProv === 'custom' ? 'selected' : ''}>Custom / OpenAI-Compatible</option>
               </select>
             </label>
 
-            <div id="ai-standard-model-row" class="settings-row" style="margin-bottom:8px;${savedProv === 'custom' ? 'display:none' : 'display:flex'}">
-              <span class="settings-label">Model</span>
-              <select class="settings-select" id="ai-model-select" data-f="ai-model">
+            <div id="ai-standard-model-row" class="settings-row" style="margin-bottom:8px;${savedProv === 'custom' ? 'display:none' : 'display:flex'};align-items:center;gap:8px">
+              <span class="settings-label" style="flex:0 0 auto">Model</span>
+              <select class="settings-select" id="ai-model-select" data-f="ai-model" style="flex:1">
                 ${renderAIModelOptions(savedProv, savedModel)}
               </select>
+              <button class="chip" id="ai-refresh-models-btn" data-a="refresh-ai-models" style="flex:0 0 auto;font-size:11px;padding:4px 8px">🔄 Refresh</button>
             </div>
 
             <div id="ai-custom-fields" style="${savedProv === 'custom' ? 'display:block' : 'display:none'};margin-top:4px">
@@ -5982,7 +6154,7 @@ function showSettingsModal() {
               </label>
               <label class="settings-row" style="margin-bottom:8px">
                 <span class="settings-label">Model Name</span>
-                <input type="text" id="ai-model-input" data-id="ai-custom-model-input" class="txt ai-custom-model-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc(savedModel || '')}">
+                <input type="text" id="ai-custom-model-input" data-id="ai-custom-model-input" class="txt ai-custom-model-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc((aiSettings.models && aiSettings.models.custom) || '')}">
               </label>
             </div>
 
@@ -5997,6 +6169,10 @@ function showSettingsModal() {
                 </div>
               </div>
               <input type="password" id="ai-key-input" data-id="ai-api-key-input" class="txt ai-api-key-input" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
+              <label class="row" style="margin-top:8px;gap:8px;align-items:center;cursor:pointer">
+                <input type="checkbox" id="ai-remember-key-toggle" ${aiSettings.rememberKey !== false ? 'checked' : ''}>
+                <span class="t2 sm" style="font-size:12px">Remember key on this device (stores in localStorage)</span>
+              </label>
             </div>
 
             <div class="row g" style="margin-top:10px">
@@ -6067,6 +6243,11 @@ function showSettingsModal() {
   if (clearBtn) {
     clearBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); clearAIKey(); };
     clearBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); clearAIKey(); };
+  }
+  const refreshBtn = document.getElementById('ai-refresh-models-btn');
+  if (refreshBtn) {
+    refreshBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); refreshAIModels(document.getElementById('ai-provider-select')?.value); };
+    refreshBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); refreshAIModels(document.getElementById('ai-provider-select')?.value); };
   }
 }
 
@@ -6147,202 +6328,122 @@ function showPlateCalcModal(targetWeight = 20, exName = 'Barbell Exercise') {
 
 // ============================================================================
 // v6.0.2 UNIVERSAL BYOK AI ENGINE (OPENAI-COMPATIBLE & NATIVE GEMINI)
+// Powered by centralized ai-config.js
 // ============================================================================
 
-const AI_PROVIDERS = {
-  groq: {
-    id: 'groq',
-    name: 'Groq',
-    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
-    defaultModel: 'llama-3.3-70b-versatile',
-    models: [
-      { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Primary)' },
-      { id: 'llama3-70b-8192', name: 'Llama 3 70B 8192 (Secondary / Fallback)' },
-      { id: 'llama3-8b-8192', name: 'Llama 3 8B 8192 (Ultra-Fast)' },
-      { id: 'gemma2-9b-it', name: 'Gemma 2 9B IT (Alternative)' }
-    ],
-    placeholder: 'gsk_...'
-  },
-  openrouter: {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
-    defaultModel: 'meta-llama/llama-3.1-8b-instruct:free',
-    models: [
-      { id: 'meta-llama/llama-3.1-8b-instruct:free', name: 'meta-llama/llama-3.1-8b-instruct:free (Free Tier)' },
-      { id: 'google/gemini-2.0-flash-exp:free', name: 'google/gemini-2.0-flash-exp:free' },
-      { id: 'mistralai/mistral-7b-instruct:free', name: 'mistralai/mistral-7b-instruct:free' }
-    ],
-    placeholder: 'sk-or-...'
-  },
-  gemini: {
-    id: 'gemini',
-    name: 'Google Gemini',
-    endpoint: 'native',
-    defaultModel: 'gemini-1.5-flash',
-    models: [
-      { id: 'gemini-1.5-flash', name: 'gemini-1.5-flash (Fast & Recommended)' },
-      { id: 'gemini-1.5-pro', name: 'gemini-1.5-pro (High Reasoning)' }
-    ],
-    placeholder: 'AIzaSy...'
-  },
-  openai: {
-    id: 'openai',
-    name: 'OpenAI',
-    endpoint: 'https://api.openai.com/v1/chat/completions',
-    defaultModel: 'gpt-4o-mini',
-    models: [
-      { id: 'gpt-4o-mini', name: 'gpt-4o-mini (Fast & Recommended)' },
-      { id: 'gpt-4o', name: 'gpt-4o (High Reasoning)' }
-    ],
-    placeholder: 'sk-proj-... / sk-...'
-  },
-  custom: {
-    id: 'custom',
-    name: 'Custom / OpenAI-Compatible',
-    endpoint: 'custom',
-    defaultModel: 'llama-3.3-70b-versatile',
-    models: [],
-    placeholder: 'API Key...'
-  }
-};
+const AI_PROVIDERS = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS) || {};
 
 function detectProviderFromKey(key) {
-  const k = String(key || '').trim();
-  if (k.startsWith('gsk_')) {
-    return { provider: 'groq', model: 'llama-3.3-70b-versatile', name: 'Groq' };
-  }
-  if (k.startsWith('sk-or-')) {
-    return { provider: 'openrouter', model: 'meta-llama/llama-3.1-8b-instruct:free', name: 'OpenRouter' };
-  }
-  if (k.startsWith('AIzaSy')) {
-    return { provider: 'gemini', model: 'gemini-1.5-flash', name: 'Google Gemini' };
-  }
-  if (k.startsWith('sk-')) {
-    return { provider: 'openai', model: 'gpt-4o-mini', name: 'OpenAI' };
+  if (typeof AIConfig !== 'undefined' && AIConfig.detectProviderFromKey) {
+    return AIConfig.detectProviderFromKey(key);
   }
   return null;
 }
 
-function resolveAIConfig() {
-  const domKey = typeof document !== 'undefined'
-    ? (document.getElementById('ai-key-input')?.value ?? document.getElementById('ai-api-key-input')?.value)
-    : null;
-  const domProvider = typeof document !== 'undefined'
-    ? (document.getElementById('ai-provider-select')?.value)
-    : null;
-  const domBaseUrl = typeof document !== 'undefined'
-    ? (document.getElementById('ai-baseurl-input')?.value ?? document.getElementById('ai-base-url-input')?.value)
-    : null;
-  const domModel = typeof document !== 'undefined'
-    ? (document.getElementById('ai-model-input')?.value ?? document.getElementById('ai-custom-model-input')?.value ?? document.getElementById('ai-model-select')?.value)
-    : null;
+function resolveAIConfig(overrides = {}) {
+  const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings)
+    ? AIConfig.getAISettings()
+    : { provider: 'auto', resolvedProvider: 'groq', models: {}, baseUrl: '' };
 
-  const apiKey = (domKey != null && domKey !== '' ? domKey : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key') || '') : '')).trim();
-  let provider = (domProvider != null && domProvider !== '' ? domProvider : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider') || 'auto') : 'auto'));
-  let model = (domModel != null && domModel !== '' ? domModel : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model') || '') : '')).trim();
-  const baseUrl = (domBaseUrl != null && domBaseUrl !== '' ? domBaseUrl : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '')).trim();
+  const apiKey = (overrides.apiKey != null
+    ? overrides.apiKey
+    : ((typeof AIConfig !== 'undefined' && AIConfig.getAIKey) ? AIConfig.getAIKey() : '')
+  ).trim();
 
-  // If provider === 'custom', preserve whatever base URL and model name the user entered without overriding it based on key prefix!
-  if (provider === 'custom') {
-    return {
-      apiKey,
-      provider: 'custom',
-      providerName: 'Custom / OpenAI-Compatible',
-      model: model || 'custom-model',
-      baseUrl: baseUrl || 'https://api.openai.com/v1',
-      endpoint: 'custom'
-    };
-  }
-
-  // Only run key-prefix auto-detection if provider is explicitly 'auto' or empty
-  if (provider === 'auto' || !provider) {
+  let provider = overrides.provider || settings.provider || 'auto';
+  if (provider === 'auto') {
     const detected = detectProviderFromKey(apiKey);
-    if (detected) {
-      provider = detected.provider;
-      if (!model) model = detected.model;
-    } else if (baseUrl) {
-      provider = 'custom';
-    } else {
-      provider = 'openai';
-    }
+    provider = detected ? detected.provider : (settings.resolvedProvider || 'groq');
   }
 
-  const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
-  let effectiveModel = (model || provDef.defaultModel || 'gpt-4o-mini').trim();
+  const providers = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS) ? AIConfig.AI_PROVIDERS : {};
+  const provDef = providers[provider] || providers.openai || { name: provider, defaultModel: 'llama-3.3-70b-versatile' };
 
-  if (provider === 'groq') {
-    if (!effectiveModel || effectiveModel === 'llama-3.3-70b-versatile' || effectiveModel.includes('llama-3.3-70b')) {
-      effectiveModel = 'llama-3.3-70b-versatile';
-    }
+  let model = overrides.model || (settings.models && settings.models[provider]) || provDef.defaultModel || '';
+  if (typeof AIConfig !== 'undefined' && AIConfig.migrateModelId) {
+    model = AIConfig.migrateModelId(model);
   }
+
+  const baseUrl = (overrides.baseUrl != null ? overrides.baseUrl : settings.baseUrl) || '';
 
   return {
     apiKey,
     provider,
-    providerName: provDef.name,
-    model: effectiveModel,
+    providerName: provider === 'custom' ? 'Custom / OpenAI-Compatible' : (provDef.name || provider),
+    model,
     baseUrl,
-    endpoint: provDef.endpoint
+    endpoint: provDef.endpoint,
+    modelsEndpoint: provDef.modelsEndpoint
   };
 }
 
 function renderAIModelOptions(prov, currentModel) {
+  const providers = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS) ? AIConfig.AI_PROVIDERS : {};
+  const p = providers[prov] || providers.openai || {};
+  const cached = (typeof AIConfig !== 'undefined' && AIConfig.getCachedModels) ? AIConfig.getCachedModels(prov) : null;
+  const models = (cached && cached.length) ? cached : (p.models || []);
+
   if (prov === 'auto') {
     return `
       <option value="llama-3.3-70b-versatile" ${(!currentModel || currentModel === 'llama-3.3-70b-versatile') ? 'selected' : ''}>Llama 3.3 70B Versatile (Groq)</option>
-      <option value="meta-llama/llama-3.1-8b-instruct:free" ${currentModel === 'meta-llama/llama-3.1-8b-instruct:free' ? 'selected' : ''}>meta-llama/llama-3.1-8b-instruct:free (OpenRouter)</option>
-      <option value="gemini-1.5-flash" ${currentModel === 'gemini-1.5-flash' ? 'selected' : ''}>gemini-1.5-flash (Gemini)</option>
-      <option value="gpt-4o-mini" ${currentModel === 'gpt-4o-mini' ? 'selected' : ''}>gpt-4o-mini (OpenAI)</option>
+      <option value="meta-llama/llama-3.3-70b-instruct:free" ${currentModel === 'meta-llama/llama-3.3-70b-instruct:free' ? 'selected' : ''}>Llama 3.3 70B (OpenRouter Free)</option>
+      <option value="gemini-2.0-flash" ${currentModel === 'gemini-2.0-flash' ? 'selected' : ''}>Gemini 2.0 Flash (Google)</option>
+      <option value="gpt-4o-mini" ${currentModel === 'gpt-4o-mini' ? 'selected' : ''}>GPT-4o Mini (OpenAI)</option>
     `;
   }
-  const p = AI_PROVIDERS[prov] || AI_PROVIDERS.openai;
-  if (!p.models || !p.models.length) return '';
-  return p.models.map(m => `
-    <option value="${esc(m.id)}" ${(currentModel === m.id || (!currentModel && m.id === p.defaultModel)) ? 'selected' : ''}>${esc(m.name)}</option>
+
+  if (!models || !models.length) {
+    if (currentModel) {
+      return `<option value="${esc(currentModel)}" selected>${esc(currentModel)}</option>`;
+    }
+    return `<option value="">No models available</option>`;
+  }
+
+  let hasCurrent = models.some(m => m.id === currentModel);
+  let html = '';
+  if (currentModel && !hasCurrent) {
+    html += `<option value="${esc(currentModel)}" selected>${esc(currentModel)} (Current)</option>`;
+  }
+  html += models.map(m => `
+    <option value="${esc(m.id)}" ${(currentModel === m.id || (!currentModel && !hasCurrent && m.id === p.defaultModel)) ? 'selected' : ''}>${esc(m.name || m.id)}</option>
   `).join('');
+  return html;
 }
 
 function updateAIModalFields(prov, selectedModel = null) {
   const stdRow = document.querySelector('#ai-standard-model-row');
   const customFields = document.querySelector('#ai-custom-fields');
   const modelSelect = document.querySelector('#ai-model-select');
-  const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input') || document.querySelector('#ai-key-input, #ai-api-key-input');
-  const customModelInput = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input');
+  const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
+  const customModelInput = document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-input');
+
+  const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { models: {} };
+  const providers = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS) ? AIConfig.AI_PROVIDERS : {};
 
   if (prov === 'custom') {
     if (stdRow) stdRow.style.display = 'none';
     if (customFields) customFields.style.display = 'block';
     if (keyInput) keyInput.placeholder = 'API Key...';
-    if (customModelInput && selectedModel) {
-      customModelInput.value = selectedModel;
+    if (customModelInput) {
+      customModelInput.value = selectedModel || settings.models?.custom || '';
     }
   } else {
     if (stdRow) stdRow.style.display = 'flex';
     if (customFields) customFields.style.display = 'none';
-    const p = AI_PROVIDERS[prov] || AI_PROVIDERS.openai;
-    if (keyInput) keyInput.placeholder = p.placeholder || 'API Key...';
+    const p = providers[prov] || providers.openai || {};
+    if (keyInput) keyInput.placeholder = p.keyPlaceholder || p.placeholder || 'API Key...';
     if (modelSelect) {
-      let activeModel = selectedModel || (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model')) : null) || p.defaultModel;
-      if (prov === 'groq' && (!activeModel || activeModel.includes('llama-3.3-70b'))) {
-        activeModel = 'llama-3.3-70b-versatile';
-      }
+      const activeModel = selectedModel || settings.models?.[prov] || p.defaultModel || '';
       modelSelect.innerHTML = renderAIModelOptions(prov, activeModel);
-      if (typeof localStorage !== 'undefined' && activeModel) {
-        localStorage.setItem('mygym_ai_model', activeModel);
-        localStorage.setItem('ai_model', activeModel);
-      }
-      if (S.cfg) S.cfg.aiModel = activeModel;
     }
   }
 }
 
 function handleAIKeyInput(keyVal) {
   const provSelect = document.querySelector('#ai-provider-select');
-  const currentProv = provSelect ? provSelect.value : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider')) : null);
+  const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : {};
+  const currentProv = provSelect ? provSelect.value : (settings.provider || 'auto');
 
-  // ELIMINATE INVALID AUTO-SWITCHING OVERRIDES:
-  // Only run key-prefix auto-detection if the user has explicitly selected "Auto-Detect from Key"
   if (currentProv && currentProv !== 'auto') {
     return;
   }
@@ -6358,7 +6459,8 @@ function handleAIKeyInput(keyVal) {
     if (provSelect && provSelect.value === 'auto') {
       const modelSelect = document.querySelector('#ai-model-select');
       if (modelSelect) {
-        modelSelect.innerHTML = renderAIModelOptions(detected.provider, detected.model);
+        const curModel = settings.models?.[detected.provider] || detected.model;
+        modelSelect.innerHTML = renderAIModelOptions(detected.provider, curModel);
       }
     }
   } else {
@@ -6372,7 +6474,7 @@ let aiCoachHistory = [];
 let parsedAIRoutine = null;
 
 function saveAIKey() {
-  const keyEl = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input') || document.querySelector('#ai-key-input, #ai-api-key-input');
+  const keyEl = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
   const val = keyEl && keyEl.value != null ? keyEl.value.trim() : '';
   const statusEl = document.querySelector('#ai-conn-status');
 
@@ -6386,56 +6488,77 @@ function saveAIKey() {
 
   const key = val;
   const provEl = document.getElementById('ai-provider-select');
-  const modelEl = document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select');
+  const provVal = provEl && provEl.value ? provEl.value : 'auto';
+
+  let resolvedProv = provVal;
+  if (provVal === 'auto') {
+    const detected = detectProviderFromKey(key);
+    resolvedProv = detected ? detected.provider : 'groq';
+  }
+
+  const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { models: {} };
+  settings.provider = provVal;
+  settings.resolvedProvider = resolvedProv;
+
+  const modelEl = resolvedProv === 'custom'
+    ? (document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-input'))
+    : document.getElementById('ai-model-select');
+  if (modelEl && modelEl.value != null) {
+    const mVal = modelEl.value.trim();
+    if (mVal) {
+      settings.models[resolvedProv] = (typeof AIConfig !== 'undefined' && AIConfig.migrateModelId)
+        ? AIConfig.migrateModelId(mVal)
+        : mVal;
+    }
+  }
+
   const baseUrlEl = document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input');
-
-  let provider = provEl && provEl.value ? provEl.value : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_provider') || localStorage.getItem('ai_provider') || 'auto') : 'auto');
-
-  let model = modelEl && modelEl.value != null ? modelEl.value.trim() : (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model') || '') : '');
-
-  const baseUrl = baseUrlEl && baseUrlEl.value != null ? baseUrlEl.value.trim() : (typeof localStorage !== 'undefined' ? (localStorage.getItem('ai_base_url') || '') : '');
-
-  if (provider === 'groq') {
-    if (!model) {
-      model = 'llama-3.3-70b-versatile';
-    }
-  }
-  model = model.trim();
-
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('mygym_ai_key', key);
-    localStorage.setItem('mygym_ai_provider', provider);
-    localStorage.setItem('mygym_ai_model', model);
-
-    // Maintain backwards compatibility
-    localStorage.setItem('ai_api_key', key);
-    localStorage.setItem('ai_provider', provider);
-    localStorage.setItem('ai_model', model);
-    if (baseUrl) {
-      localStorage.setItem('ai_base_url', baseUrl);
-    }
+  if (baseUrlEl && baseUrlEl.value != null) {
+    settings.baseUrl = baseUrlEl.value.trim();
   }
 
-  // Ensure S.cfg.aiKey, S.cfg.aiProvider, and S.cfg.aiModel are immediately synchronized in memory
-  if (!S.cfg) S.cfg = {};
-  S.cfg.aiKey = key;
-  S.cfg.aiProvider = provider;
-  S.cfg.aiModel = model;
+  const rememberToggle = document.getElementById('ai-remember-key-toggle');
+  const rememberKey = rememberToggle ? rememberToggle.checked : true;
+  settings.rememberKey = rememberKey;
+
+  if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings) {
+    AIConfig.saveAISettings(settings);
+  }
+  if (typeof AIConfig !== 'undefined' && AIConfig.setAIKey) {
+    AIConfig.setAIKey(key, rememberKey);
+  }
+
+  // Key hygiene: ensure key is NEVER stored in S.cfg
+  if (S.cfg) {
+    delete S.cfg.aiKey;
+    delete S.cfg.aiProvider;
+    delete S.cfg.aiModel;
+  }
 
   if (statusEl) {
     statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:600">✓ API Key Saved Successfully</span>`;
   }
 
   toast('API Key saved successfully');
-  return { key, provider, model };
+  return { key, provider: provVal, model: settings.models[resolvedProv] };
 }
 
 function clearAIKey() {
+  if (typeof AIConfig !== 'undefined' && AIConfig.clearAIKey) {
+    AIConfig.clearAIKey();
+  }
   if (typeof localStorage !== 'undefined') {
     localStorage.removeItem('mygym_ai_key');
     localStorage.removeItem('ai_api_key');
   }
-  if (S.cfg) S.cfg.aiKey = '';
+  if (typeof sessionStorage !== 'undefined') {
+    sessionStorage.removeItem('mygym_ai_key');
+  }
+  if (S.cfg) {
+    delete S.cfg.aiKey;
+    delete S.cfg.aiProvider;
+    delete S.cfg.aiModel;
+  }
   const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
   if (keyInput) keyInput.value = '';
   const statusEl = document.querySelector('#ai-conn-status');
@@ -6445,8 +6568,65 @@ function clearAIKey() {
   toast('Key cleared');
 }
 
-function saveAISettings() {
+function saveAISettings(settings) {
+  if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings && settings) {
+    AIConfig.saveAISettings(settings);
+  }
   return saveAIKey();
+}
+
+async function refreshAIModels(provider) {
+  const statusEl = document.querySelector('#ai-conn-status');
+  const refreshBtn = document.getElementById('ai-refresh-models-btn');
+  const key = (typeof AIConfig !== 'undefined' && AIConfig.getAIKey)
+    ? AIConfig.getAIKey()
+    : (document.getElementById('ai-key-input')?.value || '').trim();
+
+  if (!key) {
+    toast('Please enter or save an API key to refresh models.');
+    return;
+  }
+
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = '⏳ Fetching...';
+  }
+
+  const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : {};
+  let prov = provider;
+  if (!prov || prov === 'auto') {
+    prov = settings.resolvedProvider || 'groq';
+  }
+
+  try {
+    if (typeof AIConfig !== 'undefined' && AIConfig.fetchAvailableModels) {
+      const models = await AIConfig.fetchAvailableModels(prov, key, settings.baseUrl);
+      if (models && models.length) {
+        AIConfig.setCachedModels(prov, models);
+        const modelSelect = document.getElementById('ai-model-select');
+        if (modelSelect) {
+          const curModel = settings.models?.[prov] || AIConfig.AI_PROVIDERS[prov]?.defaultModel;
+          modelSelect.innerHTML = renderAIModelOptions(prov, curModel);
+        }
+        toast(`Refreshed ${models.length} models for ${AIConfig.AI_PROVIDERS[prov]?.name || prov}`);
+        if (statusEl) {
+          statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15)">✓ Found ${models.length} models</span>`;
+        }
+      } else {
+        toast('No chat-capable models found.');
+      }
+    }
+  } catch (err) {
+    toast(`Failed to refresh models: ${err.message}`);
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15)">× ${esc(err.message)}</span>`;
+    }
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = '🔄 Refresh';
+    }
+  }
 }
 
 async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
@@ -6454,27 +6634,8 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     ? { systemPrompt: optionsOrSystemPrompt }
     : (optionsOrSystemPrompt || {});
 
-  // Always read current DOM inputs directly before fetch call
-  const domModelEl = typeof document !== 'undefined'
-    ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-select'))
-    : null;
-  const domBaseUrlEl = typeof document !== 'undefined'
-    ? (document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input'))
-    : null;
-  const domProvEl = typeof document !== 'undefined'
-    ? document.getElementById('ai-provider-select')
-    : null;
-  const domKeyEl = typeof document !== 'undefined'
-    ? (document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input'))
-    : null;
-
-  const currentDomModel = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
-  const currentDomBaseUrl = domBaseUrlEl && domBaseUrlEl.value != null ? domBaseUrlEl.value.trim() : '';
-  const currentDomProv = domProvEl && domProvEl.value ? domProvEl.value : '';
-  const currentDomKey = domKeyEl && domKeyEl.value ? domKeyEl.value.trim() : '';
-
-  const config = resolveAIConfig();
-  const apiKey = (options.apiKey || currentDomKey || config.apiKey || '').trim();
+  const config = resolveAIConfig(options);
+  const apiKey = (options.apiKey || config.apiKey || '').trim();
   if (!apiKey) {
     throw new Error('API key missing. Please configure your OpenAI, Groq, OpenRouter, or Gemini key in Settings (⚙️).');
   }
@@ -6483,46 +6644,55 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     throw new Error('Network Offline. An active internet connection is required to contact AI.');
   }
 
-  const provider = options.provider || currentDomProv || config.provider;
-
-  // Do NOT use hardcoded model fallbacks if in Custom mode or user has typed into Model Name input
-  let model;
-  if (options.model) {
-    model = options.model;
-  } else if (currentDomModel) {
-    model = currentDomModel;
-  } else if (provider === 'custom') {
-    model = (typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_model') || localStorage.getItem('ai_model')) : '') || config.model || '';
-  } else {
-    model = config.model;
-  }
-
-  if (provider === 'groq') {
-    if (!model) {
-      model = 'llama-3.3-70b-versatile';
-    }
-  }
-  model = String(model || '').trim();
-
-  const provDef = AI_PROVIDERS[provider] || AI_PROVIDERS.openai;
-  const providerName = provider === 'custom' ? 'Custom / OpenAI-Compatible' : (provDef.name || provider);
+  const provider = config.provider;
+  const model = String(config.model || '').trim();
+  const providerName = config.providerName;
 
   if (provider === 'gemini') {
-    // Google Gemini Direct Client Endpoint (Secure Header-Authenticated)
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-1.5-flash')}:generateContent`;
-    
-    let contents;
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model || 'gemini-2.0-flash')}:generateContent`;
+
+    if (typeof AIConfig !== 'undefined' && AIConfig.checkCSPAllowed) {
+      AIConfig.checkCSPAllowed(endpoint);
+    }
+
+    let systemInstruction = null;
+    let rawContents = [];
+
     if (Array.isArray(promptOrMessages)) {
-      contents = promptOrMessages.map(m => ({
-        role: m.role === 'assistant' || m.role === 'model' ? 'model' : 'user',
-        parts: [{ text: m.content }]
-      }));
-    } else {
-      contents = [];
-      if (options.systemPrompt) {
-        contents.push({ role: 'user', parts: [{ text: `Instructions: ${options.systemPrompt}` }] });
+      for (const m of promptOrMessages) {
+        if (m.role === 'system') {
+          if (!systemInstruction) {
+            systemInstruction = { parts: [{ text: String(m.content) }] };
+          } else {
+            systemInstruction.parts.push({ text: String(m.content) });
+          }
+        } else {
+          const gRole = (m.role === 'assistant' || m.role === 'model') ? 'model' : 'user';
+          rawContents.push({ role: gRole, parts: [{ text: String(m.content) }] });
+        }
       }
-      contents.push({ role: 'user', parts: [{ text: String(promptOrMessages) }] });
+    } else {
+      if (options.systemPrompt) {
+        systemInstruction = { parts: [{ text: String(options.systemPrompt) }] };
+      }
+      rawContents.push({ role: 'user', parts: [{ text: String(promptOrMessages) }] });
+    }
+
+    if (!systemInstruction && options.systemPrompt) {
+      systemInstruction = { parts: [{ text: String(options.systemPrompt) }] };
+    }
+
+    // Ensure roles strictly alternate between user and model
+    const contents = [];
+    for (const c of rawContents) {
+      if (contents.length > 0 && contents[contents.length - 1].role === c.role) {
+        contents[contents.length - 1].parts.push(...c.parts);
+      } else {
+        contents.push({ role: c.role, parts: [...c.parts] });
+      }
+    }
+    if (contents.length > 0 && contents[0].role === 'model') {
+      contents.unshift({ role: 'user', parts: [{ text: 'Hello' }] });
     }
 
     const reqBody = {
@@ -6532,6 +6702,9 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
         ...(options.jsonMode ? { responseMimeType: 'application/json' } : {})
       }
     };
+    if (systemInstruction) {
+      reqBody.systemInstruction = systemInstruction;
+    }
 
     let res;
     try {
@@ -6547,19 +6720,33 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         throw new Error('Network Offline. An active internet connection is required to contact AI.');
       }
-      throw new Error('Network connection blocked or CORS issue.');
+      if (netErr.message && netErr.message.includes('Content Security Policy')) {
+        throw netErr;
+      }
+      throw new Error(`Network connection blocked or CORS issue contacting ${providerName}: ${netErr.message || 'Check connection'}`);
     }
 
     if (!res.ok) {
+      // 400 JSON mode retry: retry once without json mode
+      if (res.status === 400 && options.jsonMode && !options._isJsonRetry) {
+        return await callAI(promptOrMessages, { ...options, jsonMode: false, _isJsonRetry: true });
+      }
+
       const errBody = await res.json().catch(() => ({}));
       const errMsg = errBody?.error?.message || `HTTP ${res.status} ${res.statusText}`;
-      if (res.status === 401 || (res.status === 400 && errMsg.includes('API_KEY_INVALID'))) {
-        throw new Error(`Invalid API Key for ${providerName} (401). Verify your key in Settings.`);
+
+      if (res.status === 401 || res.status === 403 || (res.status === 400 && errMsg.includes('API_KEY_INVALID'))) {
+        throw new Error(`Invalid API key for ${providerName} (${res.status}). Please verify your key in Settings.`);
+      }
+      if (res.status === 404) {
+        throw new Error(`Model "${model}" not found for ${providerName} (404). Please refresh models in Settings and select an active model.`);
       }
       if (res.status === 429) {
-        throw new Error(`Rate limit reached for ${providerName} (429). Please retry in a few moments.`);
+        const retryAfter = res.headers ? res.headers.get('Retry-After') : null;
+        const retryMsg = retryAfter ? ` Please retry after ${retryAfter} seconds.` : ' Please retry in a few moments.';
+        throw new Error(`Rate limit reached for ${providerName} (429).${retryMsg}`);
       }
-      throw new Error(`${providerName} Error: ${errMsg}`);
+      throw new Error(`${providerName} Error (${res.status}): ${esc(errMsg)}`);
     }
 
     const data = await res.json();
@@ -6576,8 +6763,8 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     } else if (provider === 'openai') {
       endpointUrl = 'https://api.openai.com/v1/chat/completions';
     } else if (provider === 'custom') {
-      let bUrl = options.baseUrl || currentDomBaseUrl || config.baseUrl || (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_base_url') : '') || 'https://api.openai.com/v1';
-      bUrl = (bUrl || 'https://api.openai.com/v1').trim();
+      let bUrl = options.baseUrl || config.baseUrl || 'https://api.openai.com/v1';
+      bUrl = bUrl.trim();
       if (!bUrl.endsWith('/chat/completions')) {
         endpointUrl = bUrl.replace(/\/+$/, '') + '/chat/completions';
       } else {
@@ -6585,6 +6772,10 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       }
     } else {
       endpointUrl = 'https://api.openai.com/v1/chat/completions';
+    }
+
+    if (typeof AIConfig !== 'undefined' && AIConfig.checkCSPAllowed) {
+      AIConfig.checkCSPAllowed(endpointUrl);
     }
 
     let messages;
@@ -6617,12 +6808,6 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
     };
 
-    // When calling Groq endpoint, log exact payload to console: { model: model, messages: [{ role: 'user', content: 'hi' }] }
-    // Ensure payload model field contains trimmed exact string llama-3.3-70b-versatile
-    if (provider === 'groq' || endpointUrl.includes('groq.com')) {
-      console.log({ model: bodyPayload.model, messages: bodyPayload.messages });
-    }
-
     let res;
     try {
       res = await fetch(endpointUrl, {
@@ -6634,22 +6819,33 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         throw new Error('Network Offline. An active internet connection is required to contact AI.');
       }
-      throw new Error('Network connection blocked or CORS issue.');
+      if (netErr.message && netErr.message.includes('Content Security Policy')) {
+        throw netErr;
+      }
+      throw new Error(`Network connection blocked or CORS issue contacting ${providerName}: ${netErr.message || 'Check connection'}`);
     }
 
     if (!res.ok) {
+      // 400 JSON mode retry: retry once without response_format
+      if (res.status === 400 && options.jsonMode && !options._isJsonRetry) {
+        return await callAI(promptOrMessages, { ...options, jsonMode: false, _isJsonRetry: true });
+      }
+
       const errBody = await res.json().catch(() => ({}));
       const errMsg = errBody?.error?.message || errBody?.message || `HTTP ${res.status} ${res.statusText}`;
-      if (res.status === 404 && provider === 'groq') {
-        throw new Error("Model not available on your Groq tier. Please select 'llama3-70b-8192' or 'llama3-8b-8192' from the dropdown and test again.");
+
+      if (res.status === 401 || res.status === 403) {
+        throw new Error(`Invalid API key for ${providerName} (${res.status}). Please verify your key in Settings.`);
       }
-      if (res.status === 401) {
-        throw new Error(`Invalid API Key for ${providerName} (401). Verify your key in Settings.`);
+      if (res.status === 404) {
+        throw new Error(`Model "${model}" not found for ${providerName} (404). Please refresh models in Settings and select an active model.`);
       }
       if (res.status === 429) {
-        throw new Error(`Rate limit reached for ${providerName} (429). Please retry in a few moments.`);
+        const retryAfter = res.headers ? res.headers.get('Retry-After') : null;
+        const retryMsg = retryAfter ? ` Please retry after ${retryAfter} seconds.` : ' Please retry in a few moments.';
+        throw new Error(`Rate limit reached for ${providerName} (429).${retryMsg}`);
       }
-      throw new Error(`${providerName} Error: ${errMsg}`);
+      throw new Error(`${providerName} Error (${res.status}): ${esc(errMsg)}`);
     }
 
     const data = await res.json();
@@ -6665,19 +6861,15 @@ async function testAIConnection() {
     statusEl.innerHTML = `<span class="chip" style="color:var(--am);background:rgba(255,159,10,0.15)">Testing direct API connection...</span>`;
   }
 
-  // Read key directly from DOM input. If key in DOM is empty, fall back to localStorage.
+  // Read key directly from DOM input if present, else stored key
   const domKeyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
   let key = (domKeyInput && domKeyInput.value != null ? domKeyInput.value : '').trim();
-  if (!key && typeof localStorage !== 'undefined') {
-    key = (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key') || '').trim();
+  if (!key && typeof AIConfig !== 'undefined' && AIConfig.getAIKey) {
+    key = AIConfig.getAIKey();
   }
 
-  // If key is empty, alert user.
   if (!key) {
     const msg = '× No API Key provided';
-    if (typeof alert === 'function') {
-      try { alert(msg); } catch (_) {}
-    }
     toast(msg);
     if (statusEl) {
       statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">${esc(msg)}</span>`;
@@ -6685,59 +6877,55 @@ async function testAIConnection() {
     return;
   }
 
-  // Read the active provider and model directly from their DOM select/input elements.
   const domProvEl = document.getElementById('ai-provider-select');
-  let activeProvider = domProvEl && domProvEl.value ? domProvEl.value : 'auto';
-
-  if (activeProvider === 'auto') {
+  let provider = domProvEl && domProvEl.value ? domProvEl.value : 'auto';
+  if (provider === 'auto') {
     const detected = detectProviderFromKey(key);
-    activeProvider = detected ? detected.provider : 'openai';
+    provider = detected ? detected.provider : 'groq';
   }
 
-  const domModelEl = activeProvider === 'custom'
-    ? (document.getElementById('ai-model-input') || document.getElementById('ai-custom-model-input'))
-    : (document.getElementById('ai-model-select') || document.getElementById('ai-model-input'));
+  const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : {};
+  const domModelEl = provider === 'custom'
+    ? (document.getElementById('ai-custom-model-input') || document.getElementById('ai-model-input'))
+    : document.getElementById('ai-model-select');
+  let model = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
 
-  // Read exact chosen model from DOM - NEVER override with hardcoded strings!
-  let activeModel = domModelEl && domModelEl.value != null ? domModelEl.value.trim() : '';
-  const provDef = AI_PROVIDERS[activeProvider] || AI_PROVIDERS.openai;
+  const domBaseUrlEl = document.getElementById('ai-baseurl-input') || document.getElementById('ai-base-url-input');
+  let baseUrl = domBaseUrlEl && domBaseUrlEl.value != null ? domBaseUrlEl.value.trim() : '';
 
-  if (!activeModel) {
-    activeModel = provDef.defaultModel || 'gpt-4o-mini';
+  const providers = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS) ? AIConfig.AI_PROVIDERS : {};
+  const provDef = providers[provider] || providers.openai || {};
+
+  if (!model) {
+    model = (settings.models && settings.models[provider]) || provDef.defaultModel || '';
   }
-  activeModel = activeModel.trim();
+  if (!baseUrl && provider === 'custom') {
+    baseUrl = settings.baseUrl || '';
+  }
 
-  // Save settings immediately
-  saveAIKey();
-
-  const effectiveName = activeProvider === 'custom' ? 'Custom' : (provDef.name || activeProvider);
+  const effectiveName = provider === 'custom' ? 'Custom' : (provDef.name || provider);
 
   try {
-    // When calling Groq endpoint, log exact payload to console: { model: model, messages: [{ role: 'user', content: 'hi' }] }
-    if (activeProvider === 'groq') {
-      console.log({ model: activeModel, messages: [{ role: 'user', content: 'hi' }] });
-    }
-
+    // 1-token completion without saving settings
     await callAI('hi', {
       apiKey: key,
-      provider: activeProvider,
-      model: activeModel,
+      provider,
+      model,
+      baseUrl,
+      maxTokens: 1,
       temperature: 0.1
     });
 
     if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(effectiveName)} (${esc(activeModel)})</span>`;
+      statusEl.innerHTML = `<span class="chip" style="color:var(--gn);background:rgba(48,209,88,0.15);font-weight:700">✓ Connected to ${esc(effectiveName)} (${esc(model)})</span>`;
     }
-    toast(`✓ Connected to ${effectiveName} (${activeModel})`);
+    toast(`Connected to ${effectiveName}`);
   } catch (err) {
-    let errText = err.message || 'Connection failed';
-    if (activeProvider === 'groq' && (errText.includes('404') || errText.toLowerCase().includes('model_not_found') || errText.toLowerCase().includes('does not exist') || errText.toLowerCase().includes('not found') || errText.toLowerCase().includes('tier'))) {
-      errText = "Model not available on your Groq tier. Please select 'llama3-70b-8192' or 'llama3-8b-8192' from the dropdown and test again.";
-    }
+    const errMsg = err?.message || 'Connection failed';
     if (statusEl) {
-      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">✕ ${esc(errText)}</span>`;
+      statusEl.innerHTML = `<span class="chip" style="color:var(--rd);background:rgba(255,69,58,0.15);font-weight:600">× ${esc(errMsg)}</span>`;
     }
-    toast(`AI Test Failed: ${errText}`);
+    toast(`AI Connection Error: ${errMsg}`);
   }
 }
 
@@ -7367,6 +7555,16 @@ function finishWorkout() {
     let r = null;
 
     try {
+      const mapSetType = (t) => {
+        if (!t) return 'normal';
+        const low = String(t).toLowerCase();
+        if (low === 'w' || low === 'warmup') return 'warmup';
+        if (low === 'd' || low === 'drop') return 'drop';
+        if (low === 'f' || low === 'failure') return 'failure';
+        if (low === 'a' || low === 'amrap') return 'amrap';
+        return 'normal';
+      };
+
       // 1. Process exercises and completed sets
       ex = exercises.map(x => ({
         id: x.id,
@@ -7380,6 +7578,7 @@ function finishWorkout() {
             r: Math.max(0, Number(s.r) || 0),
             rpe: s.rpe === '' || s.rpe == null ? (rirVal != null ? 10 - rirVal : null) : Number(s.rpe),
             rir: rirVal,
+            type: mapSetType(s.type),
             uni: !!x.uni,
             sideL: !!s.sideL,
             sideR: !!s.sideR,
@@ -7399,6 +7598,7 @@ function finishWorkout() {
             r: Math.max(0, Number(s.r) || 0),
             rpe: s.rpe === '' || s.rpe == null ? null : Number(s.rpe),
             rir: s.rir != null && s.rir !== '' ? Number(s.rir) : null,
+            type: mapSetType(s.type),
             uni: !!x.uni,
             sideL: !!s.sideL,
             sideR: !!s.sideR,
@@ -7986,7 +8186,7 @@ _global.savePastWorkout = savePastWorkout;
 _global.editPastWorkout = editPastWorkout;
 
 // ---- Event Listeners ----
-document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
   unlock();
   const t = e.target.closest('[data-a]');
   if (!t) return;
@@ -8327,28 +8527,43 @@ document.addEventListener('click', e => {
 
     // Force Update & Shell Cache Bust
     case 'forceupdate': {
-      if (confirm('Clear local app shell cache and force reload latest version?')) {
-        (async () => {
-          try {
-            if ('serviceWorker' in navigator) {
-              const registrations = await navigator.serviceWorker.getRegistrations();
-              for (const r of registrations) { await r.unregister(); }
-            }
-            if ('caches' in window) {
-              const keys = await caches.keys();
-              for (const k of keys) { await caches.delete(k); }
-            }
-            localStorage.setItem('mygym_shell_version', SHELL_VERSION);
-          } catch (err) {
-            console.warn('Cache clearance issue:', err);
+      modal(`
+        <div class="confirm-modal">
+          <div style="font-size:36px;margin-bottom:8px">🔄</div>
+          <h2 style="margin-bottom:8px">Force App Update?</h2>
+          <p class="t2 sm" style="margin-bottom:16px;line-height:1.5">
+            This will clear the offline app cache and reload the latest version of MyGyM. Your workouts, routines, and settings will remain safe.
+          </p>
+          <div class="row g">
+            <button class="btn s" data-a="close" style="flex:1">Cancel</button>
+            <button class="btn s" data-a="confirm-force-update" style="flex:1;background:var(--ac);color:#fff">Update Now</button>
+          </div>
+        </div>
+      `);
+      return;
+    }
+    case 'confirm-force-update': {
+      closeModal();
+      (async () => {
+        try {
+          if ('serviceWorker' in navigator) {
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const r of registrations) { await r.unregister(); }
           }
-          try {
-            window.location.reload(true);
-          } catch (_) {
-            window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
+          if ('caches' in window) {
+            const keys = await caches.keys();
+            for (const k of keys) { await caches.delete(k); }
           }
-        })();
-      }
+          localStorage.setItem('mygym_shell_version', SHELL_VERSION);
+        } catch (err) {
+          console.warn('Cache clearance issue:', err);
+        }
+        try {
+          window.location.reload(true);
+        } catch (_) {
+          window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
+        }
+      })();
       return;
     }
 
@@ -8971,6 +9186,10 @@ document.addEventListener('click', e => {
       clearAIKey();
       return;
     }
+    case 'refresh-ai-models': {
+      refreshAIModels(document.getElementById('ai-provider-select')?.value);
+      return;
+    }
     case 'toggle-key-vis': {
       const keyInput = document.getElementById('ai-key-input') || document.getElementById('ai-api-key-input');
       if (keyInput) {
@@ -9096,13 +9315,35 @@ document.addEventListener('click', e => {
       return;
     }
     case 'cancel':
-      if (confirm('Discard this workout?')) {
-        S.act = null;
-        ls.set('act', null);
-        save('act');
-        stopRest();
-        view = 'train';
-        render();
+      modal(`
+        <div class="destructive-confirm-modal">
+          <div style="font-size:36px;margin-bottom:8px">🛑</div>
+          <h2 style="color:var(--rd);margin-bottom:8px">Discard Workout?</h2>
+          <p class="t2 sm" style="margin-bottom:16px;line-height:1.5">
+            Are you sure you want to discard this active workout? All logged sets for this session will be lost.
+          </p>
+          <div class="row g">
+            <button class="btn s" data-a="close" style="flex:1">Keep Workout</button>
+            <button class="btn s red" data-a="confirm-discard-workout" style="flex:1">Discard</button>
+          </div>
+        </div>
+      `);
+      return;
+    case 'confirm-discard-workout':
+      S.act = null;
+      ls.set('act', null);
+      save('act');
+      stopRest();
+      closeModal();
+      view = 'train';
+      render();
+      toast('Workout discarded');
+      return;
+    case 'confirm-restore-backup':
+      closeModal();
+      if (_pendingBackupData) {
+        await applySanitizedBackup(_pendingBackupData);
+        _pendingBackupData = null;
       }
       return;
     case 'hist': {
@@ -9127,13 +9368,24 @@ document.addEventListener('click', e => {
       return;
     }
     case 'deletepastlog': {
-      if (!confirm('Are you sure you want to delete this workout log? This action cannot be undone.')) return;
       const logIdx = S.logs.findIndex(x => String(x.id) === String(id));
       if (logIdx >= 0) {
         const deleted = S.logs.splice(logIdx, 1)[0];
+        _lastDeletedLog = { log: deleted, index: logIdx };
         save('logs', S.logs);
         closeModal();
-        toast(`Deleted "${deleted.name || 'workout'}" from History`);
+        toast(`Deleted "${esc(deleted.name || 'workout')}" · <button class="chip" data-a="undodeletelog" style="background:var(--ac);color:#fff;border:none;margin-left:6px;padding:2px 8px;cursor:pointer">Undo</button>`, 6000);
+        render();
+      }
+      return;
+    }
+    case 'undodeletelog': {
+      if (_lastDeletedLog && _lastDeletedLog.log) {
+        const { log, index } = _lastDeletedLog;
+        S.logs.splice(index >= 0 ? index : S.logs.length, 0, log);
+        _lastDeletedLog = null;
+        save('logs', S.logs);
+        toast(`Restored "${esc(log.name || 'workout')}" ✓`);
         render();
       }
       return;
@@ -9211,7 +9463,29 @@ document.addEventListener('click', e => {
       close();
       break;
     }
-    case 'delr': if (confirm('Delete this routine?')) { S.routines = S.routines.filter(r => r.id !== E.id); save('routines'); close(); break; } return;
+    case 'delr': {
+      const routineIdx = S.routines.findIndex(r => r.id === E.id);
+      if (routineIdx >= 0) {
+        const deleted = S.routines.splice(routineIdx, 1)[0];
+        _lastDeletedRoutine = { routine: deleted, index: routineIdx };
+        save('routines', S.routines);
+        close();
+        toast(`Routine "${esc(deleted.name)}" deleted · <button class="chip" data-a="undodeleteroutine" style="background:var(--ac);color:#fff;border:none;margin-left:6px;padding:2px 8px;cursor:pointer">Undo</button>`, 6000);
+        render();
+      }
+      return;
+    }
+    case 'undodeleteroutine': {
+      if (_lastDeletedRoutine && _lastDeletedRoutine.routine) {
+        const { routine, index } = _lastDeletedRoutine;
+        S.routines.splice(index >= 0 ? index : S.routines.length, 0, routine);
+        _lastDeletedRoutine = null;
+        save('routines', S.routines);
+        toast(`Routine "${esc(routine.name)}" restored ✓`);
+        render();
+      }
+      return;
+    }
     case 'exp': exp(); return;
     case 'expcsv': expCSV(); return;
     case 'opensettings': showSettingsModal(); return;
@@ -9439,14 +9713,14 @@ document.addEventListener('input', e => {
   }
   if (e.target.id === 'ai-model-input' || e.target.id === 'ai-custom-model-input') {
     const mVal = e.target.value.trim();
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('mygym_ai_model', mVal);
-      localStorage.setItem('ai_model', mVal);
-    }
-    if (S.cfg) S.cfg.aiModel = mVal;
+    const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { models: {} };
+    settings.models.custom = (typeof AIConfig !== 'undefined' && AIConfig.migrateModelId) ? AIConfig.migrateModelId(mVal) : mVal;
+    if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings) AIConfig.saveAISettings(settings);
   }
   if (e.target.id === 'ai-baseurl-input' || e.target.id === 'ai-base-url-input') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_base_url', e.target.value.trim());
+    const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : {};
+    settings.baseUrl = e.target.value.trim();
+    if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings) AIConfig.saveAISettings(settings);
   }
 });
 document.addEventListener('paste', e => {
@@ -9478,25 +9752,35 @@ document.addEventListener('change', e => {
   }
   if (t.id === 'ai-provider-select') {
     const prov = t.value;
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('mygym_ai_provider', prov);
-      localStorage.setItem('ai_provider', prov);
+    const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : {};
+    settings.provider = prov;
+    if (prov !== 'auto') {
+      settings.resolvedProvider = prov;
     }
-    if (S.cfg) S.cfg.aiProvider = prov;
+    if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings) {
+      AIConfig.saveAISettings(settings);
+    }
     updateAIModalFields(prov);
     return;
   }
   if (t.id === 'ai-model-select' || t.id === 'ai-model-input' || t.id === 'ai-custom-model-input') {
     const mVal = t.value.trim ? t.value.trim() : t.value;
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('mygym_ai_model', mVal);
-      localStorage.setItem('ai_model', mVal);
+    const provSelect = document.querySelector('#ai-provider-select');
+    const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { models: {} };
+    const curProv = provSelect ? provSelect.value : (settings.provider || 'auto');
+    const effectiveProv = curProv === 'auto' ? (settings.resolvedProvider || 'groq') : curProv;
+    settings.models[effectiveProv] = (typeof AIConfig !== 'undefined' && AIConfig.migrateModelId) ? AIConfig.migrateModelId(mVal) : mVal;
+    if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings) {
+      AIConfig.saveAISettings(settings);
     }
-    if (S.cfg) S.cfg.aiModel = mVal;
     return;
   }
   if (t.id === 'ai-baseurl-input' || t.id === 'ai-base-url-input') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem('ai_base_url', t.value.trim());
+    const settings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : {};
+    settings.baseUrl = t.value.trim();
+    if (typeof AIConfig !== 'undefined' && AIConfig.saveAISettings) {
+      AIConfig.saveAISettings(settings);
+    }
     return;
   }
   if (t.id === 'calib-goal') {
@@ -9667,10 +9951,12 @@ async function init() {
   await loadExercises();
 
   // 2. Load stored state from IndexedDB / localStorage
-  for (const k of ['routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises', 'nutrition']) {
+  for (const k of ['schemaVersion', 'routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises', 'nutrition']) {
     try {
       const v = await get(k);
-      if (k === 'cfg' && v && typeof v === 'object') {
+      if (k === 'schemaVersion' && v != null) {
+        S.schemaVersion = Number(v) || 1;
+      } else if (k === 'cfg' && v && typeof v === 'object') {
         S.cfg = { ...S.cfg, ...v };
       } else if (k === 'deload' && v && typeof v === 'object') {
         S.deload = { ...S.deload, ...v };
@@ -9698,6 +9984,39 @@ async function init() {
   if (!S.nutrition || typeof S.nutrition !== 'object') {
     S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
   }
+
+  // 2b. Execute ordered migrations on stored state
+  await runMigrations(S);
+
+  // Key hygiene: purge any lingering API keys from S.cfg and stored lift_cfg
+  if (S.cfg) {
+    delete S.cfg.aiKey;
+    delete S.cfg.aiProvider;
+    delete S.cfg.aiModel;
+    delete S.cfg.apiKey;
+    delete S.cfg.ai_api_key;
+  }
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const storedCfg = localStorage.getItem('lift_cfg');
+      if (storedCfg) {
+        const parsedCfg = JSON.parse(storedCfg);
+        if (parsedCfg && typeof parsedCfg === 'object') {
+          let dirty = false;
+          for (const k of ['aiKey', 'aiProvider', 'aiModel', 'apiKey', 'ai_api_key']) {
+            if (k in parsedCfg) {
+              delete parsedCfg[k];
+              dirty = true;
+            }
+          }
+          if (dirty) {
+            localStorage.setItem('lift_cfg', JSON.stringify(parsedCfg));
+            await put('cfg', parsedCfg);
+          }
+        }
+      }
+    }
+  } catch (_) {}
 
   // 3. Seed starter routines & split schedule if fresh install or empty routines
   if ((await get('seeded')) == null || !S.routines || !S.routines.length) {
@@ -9756,7 +10075,7 @@ async function init() {
   render();
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.2.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.2.2').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -9823,6 +10142,8 @@ if (typeof globalThis !== 'undefined') {
     commitAIRoutine,
     openAICoachDrawer,
     sendAICoachMessage,
+    refreshAIModels,
+    AIConfig,
     get aiCoachHistory() { return aiCoachHistory; },
     set aiCoachHistory(v) { aiCoachHistory = v; },
     get parsedAIRoutine() { return parsedAIRoutine; },
@@ -9947,7 +10268,12 @@ if (typeof globalThis !== 'undefined') {
     autocalcMealCals,
     showNutritionTargetsModal,
     saveNutritionTargetsFromModal,
-    applyMacroPreset
+    applyMacroPreset,
+    runMigrations,
+    MIGRATIONS,
+    SCHEMA_VERSION,
+    calcPlates,
+    applySanitizedBackup
   };
 }
 

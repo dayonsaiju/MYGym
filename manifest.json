@@ -14,5 +14,6 @@
       "type": "image/png",
       "purpose": "any maskable"
     }
-  ]
+  ],
+  "version": "6.2.2"
 }

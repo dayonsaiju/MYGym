@@ -13,12 +13,12 @@
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css?v=6.2.0">
+  <link rel="stylesheet" href="./style.css?v=6.2.2">
   <title>MyGyM</title>
   <script>
     // Self-healing force cache clear & auto-reload for iOS Safari PWA
     (function() {
-      var SHELL_VERSION = 'mygym-core-v6.2.0-nutrition';
+      var SHELL_VERSION = 'mygym-core-v6.2.2';
       var cachedVersion = null;
       try { cachedVersion = localStorage.getItem('mygym_shell_version'); } catch(_) {}
       if (cachedVersion !== SHELL_VERSION) {
@@ -87,7 +87,8 @@
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script src="./calc.js?v=6.2.0"></script>
-  <script type="module" src="./app.js?v=6.2.0"></script>
+  <script src="./calc.js?v=6.2.2"></script>
+  <script src="./ai-config.js?v=6.2.2"></script>
+  <script type="module" src="./app.js?v=6.2.2"></script>
 </body>
 </html>

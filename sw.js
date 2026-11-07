@@ -1,13 +1,17 @@
-const C = 'mygym-core-v6.2.0-nutrition';
+const C = 'mygym-core-v6.2.2';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=6.2.0',
+  './style.css?v=6.2.2',
   './calc.js',
-  './calc.js?v=6.2.0',
+  './calc.js?v=6.2.2',
+  './ai-config.js',
+  './ai-config.js?v=6.2.2',
+  './ai-config.js',
+  './ai-config.js?v=6.2.0',
   './app.js',
-  './app.js?v=6.2.0',
+  './app.js?v=6.2.2',
   './manifest.json',
   './icon.png',
   './exercises.json',

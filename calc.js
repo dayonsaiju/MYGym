@@ -61,7 +61,8 @@
 
   const getEndOfWeek = (dateOrTime, weekStartDay = 'mon') => {
     const start = getStartOfWeek(dateOrTime, weekStartDay);
-    return new Date(start.getTime() + 7 * 86400000 - 1);
+    // Use calendar date math instead of millisecond addition to remain completely immune to DST transitions
+    return new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6, 23, 59, 59, 999);
   };
 
   // 3. 1RM & True PR Engine
@@ -160,35 +161,58 @@
       return null;
     }
 
-    if (w > maxWeight && w > 0) {
+    // Flag drop/failure sets so they count toward volume/fatigue without polluting standard rep PR comparisons
+    const isDropOrFailure = set.type === 'drop' || set.type === 'failure';
+
+    if (w > maxWeight && w > 0 && !isDropOrFailure) {
       return {
         isPR: true,
         type: 'weight',
-        desc: `New Heavy Weight PR: ${w} kg (+${rd(w - maxWeight)} kg)`,
         oldVal: maxWeight,
         newVal: w,
-        w, r, e1RM: cur1RM
+        diff: rd(w - maxWeight),
+        w, r, e1RM: cur1RM,
+        flag: null,
+        get desc() {
+          return `New Heavy Weight PR: ${w} kg (+${rd(w - maxWeight)} kg)`;
+        }
       };
     }
 
-    if (cur1RM > max1RM && cur1RM > 0) {
+    if (cur1RM > max1RM && cur1RM > 0 && !isDropOrFailure) {
       return {
         isPR: true,
         type: '1rm',
-        desc: `New Estimated 1RM PR: ${cur1RM} kg (+${rd(cur1RM - max1RM)} kg)`,
         oldVal: max1RM,
         newVal: cur1RM,
-        w, r, e1RM: cur1RM
+        diff: rd(cur1RM - max1RM),
+        w, r, e1RM: cur1RM,
+        flag: null,
+        get desc() {
+          return `New Estimated 1RM PR: ${cur1RM} kg (+${rd(cur1RM - max1RM)} kg)`;
+        }
       };
     }
 
-    if (r > maxRepsAtWeight && maxRepsAtWeight > 0 && w > 0) {
+    if (r > maxRepsAtWeight && maxRepsAtWeight > 0 && w > 0 && !isDropOrFailure) {
       return {
         isPR: true,
         type: 'reps',
-        desc: `New Rep PR at ${w} kg: ${r} reps (+${r - maxRepsAtWeight} reps)`,
         oldVal: maxRepsAtWeight,
         newVal: r,
+        diff: r - maxRepsAtWeight,
+        w, r, e1RM: cur1RM,
+        flag: null,
+        get desc() {
+          return `New Rep PR at ${w} kg: ${r} reps (+${r - maxRepsAtWeight} reps)`;
+        }
+      };
+    }
+
+    if (isDropOrFailure) {
+      return {
+        isPR: false,
+        flag: set.type,
         w, r, e1RM: cur1RM
       };
     }
@@ -197,8 +221,11 @@
   };
 
   // 5. Tonnage & Volume
+  // Single default: includeBodyweightInVolume defaults to FALSE
   const calcSetVolume = (s, ex = null, cfg = {}, userBodyweight = 75) => {
     if (!s || !isSetDone(s, ex?.uni)) return 0;
+    // Warmup sets never count toward volume
+    if (isWarmupSet(s)) return 0;
     if (ex && isCardioOrMobility(ex)) return 0;
 
     const r = Math.max(0, Number(s.r) || 0);
@@ -207,8 +234,11 @@
     let w = Math.max(0, Number(s.w) || 0);
     const bw = Math.max(30, Number(userBodyweight) || 75);
 
+    // Single source of truth default: includeBodyweightInVolume is FALSE
+    const includeBw = cfg && cfg.includeBodyweightInVolume === true;
+
     if (ex && isBodyweightMovement(ex)) {
-      if (cfg.includeBodyweightInVolume !== false) {
+      if (includeBw) {
         w = bw + (w > 0 ? w : 0);
       } else {
         w = (w > 0 ? w : 0);
@@ -305,11 +335,8 @@
         isCalibrating: true,
         distinctWorkoutDays,
         totalHistoryDays,
-        status: `⚡ Calibrating Baseline (Day ${calibDay} of 14) 🔵`,
+        calibDay,
         zoneCode: 'calibrating',
-        color: 'var(--bl)',
-        desc: 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.',
-        tooltip: 'Log workouts over 2-3 weeks to build your chronic fatigue baseline.',
         acuteWorkouts,
         chronicWorkouts
       };
@@ -322,31 +349,15 @@
       acwr = 1.0;
     }
 
-    let status = 'Optimal Progress Zone 🟢';
     let zoneCode = 'optimal';
-    let color = 'var(--gn)';
-    let desc = 'Balanced for steady progressive overload';
-
     if (acwr < 0.8) {
-      status = 'Recovery / Underreaching Zone 🔵';
       zoneCode = 'under';
-      color = 'var(--bl)';
-      desc = 'Low acute fatigue · Volume progression recommended';
     } else if (acwr <= 1.3) {
-      status = 'Optimal Progress Zone 🟢';
       zoneCode = 'optimal';
-      color = 'var(--gn)';
-      desc = 'Sweet spot for hypertrophy and safe progression';
     } else if (acwr <= 1.5) {
-      status = 'Overreaching Caution Zone 🟡';
       zoneCode = 'caution';
-      color = 'var(--am)';
-      desc = 'Fatigue accumulating faster than recovery';
     } else {
-      status = 'High Injury Risk / Deload Zone 🔴';
       zoneCode = 'danger';
-      color = 'var(--rd)';
-      desc = 'Workload spike detected · Consider a deload session';
     }
 
     return {
@@ -358,10 +369,7 @@
       isCalibrating: false,
       distinctWorkoutDays,
       totalHistoryDays,
-      status,
       zoneCode,
-      color,
-      desc,
       acuteWorkouts,
       chronicWorkouts
     };
@@ -602,24 +610,54 @@
   };
 
   // 11. BMR (Mifflin-St Jeor) & Macros
-  const calcBMR = (gender = 'male', weightKg, heightCm, age = 28) => {
-    const w = Number(weightKg) || 75;
-    const h = Number(heightCm) || 178;
-    const a = Number(age) || 28;
-    const isFemale = gender === 'female';
+  const calcBMR = (gender, weightKg, heightCm, age) => {
+    const w = Number(weightKg);
+    const h = Number(heightCm);
+    const a = Number(age);
+    const g = String(gender || '').toLowerCase();
+    const isFemale = g === 'female';
+    const isMale = g === 'male';
+
+    if (!isFemale && !isMale) {
+      return { status: 'needs_profile', bmr: null, missing: 'gender' };
+    }
+    if (!w || w <= 0 || !h || h <= 0 || !a || a <= 0) {
+      return { status: 'needs_profile', bmr: null, missing: !w ? 'weight' : (!h ? 'height' : 'age') };
+    }
+
     // Mifflin-St Jeor: 10·kg + 6.25·cm − 5·age + 5 (male) or −161 (female)
     const base = 10 * w + 6.25 * h - 5 * a;
     return Math.round(isFemale ? base - 161 : base + 5);
   };
 
   const calcTDEE = (bmr, activityMultiplier = 1.45) => {
+    if (bmr && typeof bmr === 'object' && bmr.status === 'needs_profile') {
+      return { status: 'needs_profile', tdee: null };
+    }
+    const b = Number(bmr);
+    if (!b || b <= 0) {
+      return { status: 'needs_profile', tdee: null };
+    }
     const mult = Number(activityMultiplier) || 1.45;
-    return Math.round(bmr * mult);
+    return Math.round(b * mult);
   };
 
   const calcMacros = (targetCalories, weightKg, goal = 'cut') => {
-    const cals = Math.max(1000, Number(targetCalories) || 2000);
-    const w = Math.max(35, Number(weightKg) || 75);
+    const cals = Number(targetCalories);
+    const w = Number(weightKg);
+    if (!cals || cals <= 0 || !w || w <= 0) {
+      return {
+        status: 'needs_profile',
+        calories: 0,
+        protein: 0,
+        proteinKcal: 0,
+        fat: 0,
+        fatKcal: 0,
+        carbs: 0,
+        carbKcal: 0,
+        warning: 'Profile setup required (target calories and weight)'
+      };
+    }
 
     const proteinRatio = (goal === 'cut' || goal === 'sixpack') ? 2.2 : (goal === 'bulk' ? 2.0 : 2.2);
     const proteinG = Math.round(w * proteinRatio);
@@ -639,6 +677,7 @@
     }
 
     return {
+      status: 'ok',
       calories: Math.round(cals),
       protein: proteinG,
       proteinKcal,
@@ -683,6 +722,35 @@
     };
   };
 
+  // 14. Barbell Plate Calculator (Deterministic Float Math)
+  const calcPlates = (totalWeight, barWeight = 20, plateTypes = [20, 15, 10, 5, 2.5, 1.25]) => {
+    const tot = Math.max(0, Number(totalWeight) || 0);
+    const bar = Math.max(0, Number(barWeight) || 0);
+    const targetPerSide = Math.max(0, (tot - bar) / 2);
+    const sortedPlates = [...plateTypes].map(Number).sort((a, b) => b - a);
+    let rem = targetPerSide;
+    const plates = [];
+    for (const p of sortedPlates) {
+      if (p <= 0) continue;
+      const count = Math.floor((rem + 0.0001) / p);
+      if (count > 0) {
+        plates.push({ weight: p, count });
+        rem = Math.round((rem - count * p) * 100) / 100;
+      }
+    }
+    const loadedPerSide = plates.reduce((sum, r) => sum + r.weight * r.count, 0);
+    const loadedWeight = roundWeight(bar + 2 * loadedPerSide, 0.01);
+    return {
+      barWeight: bar,
+      perSide: roundWeight(targetPerSide, 0.01),
+      weightPerSide: roundWeight(targetPerSide, 0.01),
+      plates,
+      remainder: roundWeight(rem, 0.01),
+      rem: roundWeight(rem, 0.01),
+      loadedWeight
+    };
+  };
+
   return {
     roundWeight,
     rd,
@@ -719,7 +787,8 @@
     calcTDEE,
     calcMacros,
     calcEPOCBurn,
-    calcWorkoutCalorieBurn
+    calcWorkoutCalorieBurn,
+    calcPlates
   };
 });
 

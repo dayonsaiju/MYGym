@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 
-const rootDir = '/Users/dayonsaiju/Documents/MYGym';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
 const calcCode = fs.readFileSync(path.join(rootDir, 'calc.js'), 'utf8');
+const aiConfigCode = fs.readFileSync(path.join(rootDir, 'ai-config.js'), 'utf8');
 const appCode = fs.readFileSync(path.join(rootDir, 'app.js'), 'utf8');
 const swCode = fs.readFileSync(path.join(rootDir, 'sw.js'), 'utf8');
 const htmlCode = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
@@ -242,6 +246,12 @@ const mockWindow = {
     setItem(k, v) { this._data[k] = String(v); },
     removeItem(k) { delete this._data[k]; }
   },
+  sessionStorage: {
+    _data: {},
+    getItem(k) { return this._data[k] ?? null; },
+    setItem(k, v) { this._data[k] = String(v); },
+    removeItem(k) { delete this._data[k]; }
+  },
   navigator: {
     _lastVibrate: null,
     vibrate(pattern) {
@@ -333,6 +343,8 @@ mockWindow.globalThis = mockWindow;
 const context = vm.createContext(mockWindow);
 const calcScript = new vm.Script(calcCode);
 calcScript.runInContext(context);
+const aiConfigScript = new vm.Script(aiConfigCode);
+aiConfigScript.runInContext(context);
 const script = new vm.Script(appCode);
 script.runInContext(context);
 
@@ -962,26 +974,26 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.2.0-nutrition, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.2.0-nutrition';"), 'sw.js must use mygym-core-v6.2.0-nutrition cache name');
-  assert(swCode.includes("'./style.css?v=6.2.0'"), 'sw.js must precache style.css?v=6.2.0');
-  assert(swCode.includes("'./app.js?v=6.2.0'"), 'sw.js must precache app.js?v=6.2.0');
-  assert(swCode.includes("'./calc.js?v=6.2.0'"), 'sw.js must precache calc.js?v=6.2.0');
+it('sw.js cache key is bumped to mygym-core-v6.2.2, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.2.2';"), 'sw.js must use mygym-core-v6.2.2 cache name');
+  assert(swCode.includes("'./style.css?v=6.2.2'"), 'sw.js must precache style.css?v=6.2.2');
+  assert(swCode.includes("'./app.js?v=6.2.2'"), 'sw.js must precache app.js?v=6.2.2');
+  assert(swCode.includes("'./calc.js?v=6.2.2'"), 'sw.js must precache calc.js?v=6.2.2');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and updated shell version with cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.2.0'), 'index.html must link style.css?v=6.2.0');
-  assert(htmlCode.includes('app.js?v=6.2.0'), 'index.html must load app.js?v=6.2.0');
-  assert(htmlCode.includes('calc.js?v=6.2.0'), 'index.html must load calc.js?v=6.2.0');
-  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.2.0-nutrition'"), 'index.html must use mygym-core-v6.2.0-nutrition');
+  assert(htmlCode.includes('style.css?v=6.2.2'), 'index.html must link style.css?v=6.2.2');
+  assert(htmlCode.includes('app.js?v=6.2.2'), 'index.html must load app.js?v=6.2.2');
+  assert(htmlCode.includes('calc.js?v=6.2.2'), 'index.html must load calc.js?v=6.2.2');
+  assert(htmlCode.includes("SHELL_VERSION = 'mygym-core-v6.2.2'"), 'index.html must use mygym-core-v6.2.2');
   assert(htmlCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'index.html must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.2.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.2.0-nutrition');
+  assert.equal(api.APP_VERSION, '6.2.2');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.2.2');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2194,11 +2206,15 @@ it('Tonnage rules: count only done sets, respect dumbbellWeightMode, bodyweight/
   const volAsLogged = Calc.calcSetVolume(dbSet, dbEx, { dumbbellWeightMode: 'as_logged' });
   assert.equal(volAsLogged, 200); // 20 * 10 * 1
 
-  // Bodyweight volume = bodyweight + added load
+  // Bodyweight volume: default is external load only (includeBodyweightInVolume: false)
   const bwEx = { id: 'bw1', name: 'Weighted Pull Up', type: 'bodyweight' };
   const bwSet = { w: 10, r: 5, done: true }; // 10kg added load
-  const bwVol = Calc.calcSetVolume(bwSet, bwEx, {}, 75);
-  assert.equal(bwVol, (75 + 10) * 5); // 425 kg
+  const bwVolDefault = Calc.calcSetVolume(bwSet, bwEx, {}, 75);
+  assert.equal(bwVolDefault, 10 * 5); // 50 kg (external load only by default)
+
+  // Explicitly enabled bodyweight volume: bodyweight + added load
+  const bwVolExplicit = Calc.calcSetVolume(bwSet, bwEx, { includeBodyweightInVolume: true }, 75);
+  assert.equal(bwVolExplicit, (75 + 10) * 5); // 425 kg
 
   // Assisted volume = max(0, bodyweight - assist load)
   const asEx = { id: 'as1', name: 'Assisted Dip', type: 'assisted' };
@@ -2600,7 +2616,7 @@ it('Auto-detection correctly identifies Groq, OpenRouter, Gemini, and OpenAI fro
   // Google Gemini
   const gemini = detect('AIzaSyD-1234567890abcdef');
   assert.equal(gemini.provider, 'gemini');
-  assert.equal(gemini.model, 'gemini-1.5-flash');
+  assert.equal(gemini.model, 'gemini-2.0-flash');
   assert.equal(gemini.name, 'Google Gemini');
 
   // OpenAI
@@ -2797,9 +2813,9 @@ it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6
   assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), 'gsk_test_whitespace_key_789');
   assert.equal(mockWindow.localStorage.getItem('mygym_ai_provider'), 'groq');
   assert.equal(mockWindow.localStorage.getItem('mygym_ai_model'), 'llama-3.3-70b-versatile');
-  assert.equal(api.S.cfg.aiKey, 'gsk_test_whitespace_key_789');
-  assert.equal(api.S.cfg.aiProvider, 'groq');
-  assert.equal(api.S.cfg.aiModel, 'llama-3.3-70b-versatile');
+  assert.equal(api.S.cfg.aiKey, undefined, 'S.cfg must never store aiKey');
+  assert.equal(api.S.cfg.aiProvider, undefined, 'S.cfg must not store aiProvider');
+  assert.equal(api.S.cfg.aiModel, undefined, 'S.cfg must not store aiModel');
   assert(elementsMap['#toast'].innerHTML.includes('API Key saved successfully'));
 
   // 3. Test testAIConnection(): empty key alerts user
@@ -2810,21 +2826,12 @@ it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6
   mockWindow.alert = (msg) => { alertMsg = msg; };
   elementsMap['#toast'].innerHTML = '';
   await api.testAIConnection();
-  assert(alertMsg && (alertMsg.includes('No API Key') || alertMsg.includes('Please enter an API key')));
+  assert(elementsMap['#toast'].innerHTML.includes('No API Key') || (alertMsg && alertMsg.includes('No API Key')));
 
-  // 4. Test testAIConnection() with Groq logs payload to console and calls groq endpoint
+  // 4. Test testAIConnection() with Groq calls groq endpoint read-only
   keyInput.value = 'gsk_test_valid_groq_key';
   provSelect.value = 'groq';
   modelSelect.value = 'llama-3.3-70b-versatile';
-
-  let capturedConsolePayload = null;
-  const origConsoleLog = console.log;
-  console.log = (payload, ...rest) => {
-    if (payload && payload.model && payload.messages) {
-      capturedConsolePayload = payload;
-    }
-    origConsoleLog(payload, ...rest);
-  };
 
   let capturedUrl = null;
   let capturedBody = null;
@@ -2838,14 +2845,10 @@ it('Groq model strings, saveAIKey persistence, and testAIConnection pipeline (v6
   };
 
   await api.testAIConnection();
-  console.log = origConsoleLog;
 
   assert.equal(capturedUrl, 'https://api.groq.com/openai/v1/chat/completions');
   assert.equal(capturedBody.model, 'llama-3.3-70b-versatile');
   assert.equal(capturedBody.messages[0].content, 'hi');
-  assert(capturedConsolePayload, 'testAIConnection must log payload to console');
-  assert.equal(capturedConsolePayload.model, 'llama-3.3-70b-versatile');
-  assert.equal(capturedConsolePayload.messages[0].content, 'hi');
 
   // 5. Test eliminating invalid auto-switching: manual Groq selection is preserved
   api.handleAIKeyInput('sk-openai-key-while-groq-selected');
@@ -2946,7 +2949,7 @@ it('Settings modal renders direct event bindings on Save and Test connection but
   assert.equal(typeof testBtn.ontouchend, 'function', 'Test button must have explicit .ontouchend touch binding');
 });
 
-it('saveAIKey updates inline status badge in green and synchronizes S.cfg in-memory state', () => {
+it('saveAIKey updates inline status badge in green and enforces key security in S.cfg', () => {
   api.showSettingsModal();
   const keyInput = mockWindow.document.getElementById('ai-key-input');
   keyInput.value = 'gsk_test_direct_save_v611';
@@ -2955,7 +2958,7 @@ it('saveAIKey updates inline status badge in green and synchronizes S.cfg in-mem
   assert.equal(res.key, 'gsk_test_direct_save_v611');
   assert.equal(mockWindow.localStorage.getItem('ai_api_key'), 'gsk_test_direct_save_v611');
   assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), 'gsk_test_direct_save_v611');
-  assert.equal(api.S.cfg.aiKey, 'gsk_test_direct_save_v611');
+  assert.equal(api.S.cfg.aiKey, undefined, 'S.cfg must never store API key');
 
   const statusEl = mockWindow.document.querySelector('#ai-conn-status');
   assert(statusEl, 'ai-conn-status must exist');
@@ -3004,7 +3007,7 @@ it('clearAIKey removes keys from localStorage, resets S.cfg.aiKey and clears inp
   api.clearAIKey();
   assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), null, 'mygym_ai_key must be removed');
   assert.equal(mockWindow.localStorage.getItem('ai_api_key'), null, 'ai_api_key must be removed');
-  assert.equal(api.S.cfg.aiKey, '', 'S.cfg.aiKey must be cleared');
+  assert.equal(api.S.cfg.aiKey, undefined, 'S.cfg.aiKey must not exist');
   assert.equal(keyInput.value, '', 'Key input element value must be emptied');
   const statusEl = mockWindow.document.querySelector('#ai-conn-status');
   assert(statusEl && statusEl.innerHTML.includes('Key cleared'), 'Status badge must show Key cleared');
@@ -3016,13 +3019,10 @@ it('style.css supports landscape orientation with expanded max-height and safe-a
   assert(cssCode.includes('calc(env(safe-area-inset-bottom) + 32px)'), 'Sheet must apply 32px safe-area bottom offset');
 });
 
-it('callAI suggests fallback models when receiving a 404 from Groq', async () => {
+it('callAI suggests refreshing models when receiving a 404', async () => {
   mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_test_mock_groq');
   mockWindow.localStorage.setItem('mygym_ai_provider', 'groq');
   mockWindow.localStorage.setItem('mygym_ai_model', 'non-existent-model');
-  api.S.cfg.aiKey = 'gsk_test_mock_groq';
-  api.S.cfg.aiProvider = 'groq';
-  api.S.cfg.aiModel = 'non-existent-model';
 
   mockWindow.fetch = async () => ({
     ok: false,
@@ -3032,7 +3032,7 @@ it('callAI suggests fallback models when receiving a 404 from Groq', async () =>
 
   await assert.rejects(
     async () => { await api.callAI('Test query'); },
-    /Model not available on your Groq tier\. Please select 'llama3-70b-8192' or 'llama3-8b-8192'/
+    /Model "non-existent-model" not found for Groq \(404\)\. Please refresh models in Settings and select an active model\./
   );
 });
 
@@ -3160,6 +3160,698 @@ it('Daily Nutrition tracker maintains schema, day switching, and meal calculatio
   assert(cssCode.includes('.nutrition-progress-bar'), 'style.css must define .nutrition-progress-bar');
   assert(cssCode.includes('transition: width 0.3s cubic-bezier(0.16, 1, 0.3, 1)'), 'Progress bars must animate with cubic-bezier transition');
   assert(cssCode.includes('min-height: 44px'), 'Nutrition inputs must have 44px min touch target');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 14: TOOLING, DATA-A HANDLERS & ESCAPING AUDIT (PHASE 0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 14: Tooling, data-a Action Audits & Escaping Verification (Phase 0)');
+
+it('Every data-a attribute in app.js has a corresponding handler or is documented as input-driven', () => {
+  const dataARegex = /data-a=["\x27]([^"\x27]+)["\x27]/g;
+  const foundDataA = new Set();
+  let m;
+  while ((m = dataARegex.exec(appCode)) !== null) {
+    if (!m[1].includes('${')) foundDataA.add(m[1]);
+  }
+
+  const caseRegex = /case\s+["\x27]([^"\x27]+)["\x27]\s*:/g;
+  const handledCases = new Set();
+  while ((m = caseRegex.exec(appCode)) !== null) {
+    handledCases.add(m[1]);
+  }
+
+  // Documented input-driven or custom element actions
+  const inputDriven = new Set(['morph-scrub']);
+  const missing = [];
+  for (const a of foundDataA) {
+    if (!handledCases.has(a) && !inputDriven.has(a)) {
+      missing.push(a);
+    }
+  }
+
+  assert.equal(missing.length, 0, `All data-a actions must have handlers. Missing: ${missing.join(', ')}`);
+});
+
+it('Scans for potentially unescaped user string interpolations in app.js', () => {
+  // Checks that user-facing string fields (.name, .note, .desc, .msg, .title, .query) in HTML templates are escaped
+  const templateRegex = /`([^`]*<[a-z][^`]*)`/gi;
+  let m;
+  const unescaped = [];
+
+  while ((m = templateRegex.exec(appCode)) !== null) {
+    const tpl = m[1];
+    const interpRegex = /\$\{([^}]+)\}/g;
+    let im;
+    while ((im = interpRegex.exec(tpl)) !== null) {
+      const expr = im[1].trim();
+      if (/(?:\.name|\.note|\.desc|\.msg|\.content|\.title|\.query|\.prompt)\b/.test(expr)) {
+        if (expr.includes('?') && (expr.endsWith("''") || expr.endsWith('""') || expr.includes(": ''") || expr.includes(': ""'))) {
+          continue;
+        }
+        if (expr.includes('replace(') || expr.includes('.length') || expr.includes('class=')) {
+          continue;
+        }
+        if (!expr.includes('esc(') && !expr.includes('cleanExName(')) {
+          const offset = m.index + im.index;
+          const line = appCode.slice(0, offset).split('\n').length;
+          unescaped.push({ expr, line });
+        }
+      }
+    }
+  }
+
+  assert.equal(unescaped.length, 0, `Unescaped interpolations in HTML templates found: ${JSON.stringify(unescaped)}`);
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 15: AI ENGINE ARCHITECTURE, SECURITY & ERROR TAXONOMY (Phase 1)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 15: AI Engine Architecture, Security & Error Taxonomy (Phase 1)');
+
+it('Mock fetch tests for each provider: Groq, OpenAI, OpenRouter, Gemini, and Custom', async () => {
+  const captured = [];
+  mockWindow.fetch = async (url, opts = {}) => {
+    captured.push({
+      url,
+      headers: opts.headers || {},
+      body: opts.body ? JSON.parse(opts.body) : null
+    });
+    if (url.includes('generativelanguage.googleapis.com')) {
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: 'Gemini Direct Response' }] } }]
+        })
+      };
+    }
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'OpenAI-Compatible Response' } }]
+      })
+    };
+  };
+
+  // 1. Google Gemini (Native direct client endpoint)
+  mockWindow.localStorage.setItem('mygym_ai_key', 'AIzaSy_test_gemini_key');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'gemini',
+    models: { gemini: 'gemini-2.0-flash' }
+  }));
+
+  const geminiRes = await api.callAI([
+    { role: 'system', content: 'You are an elite coach.' },
+    { role: 'user', content: 'What is 5x5?' }
+  ], { jsonMode: true });
+
+  assert.equal(geminiRes, 'Gemini Direct Response');
+  const gReq = captured[captured.length - 1];
+  assert(gReq.url.includes('generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent'), 'Gemini URL must target model generateContent');
+  assert.equal(gReq.headers['x-goog-api-key'], 'AIzaSy_test_gemini_key', 'Gemini must authenticate with x-goog-api-key header');
+  assert(gReq.body.systemInstruction, 'Gemini request must have systemInstruction');
+  assert.equal(gReq.body.systemInstruction.parts[0].text, 'You are an elite coach.');
+  assert.equal(gReq.body.contents[0].role, 'user');
+  assert.equal(gReq.body.contents[0].parts[0].text, 'What is 5x5?');
+  assert.equal(gReq.body.generationConfig.responseMimeType, 'application/json', 'jsonMode must set responseMimeType in generationConfig');
+
+  // 2. Groq
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_test_groq_key_999');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'groq',
+    models: { groq: 'llama-3.3-70b-versatile' }
+  }));
+
+  const groqRes = await api.callAI('Test Groq prompt');
+  assert.equal(groqRes, 'OpenAI-Compatible Response');
+  const groqReq = captured[captured.length - 1];
+  assert.equal(groqReq.url, 'https://api.groq.com/openai/v1/chat/completions');
+  assert.equal(groqReq.headers['Authorization'], 'Bearer gsk_test_groq_key_999');
+  assert.equal(groqReq.body.model, 'llama-3.3-70b-versatile');
+
+  // 3. OpenAI
+  mockWindow.localStorage.setItem('mygym_ai_key', 'sk-proj-test-openai-key-888');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'openai',
+    models: { openai: 'gpt-4o-mini' }
+  }));
+
+  const openaiRes = await api.callAI('Test OpenAI prompt');
+  assert.equal(openaiRes, 'OpenAI-Compatible Response');
+  const openAiReq = captured[captured.length - 1];
+  assert.equal(openAiReq.url, 'https://api.openai.com/v1/chat/completions');
+  assert.equal(openAiReq.headers['Authorization'], 'Bearer sk-proj-test-openai-key-888');
+  assert.equal(openAiReq.body.model, 'gpt-4o-mini');
+
+  // 4. OpenRouter
+  mockWindow.localStorage.setItem('mygym_ai_key', 'sk-or-v1-test-openrouter-key-777');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'openrouter',
+    models: { openrouter: 'meta-llama/llama-3.1-8b-instruct:free' }
+  }));
+
+  const orRes = await api.callAI('Test OpenRouter prompt');
+  assert.equal(orRes, 'OpenAI-Compatible Response');
+  const orReq = captured[captured.length - 1];
+  assert.equal(orReq.url, 'https://openrouter.ai/api/v1/chat/completions');
+  assert.equal(orReq.headers['Authorization'], 'Bearer sk-or-v1-test-openrouter-key-777');
+  assert.equal(orReq.headers['X-Title'], 'MyGyM');
+  assert.equal(orReq.body.model, 'meta-llama/llama-3.1-8b-instruct:free');
+
+  // 5. Custom / OpenAI-Compatible
+  mockWindow.localStorage.setItem('mygym_ai_key', 'custom_key_666');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'custom',
+    models: { custom: 'deepseek-chat' },
+    baseUrl: 'https://api.deepseek.com/v1'
+  }));
+
+  const customRes = await api.callAI('Test Custom prompt');
+  assert.equal(customRes, 'OpenAI-Compatible Response');
+  const custReq = captured[captured.length - 1];
+  assert.equal(custReq.url, 'https://api.deepseek.com/v1/chat/completions');
+  assert.equal(custReq.headers['Authorization'], 'Bearer custom_key_666');
+  assert.equal(custReq.body.model, 'deepseek-chat');
+});
+
+it('Auto mode resolution works consistently with settings sheet open or closed', async () => {
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_auto_detect_groq');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'auto',
+    models: { groq: 'llama-3.3-70b-versatile', openai: 'gpt-4o-mini' }
+  }));
+
+  // Closed sheet resolution
+  const closedConfig = api.resolveAIConfig();
+  assert.equal(closedConfig.provider, 'groq', 'Auto mode must resolve groq from gsk_ prefix');
+  assert.equal(closedConfig.model, 'llama-3.3-70b-versatile');
+
+  // Open settings modal and simulate user typing in unrelated elements
+  api.showSettingsModal();
+  const openConfig = api.resolveAIConfig();
+  assert.equal(openConfig.provider, 'groq', 'Open sheet must not corrupt resolved provider');
+  assert.equal(openConfig.model, 'llama-3.3-70b-versatile');
+});
+
+it('Retired model IDs are automatically migrated to modern active replacements', () => {
+  const migrate = (typeof mockWindow.AIConfig !== 'undefined' && mockWindow.AIConfig.migrateModelId)
+    ? mockWindow.AIConfig.migrateModelId
+    : (m) => m;
+
+  assert.equal(migrate('llama3-70b-8192'), 'llama-3.3-70b-versatile');
+  assert.equal(migrate('llama3-8b-8192'), 'llama-3.1-8b-instant');
+  assert.equal(migrate('gemma2-9b-it'), 'llama-3.1-8b-instant');
+  assert.equal(migrate('gemini-1.5-flash'), 'gemini-2.0-flash');
+  assert.equal(migrate('gemini-1.5-pro'), 'gemini-2.5-pro');
+});
+
+it('Automatic 400 JSON mode retry recovers when response_format is unsupported', async () => {
+  let callCount = 0;
+  mockWindow.fetch = async (url, opts = {}) => {
+    callCount++;
+    const body = JSON.parse(opts.body || '{}');
+    if (callCount === 1) {
+      assert(body.response_format, 'First call must have response_format');
+      return {
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: async () => ({ error: { message: 'response_format is not supported by this model' } })
+      };
+    }
+    assert.equal(body.response_format, undefined, 'Retry call must strip response_format');
+    return {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '{"routine":"Recovered without json mode"}' } }]
+      })
+    };
+  };
+
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_test_json_retry');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'groq',
+    models: { groq: 'llama-3.3-70b-versatile' }
+  }));
+
+  const res = await api.callAI('Generate JSON', { jsonMode: true });
+  assert.equal(callCount, 2, 'Must have executed exactly 2 calls (initial + retry)');
+  assert.equal(res, '{"routine":"Recovered without json mode"}');
+});
+
+it('Strict error taxonomy: 401/403, 404, 429 with Retry-After, offline, CSP hostname blocked & escaping', async () => {
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_test_err_key');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'groq',
+    models: { groq: 'llama-3.3-70b-versatile' }
+  }));
+
+  // 1. 401/403 Invalid API key
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+    json: async () => ({ error: { message: 'Invalid API key provided' } })
+  });
+  await assert.rejects(
+    async () => { await api.callAI('Hello'); },
+    /Invalid API key for Groq \(401\)/
+  );
+
+  // 2. 404 Model Not Found
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 404,
+    statusText: 'Not Found',
+    json: async () => ({ error: { message: 'The model does not exist' } })
+  });
+  await assert.rejects(
+    async () => { await api.callAI('Hello'); },
+    /Model "llama-3.3-70b-versatile" not found for Groq \(404\)\. Please refresh models in Settings and select an active model\./
+  );
+
+  // 3. 429 Rate Limit with Retry-After header
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 429,
+    statusText: 'Too Many Requests',
+    headers: {
+      get: (h) => (h.toLowerCase() === 'retry-after' ? '45' : null)
+    },
+    json: async () => ({ error: { message: 'Rate limit reached' } })
+  });
+  await assert.rejects(
+    async () => { await api.callAI('Hello'); },
+    /Rate limit reached for Groq \(429\)\. Please retry after 45 seconds\./
+  );
+
+  // 4. Offline state
+  mockWindow.navigator.onLine = false;
+  await assert.rejects(
+    async () => { await api.callAI('Hello'); },
+    /Network Offline\. An active internet connection is required to contact AI\./
+  );
+  mockWindow.navigator.onLine = true;
+
+  // 5. CSP hostname blocked on Custom URL
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'custom',
+    models: { custom: 'my-model' },
+    baseUrl: 'https://untrusted-malicious-host.example.com/v1'
+  }));
+  await assert.rejects(
+    async () => { await api.callAI('Hello'); },
+    /Host "untrusted-malicious-host\.example\.com" is not allowed by Content Security Policy/
+  );
+
+  // 6. Escaped error message prevents XSS in UI
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'groq',
+    models: { groq: 'llama-3.3-70b-versatile' }
+  }));
+  mockWindow.fetch = async () => ({
+    ok: false,
+    status: 500,
+    statusText: 'Internal Error',
+    json: async () => ({ error: { message: '<script>alert("xss")</script>' } })
+  });
+  await assert.rejects(
+    async () => { await api.callAI('Hello'); },
+    /&lt;script&gt;alert\(&quot;xss&quot;\)&lt;\/script&gt;/
+  );
+});
+
+it('Test Connection is strictly read-only and never writes settings or calls saveAIKey', async () => {
+  mockWindow.localStorage.setItem('mygym_ai_key', 'gsk_test_read_only');
+  mockWindow.localStorage.setItem('mygym_ai_settings', JSON.stringify({
+    provider: 'groq',
+    models: { groq: 'llama-3.3-70b-versatile' }
+  }));
+
+  let savedCalled = false;
+  const origSave = api.saveAIKey;
+  api.saveAIKey = () => { savedCalled = true; return origSave(); };
+
+  let tokenCompletionCalled = false;
+  mockWindow.fetch = async (url, opts = {}) => {
+    tokenCompletionCalled = true;
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'OK' } }] })
+    };
+  };
+
+  await api.testAIConnection();
+  api.saveAIKey = origSave;
+
+  assert.equal(savedCalled, false, 'testAIConnection must NEVER call saveAIKey');
+  assert.equal(tokenCompletionCalled, true, 'testAIConnection must execute completion check');
+});
+
+it('Key hygiene: S.cfg, IndexedDB state, and backup exports contain zero occurrences of API keys', async () => {
+  const secretKey = 'gsk_super_secret_never_leak_xyz_987';
+  mockWindow.localStorage.setItem('mygym_ai_key', secretKey);
+
+  // Save settings with "Remember key on this device" = false (sessionStorage)
+  api.showSettingsModal();
+  const keyInput = mockWindow.document.getElementById('ai-key-input');
+  const rememberToggle = mockWindow.document.getElementById('ai-remember-key-toggle');
+  keyInput.value = secretKey;
+  rememberToggle.checked = false;
+
+  api.saveAIKey();
+
+  // Key must be in sessionStorage, not localStorage
+  assert.equal(mockWindow.sessionStorage.getItem('mygym_ai_key'), secretKey);
+  assert.equal(mockWindow.localStorage.getItem('mygym_ai_key'), null);
+
+  // Must NEVER be in S.cfg or api.S
+  assert.equal(api.S.cfg.aiKey, undefined);
+  assert.equal(api.S.cfg.aiProvider, undefined);
+  assert.equal(api.S.cfg.aiModel, undefined);
+  assert(!JSON.stringify(api.S).includes(secretKey), 'api.S must not contain the secret API key');
+
+  // Verify backup export is sanitized
+  let blobData = null;
+  const origBlob = mockWindow.Blob;
+  mockWindow.Blob = class MockBlob {
+    constructor(parts) {
+      blobData = parts[0];
+    }
+  };
+
+  api.exp();
+  mockWindow.Blob = origBlob;
+
+  assert(blobData, 'Backup export must generate JSON data');
+  assert(!blobData.includes(secretKey), 'Exported JSON backup must contain NO API key string');
+  assert(!blobData.includes('aiKey') && !blobData.includes('aiProvider'), 'Exported cfg must not contain aiKey/aiProvider');
+});
+
+it('Refresh models fetches available chat models and caches for 24 hours', async () => {
+  const mockModels = [
+    { id: 'llama-3.3-70b-versatile', object: 'model' },
+    { id: 'llama-3.1-8b-instant', object: 'model' },
+    { id: 'whisper-large-v3', object: 'model' } // should be filtered out
+  ];
+
+  mockWindow.fetch = async (url) => {
+    if (url.includes('/models')) {
+      return {
+        ok: true,
+        json: async () => ({ data: mockModels })
+      };
+    }
+    return { ok: true, json: async () => ({}) };
+  };
+
+  const models = await mockWindow.AIConfig.fetchAvailableModels('groq', 'gsk_mock_refresh_key');
+  assert.equal(models.length, 2, 'Whisper model must be filtered out');
+  assert.equal(models[0].id, 'llama-3.3-70b-versatile');
+  assert.equal(models[1].id, 'llama-3.1-8b-instant');
+
+  // Verify 24h caching
+  mockWindow.AIConfig.setCachedModels('groq', models);
+  const cached = mockWindow.AIConfig.getCachedModels('groq');
+  assert.equal(cached.length, 2, 'Cached models must be returned within 24h');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 16: PHASE 2 CORRECTNESS, MIGRATIONS & DETERMINISTIC MATH
+// -----------------------------------------------------------------------------
+console.log('\nSuite 16: Phase 2 Correctness, Migrations & Deterministic Math');
+
+it('Set types are persisted in finishWorkout, warmups excluded from PR/volume/1RM, drop/failure flagged', () => {
+  const testAct = {
+    t0: Date.now() - 3600000,
+    ex: [
+      {
+        id: '0025',
+        note: 'Set types test',
+        sets: [
+          { w: 60, r: 10, done: true, type: 'warmup' },
+          { w: 100, r: 8, done: true, type: 'normal' },
+          { w: 80, r: 12, done: true, type: 'drop' },
+          { w: 80, r: 10, done: true, type: 'failure' },
+          { w: 70, r: 15, done: true, type: 'amrap' }
+        ]
+      }
+    ]
+  };
+
+  api.S.act = testAct;
+  api.finishWorkout();
+
+  const savedLog = api.S.logs[api.S.logs.length - 1];
+  assert(savedLog, 'Finished workout must be appended to S.logs');
+  const savedSets = savedLog.ex[0].sets;
+  assert.equal(savedSets.length, 5, 'All 5 completed sets must be preserved');
+  assert.equal(savedSets[0].type, 'warmup');
+  assert.equal(savedSets[1].type, 'normal');
+  assert.equal(savedSets[2].type, 'drop');
+  assert.equal(savedSets[3].type, 'failure');
+  assert.equal(savedSets[4].type, 'amrap');
+
+  // Warmup sets must yield 0 volume
+  const ex = { id: '0025', name: 'Barbell Bench Press' };
+  assert.equal(Calc.calcSetVolume(savedSets[0], ex), 0, 'Warmup set volume must be 0');
+  assert.equal(Calc.calcSetVolume(savedSets[1], ex), 800, 'Normal set volume must be 100 * 8 = 800');
+  assert.equal(Calc.calcSetVolume(savedSets[2], ex), 960, 'Drop set volume must count (80 * 12 = 960)');
+  assert.equal(Calc.calcSetVolume(savedSets[3], ex), 800, 'Failure set volume must count (80 * 10 = 800)');
+
+  // Warmup sets must be excluded from PR detection
+  const warmupPR = Calc.checkPersonalRecord('0025', savedSets[0], []);
+  assert.equal(warmupPR, null, 'Warmup set must never trigger PR');
+
+  // Drop and failure sets must be flagged and not trigger normal rep PRs
+  const dropPR = Calc.checkPersonalRecord('0025', savedSets[2], [{ id: 'prior', ex: [{ id: '0025', sets: [{ w: 80, r: 8, done: true }] }] }]);
+  assert(dropPR && !dropPR.isPR && dropPR.flag === 'drop', 'Drop set must return flag: drop without isPR');
+});
+
+it('Single default includeBodyweightInVolume = false in calcSetVolume and calcWorkoutVolume', () => {
+  const bwEx = { id: 'bw_pullup', name: 'Pull Up', type: 'bodyweight' };
+  const bwSet = { w: 10, r: 8, done: true }; // 10kg added belt weight
+
+  // Default config ({}) must default includeBodyweightInVolume to FALSE
+  const defaultVol = Calc.calcSetVolume(bwSet, bwEx, {}, 80);
+  assert.equal(defaultVol, 10 * 8, 'Default volume must be external load only (10kg * 8 = 80kg)');
+
+  // Explicitly enabled config includes bodyweight + external load
+  const enabledVol = Calc.calcSetVolume(bwSet, bwEx, { includeBodyweightInVolume: true }, 80);
+  assert.equal(enabledVol, (80 + 10) * 8, 'Explicitly enabled volume must include bodyweight ((80 + 10) * 8 = 720kg)');
+
+  // Assisted exercises subtract assist weight from bodyweight
+  const asEx = { id: 'as_dip', name: 'Assisted Dip', type: 'assisted' };
+  const asSet = { w: 20, r: 10, done: true }; // 20kg pin assistance
+  const asVol = Calc.calcSetVolume(asSet, asEx, {}, 80);
+  assert.equal(asVol, (80 - 20) * 10, 'Assisted volume must subtract assistance load ((80 - 20) * 10 = 600kg)');
+
+  // Cardio and mobility exercises contribute 0 tonnage
+  const cardioEx = { id: 'treadmill', name: 'Treadmill', type: 'timed_cardio' };
+  assert.equal(Calc.calcSetVolume({ w: 0, r: 20, done: true }, cardioEx), 0);
+});
+
+it('calcBMR, calcTDEE, and calcMacros return needs_profile state when inputs are missing/invalid', () => {
+  // Missing or invalid gender / weight / height / age
+  assert.equal(Calc.calcBMR().status, 'needs_profile');
+  assert.equal(Calc.calcBMR('unknown', 75, 178, 28).status, 'needs_profile');
+  assert.equal(Calc.calcBMR('male', 0, 178, 28).status, 'needs_profile');
+  assert.equal(Calc.calcBMR('male', 75, 0, 28).status, 'needs_profile');
+  assert.equal(Calc.calcBMR('male', 75, 178, 0).status, 'needs_profile');
+
+  // Valid inputs compute correct Mifflin-St Jeor BMR
+  const maleBMR = Calc.calcBMR('male', 80, 180, 25);
+  assert(typeof maleBMR === 'number' && maleBMR > 1600 && maleBMR < 2000);
+
+  // calcTDEE propagates needs_profile
+  assert.equal(Calc.calcTDEE(null).status, 'needs_profile');
+  assert.equal(Calc.calcTDEE({ status: 'needs_profile' }).status, 'needs_profile');
+  assert.equal(Calc.calcTDEE(0).status, 'needs_profile');
+  assert(Calc.calcTDEE(maleBMR, 1.45) > maleBMR);
+
+  // calcMacros requires targetCalories and weightKg
+  assert.equal(Calc.calcMacros(0, 75).status, 'needs_profile');
+  assert.equal(Calc.calcMacros(2000, 0).status, 'needs_profile');
+  const validMacros = Calc.calcMacros(2200, 80, 'cut');
+  assert.equal(validMacros.status, 'ok');
+  assert.equal(validMacros.calories, 2200);
+  assert(validMacros.protein > 0 && validMacros.fat > 0 && validMacros.carbs > 0);
+});
+
+it('Pure calc.js audit: zero DOM access, zero emoji, zero colors (var(--)), zero display strings', () => {
+  assert(!calcCode.includes('document.'), 'calc.js must not access document');
+  assert(!calcCode.includes('window.'), 'calc.js must not access window');
+  assert(!calcCode.includes('var(--'), 'calc.js must not contain CSS variable strings');
+  assert(!/[\u{1F300}-\u{1F9FF}]/u.test(calcCode), 'calc.js must not contain Unicode emoji');
+
+  // Verify pure ACWR return object has machine fields
+  const mockLogs = [
+    { id: '1', date: Date.now() - 86400000, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { id: '2', date: Date.now() - 2 * 86400000, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] }
+  ];
+  const pureACWR = Calc.calcACWR(mockLogs, Date.now());
+  assert.equal(typeof pureACWR.zoneCode, 'string');
+  assert(pureACWR.zoneCode === 'calibrating' || pureACWR.zoneCode === 'under' || pureACWR.zoneCode === 'optimal' || pureACWR.zoneCode === 'caution' || pureACWR.zoneCode === 'danger');
+  assert(!pureACWR.color, 'calc.js must not attach UI color properties');
+  assert(!pureACWR.status || !pureACWR.status.includes('⚡'), 'calc.js must not embed emoji into status strings');
+
+  // Verify view layer in app.js maps zoneCode to UI status and color
+  const uiWorkload = api.calcWorkload(mockLogs);
+  assert(uiWorkload.color && uiWorkload.color.startsWith('var(--'), 'app.js view layer must decorate with CSS color');
+  assert(uiWorkload.status && typeof uiWorkload.status === 'string', 'app.js view layer must decorate with user status string');
+});
+
+it('In-app confirmation sheets & undo toasts replace all confirm() calls for delete and discard', async () => {
+  assert(!appCode.includes('confirm('), 'app.js must not contain any window.confirm() calls');
+  assert(!appCode.includes('alert('), 'app.js must not contain any window.alert() calls');
+
+  // 1. Delete workout log with undo toast
+  const testLog = { id: 'test_del_undo_log', name: 'Delete Undo Test Session', date: Date.now(), ex: [] };
+  api.S.logs.push(testLog);
+  const initialLogCount = api.S.logs.length;
+
+  const clickTarget = { dataset: { a: 'deletepastlog', id: 'test_del_undo_log' }, closest: () => null };
+  const clickEvent = { target: { closest: () => clickTarget } };
+
+  // Dispatch deletepastlog
+  await mockWindow.document._listeners['click'](clickEvent);
+  assert.equal(api.S.logs.length, initialLogCount - 1, 'Workout log must be removed from S.logs');
+
+  // Dispatch undodeletelog
+  const undoLogTarget = { dataset: { a: 'undodeletelog' }, closest: () => null };
+  await mockWindow.document._listeners['click']({ target: { closest: () => undoLogTarget } });
+  assert.equal(api.S.logs.length, initialLogCount, 'Workout log must be restored to S.logs upon Undo');
+  assert.equal(api.S.logs[api.S.logs.length - 1].id, 'test_del_undo_log');
+
+  // 2. Delete routine with undo toast
+  const testRoutine = { id: 'test_del_undo_routine', name: 'Delete Undo Test Routine', ex: [] };
+  api.S.routines.push(testRoutine);
+  api.E = testRoutine;
+  const initialRoutineCount = api.S.routines.length;
+
+  const delRoutineTarget = { dataset: { a: 'delr' }, closest: () => null };
+  await mockWindow.document._listeners['click']({ target: { closest: () => delRoutineTarget } });
+  assert.equal(api.S.routines.length, initialRoutineCount - 1, 'Routine must be removed from S.routines');
+
+  // Dispatch undodeleteroutine
+  const undoRoutineTarget = { dataset: { a: 'undodeleteroutine' }, closest: () => null };
+  await mockWindow.document._listeners['click']({ target: { closest: () => undoRoutineTarget } });
+  assert.equal(api.S.routines.length, initialRoutineCount, 'Routine must be restored upon Undo');
+  assert.equal(api.S.routines[api.S.routines.length - 1].id, 'test_del_undo_routine');
+
+  // 3. Discard active workout opens confirmation sheet modal
+  api.S.act = { t0: Date.now(), ex: [] };
+  const cancelTarget = { dataset: { a: 'cancel' }, closest: () => null };
+  await mockWindow.document._listeners['click']({ target: { closest: () => cancelTarget } });
+
+  const modalHtml = elementsMap['#m'].innerHTML;
+  assert(modalHtml.includes('Discard Workout?'), 'Modal confirmation sheet must appear for discard workout');
+  assert(modalHtml.includes('confirm-discard-workout'), 'Modal must contain confirm-discard-workout button');
+
+  // Confirm discard clears active workout
+  const confirmDiscardTarget = { dataset: { a: 'confirm-discard-workout' }, closest: () => null };
+  await mockWindow.document._listeners['click']({ target: { closest: () => confirmDiscardTarget } });
+  assert.equal(api.S.act, null, 'Confirming discard must clear S.act');
+});
+
+it('Ordered migration runner upgrades schemaVersion from v1 to v3 with idempotent up() steps', async () => {
+  const legacyState = {
+    schemaVersion: 1,
+    logs: [
+      {
+        id: 'legacy_log_1',
+        name: 'Legacy Session',
+        date: Date.now() - 86400000,
+        ex: [
+          {
+            id: '0025',
+            sets: [
+              { w: 50, r: 10, type: 'W' },
+              { w: 80, r: 8, type: '' },
+              { w: 70, r: 10, type: 'D' },
+              { w: 60, r: 12, type: 'F' },
+              { w: 50, r: 15, type: 'A' },
+              { w: 40, r: 10 } // undefined type
+            ]
+          }
+        ]
+      }
+    ],
+    cfg: {}
+  };
+
+  const newVer = await api.runMigrations(legacyState);
+  assert.equal(newVer, 3, 'Migration runner must upgrade state to schemaVersion 3');
+  assert.equal(legacyState.schemaVersion, 3);
+
+  const sets = legacyState.logs[0].ex[0].sets;
+  assert.equal(sets[0].type, 'warmup', 'Legacy "W" must be normalized to "warmup"');
+  assert.equal(sets[1].type, 'normal', 'Legacy "" must be normalized to "normal"');
+  assert.equal(sets[2].type, 'drop', 'Legacy "D" must be normalized to "drop"');
+  assert.equal(sets[3].type, 'failure', 'Legacy "F" must be normalized to "failure"');
+  assert.equal(sets[4].type, 'amrap', 'Legacy "A" must be normalized to "amrap"');
+  assert.equal(sets[5].type, 'normal', 'Undefined type must be normalized to "normal"');
+
+  assert.equal(legacyState.cfg.includeBodyweightInVolume, false, 'Migration must set includeBodyweightInVolume: false');
+  assert.equal(legacyState.cfg.unit, 'kg', 'Migration must set unit: kg');
+
+  // Idempotency: re-running migrations does not fail or alter version
+  const rerunVer = await api.runMigrations(legacyState);
+  assert.equal(rerunVer, 3);
+});
+
+it('Deterministic calendar & date math: DST transitions, Monday vs Sunday, month boundaries, and plate rounding', () => {
+  // 1. Monday vs Sunday week start
+  const wednesday = new Date(2026, 10, 11, 14, 0, 0); // Wed Nov 11 2026
+  const monStart = Calc.getStartOfWeek(wednesday, 'mon');
+  assert.equal(monStart.getDay(), 1, 'mon weekStartDay must start on Monday');
+  assert.equal(monStart.getDate(), 9); // Monday Nov 9
+
+  const sunStart = Calc.getStartOfWeek(wednesday, 'sun');
+  assert.equal(sunStart.getDay(), 0, 'sun weekStartDay must start on Sunday');
+  assert.equal(sunStart.getDate(), 8); // Sunday Nov 8
+
+  // 2. DST transitions: End of week must land at 23:59:59 of Sunday without slipping across DST
+  const dstWeekStart = Calc.getStartOfWeek(new Date(2026, 2, 29)); // March 29 2026 European DST transition
+  const dstWeekEnd = Calc.getEndOfWeek(dstWeekStart, 'mon');
+  assert.equal(dstWeekEnd.getHours(), 23, 'End of week hours must be 23 across DST');
+  assert.equal(dstWeekEnd.getMinutes(), 59, 'End of week minutes must be 59 across DST');
+  assert.equal(dstWeekEnd.getSeconds(), 59, 'End of week seconds must be 59 across DST');
+  assert.equal(dstWeekEnd.getDay(), 0, 'End of week must be Sunday across DST');
+
+  // 3. Backdating workouts over month boundaries
+  const feb28 = new Date(2026, 1, 28, 10, 0, 0);
+  const mar1 = new Date(2026, 2, 1, 10, 0, 0);
+  const febKey = Calc.toLocalDateKey(feb28);
+  const marKey = Calc.toLocalDateKey(mar1);
+  assert.equal(febKey, '2026-02-28');
+  assert.equal(marKey, '2026-03-01');
+
+  // Streak across month boundary
+  const monthBoundaryLogs = [
+    { date: feb28.getTime(), id: 'log_feb' },
+    { date: mar1.getTime(), id: 'log_mar' }
+  ];
+  const streak = Calc.calcStreak(monthBoundaryLogs, mar1.getTime());
+  assert.equal(streak, 2, 'Streak must count consecutive days across February to March boundary');
+
+  // 4. Float rounding in plate math
+  const plates62_5 = Calc.calcPlates(62.5, 20);
+  assert.equal(plates62_5.barWeight, 20);
+  assert.equal(plates62_5.perSide, 21.25);
+  assert.equal(plates62_5.plates.length, 2);
+  assert.equal(plates62_5.plates[0].weight, 20);
+  assert.equal(plates62_5.plates[0].count, 1);
+  assert.equal(plates62_5.plates[1].weight, 1.25);
+  assert.equal(plates62_5.plates[1].count, 1);
+  assert.equal(plates62_5.remainder, 0);
+  assert.equal(plates62_5.loadedWeight, 62.5);
+
+  // Plate math handles bar weight >= target weight gracefully
+  const lightBar = Calc.calcPlates(15, 20);
+  assert.equal(lightBar.perSide, 0);
+  assert.equal(lightBar.plates.length, 0);
+  assert.equal(lightBar.loadedWeight, 20);
 });
 
 console.log(`\n======================================================`);
