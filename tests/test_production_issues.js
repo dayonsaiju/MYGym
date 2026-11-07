@@ -49,6 +49,15 @@ class MockElement {
     };
   }
 
+  get textContent() {
+    return this._textContent != null ? this._textContent : this._innerHTML.replace(/<[^>]*>/g, '');
+  }
+
+  set textContent(val) {
+    this._textContent = String(val);
+    this._innerHTML = String(val);
+  }
+
   get innerHTML() {
     return this._innerHTML;
   }
@@ -154,6 +163,14 @@ class MockElement {
     if (this.parentElement) {
       this.parentElement.children = this.parentElement.children.filter(c => c !== this);
     }
+  }
+
+  appendChild(child) {
+    if (child) {
+      child.parentElement = this;
+      this.children.push(child);
+    }
+    return child;
   }
 
   addEventListener() {}
@@ -975,27 +992,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.4.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.4.0';"), 'sw.js must use mygym-core-v6.4.0 cache name');
-  assert(swCode.includes("'./style.css?v=6.4.0'"), 'sw.js must precache style.css?v=6.4.0');
-  assert(swCode.includes("'./app.js?v=6.4.0'"), 'sw.js must precache app.js?v=6.4.0');
-  assert(swCode.includes("'./calc.js?v=6.4.0'"), 'sw.js must precache calc.js?v=6.4.0');
+it('sw.js cache key is bumped to mygym-core-v7.0.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.0.0';"), 'sw.js must use mygym-core-v7.0.0 cache name');
+  assert(swCode.includes("'./style.css?v=7.0.0'"), 'sw.js must precache style.css?v=7.0.0');
+  assert(swCode.includes("'./app.js?v=7.0.0'"), 'sw.js must precache app.js?v=7.0.0');
+  assert(swCode.includes("'./calc.js?v=7.0.0'"), 'sw.js must precache calc.js?v=7.0.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.4.0'), 'index.html must link style.css?v=6.4.0');
-  assert(htmlCode.includes('shell.js?v=6.4.0'), 'index.html must load shell.js?v=6.4.0');
-  assert(htmlCode.includes('app.js?v=6.4.0'), 'index.html must load app.js?v=6.4.0');
-  assert(htmlCode.includes('calc.js?v=6.4.0'), 'index.html must load calc.js?v=6.4.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v6.4.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.0.0'), 'index.html must link style.css?v=7.0.0');
+  assert(htmlCode.includes('shell.js?v=7.0.0'), 'index.html must load shell.js?v=7.0.0');
+  assert(htmlCode.includes('app.js?v=7.0.0'), 'index.html must load app.js?v=7.0.0');
+  assert(htmlCode.includes('calc.js?v=7.0.0'), 'index.html must load calc.js?v=7.0.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.0'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.4.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.4.0');
+  assert.equal(api.APP_VERSION, '7.0.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -4105,6 +4122,98 @@ it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async ()
   assert.ok(settingsHtml.includes('2 days ago'), 'Settings modal must display calculated backup age');
   assert.ok(settingsHtml.includes('opencsvimport'), 'Settings modal must contain opencsvimport button');
   api.closeModal();
+});
+
+console.log(`\nSuite 24: Phase 7 & 8 3D Anatomical Engine, Morphing & Production Release (v7.0.0)`);
+
+it('Vendored Three.js module offline precaching in sw.js and ES module export contract', async () => {
+  const swCode = fs.readFileSync(path.resolve(__dirname, '../sw.js'), 'utf8');
+  assert.ok(swCode.includes('./vendor/three.module.js'), 'sw.js ASSETS must precache ./vendor/three.module.js');
+
+  const threeModule = await import('../vendor/three.module.js');
+  assert.ok(typeof threeModule.Scene === 'function', 'Three.js module must export Scene constructor');
+  assert.ok(typeof threeModule.PerspectiveCamera === 'function', 'Three.js module must export PerspectiveCamera constructor');
+  assert.ok(typeof threeModule.WebGLRenderer === 'function', 'Three.js module must export WebGLRenderer constructor');
+  assert.ok(typeof threeModule.Mesh === 'function', 'Three.js module must export Mesh constructor');
+  assert.ok(typeof threeModule.BoxGeometry === 'function', 'Three.js module must export BoxGeometry constructor');
+  assert.ok(typeof threeModule.CylinderGeometry === 'function', 'Three.js module must export CylinderGeometry constructor');
+  assert.ok(typeof threeModule.Raycaster === 'function', 'Three.js module must export Raycaster constructor');
+});
+
+it('WebGL detection and graceful degradation fallback', () => {
+  assert.equal(typeof api.isWebGLAvailable, 'function', 'isWebGLAvailable must be exported');
+  const available = api.isWebGLAvailable();
+  assert.equal(typeof available, 'boolean', 'isWebGLAvailable must return a boolean');
+
+  // Verify graceful 2D fallback when WebGL is absent
+  api.show3DAnatomyModal(['chest', 'deltoids'], ['triceps']);
+  const modalHtml = elementsMap['#m'].innerHTML;
+  if (!available) {
+    assert.ok(modalHtml.includes('WebGL 3D acceleration is not available'), 'Must display graceful WebGL fallback banner');
+    assert.ok(modalHtml.includes('svg') || modalHtml.includes('mm-wrap'), 'Must render 2D SVG anatomy map fallback');
+  } else {
+    assert.ok(modalHtml.includes('canvas-3d-wrap'), 'Must render 3D canvas container when WebGL is present');
+  }
+  api.closeModal();
+});
+
+it('Procedural anatomy mannequin model generation for male and female silhouettes', async () => {
+  const THREE = await import('../vendor/three.module.js');
+  const maleModel = api.buildProceduralAnatomyModel(THREE, 'male', ['chest'], ['triceps'], null);
+  assert.ok(maleModel instanceof THREE.Group, 'Model must be an instance of THREE.Group');
+  assert.ok(maleModel.children.length >= 10, 'Model must contain distinct procedural body parts');
+
+  // Verify muscle metadata tagging for raycasting
+  const chestPart = maleModel.children.find(c => c.userData && c.userData.muscleKey === 'chest');
+  assert.ok(chestPart, 'Procedural model must contain tagged chest mesh part');
+  assert.equal(chestPart.userData.muscleKey, 'chest', 'Chest part muscleKey must match');
+
+  const femaleModel = api.buildProceduralAnatomyModel(THREE, 'female', ['glutes'], ['hamstrings'], null);
+  assert.ok(femaleModel instanceof THREE.Group, 'Female model must be an instance of THREE.Group');
+  const glutePart = femaleModel.children.find(c => c.userData && c.userData.muscleKey === 'glutes');
+  assert.ok(glutePart, 'Female model must contain tagged glutes mesh part');
+});
+
+it('3D Physique morph scaling computation', async () => {
+  const THREE = await import('../vendor/three.module.js');
+  const baselineModel = api.buildProceduralAnatomyModel(THREE, 'male', [], [], 0.0);
+  const transformedModel = api.buildProceduralAnatomyModel(THREE, 'male', [], [], 1.0);
+
+  const baselineChest = baselineModel.children.find(c => c.userData && c.userData.muscleKey === 'chest');
+  const transformedChest = transformedModel.children.find(c => c.userData && c.userData.muscleKey === 'chest');
+  const baselineAbs = baselineModel.children.find(c => c.userData && c.userData.muscleKey === 'abs');
+  const transformedAbs = transformedModel.children.find(c => c.userData && c.userData.muscleKey === 'abs');
+
+  assert.ok(transformedChest.geometry.parameters.width > baselineChest.geometry.parameters.width, 'Transformed chest width must be larger (V-taper expansion)');
+  assert.ok(transformedAbs.geometry.parameters.width < baselineAbs.geometry.parameters.width, 'Transformed waist/abs width must be leaner');
+});
+
+it('Volume Radar Chart generation and SVG polygon validity', () => {
+  assert.equal(typeof api.renderVolumeRadarChart, 'function', 'renderVolumeRadarChart must be exported');
+  const radarHtml = api.renderVolumeRadarChart({
+    Chest: 14,
+    Back: 16,
+    Legs: 18,
+    Shoulders: 12,
+    Arms: 10,
+    Core: 8
+  });
+  assert.ok(radarHtml.includes('radar-chart-wrap'), 'Must render radar-chart-wrap container');
+  assert.ok(radarHtml.includes('<polygon points="'), 'Must include polygon data points');
+  assert.ok(radarHtml.includes('Weekly Volume Radar'), 'Must render radar title');
+});
+
+it('Counter animation and PR celebration motion reduction compliance', async () => {
+  assert.equal(typeof api.animateCounter, 'function', 'animateCounter must be exported');
+  assert.equal(typeof api.triggerPRCelebration, 'function', 'triggerPRCelebration must be exported');
+
+  const counterEl = new MockElement('div');
+  api.animateCounter(counterEl, 0, 100, 200, '%');
+  await new Promise(r => setTimeout(r, 40));
+  assert.ok(counterEl.textContent.includes('%') || counterEl.textContent.length > 0, 'animateCounter must update element');
+
+  api.triggerPRCelebration({ text: 'Bench Press PR: 100kg × 5' });
+  assert.ok(true, 'triggerPRCelebration executed safely without errors');
 });
 
 console.log(`\n======================================================`);

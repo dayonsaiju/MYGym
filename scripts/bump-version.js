@@ -61,6 +61,7 @@ swCode = swCode.replace(/['"]\.\/shell\.js\?v=[^'"]+['"]/, `'./shell.js?v=${targ
 swCode = swCode.replace(/['"]\.\/calc\.js\?v=[^"']+['"]/, `'./calc.js?v=${targetVersion}'`);
 swCode = swCode.replace(/['"]\.\/ai-config\.js\?v=[^"']+['"]/, `'./ai-config.js?v=${targetVersion}'`);
 swCode = swCode.replace(/['"]\.\/app\.js\?v=[^"']+['"]/, `'./app.js?v=${targetVersion}'`);
+swCode = swCode.replace(/['"]\.\/vendor\/three\.module\.js\?v=[^'"]+['"]/, `'./vendor/three.module.js?v=${targetVersion}'`);
 fs.writeFileSync(swPath, swCode);
 console.log('✓ Updated sw.js');
 

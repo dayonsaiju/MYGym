@@ -13,6 +13,7 @@ const files = [
   'style.css',
   'calc.js',
   'ai-config.js',
+  'vendor/three.module.js',
   'app.js',
   'sw.js',
   'CHANGELOG.md',
@@ -62,3 +63,4 @@ for (const file of fileContents) {
 const targetPath = path.join(rootDir, 'MYGYM_CONSOLIDATED_CODEBASE.txt');
 fs.writeFileSync(targetPath, output, 'utf8');
 console.log(`✓ Updated ${targetPath} (${(fs.statSync(targetPath).size / 1024).toFixed(1)} KB)`);
+

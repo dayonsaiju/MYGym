@@ -84,3 +84,4 @@ capture().catch(err => {
   console.error('Screen capture error:', err.message);
   process.exit(1);
 });
+

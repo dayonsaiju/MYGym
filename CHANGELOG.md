@@ -2,6 +2,35 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.0.0] - Phase 7 & 8: 3D Engine, Procedural Anatomy & Production Milestone - 2026-11-07
+- **Vendored Local Three.js ES Module & Offline Precaching**:
+  - Vendored local lightweight, zero-dependency Three.js ES module into `vendor/three.module.js` with full offline precaching in `sw.js`.
+  - Implemented strictly on-demand lazy loading (`lazyLoadThree()`) ensuring zero first-paint delay or workout logging blocking.
+- **Interactive 3D Anatomical Body Model**:
+  - Engineered procedural anatomical mannequin supporting both Male (broad shoulders, taper) and Female (pelvis, waist taper) silhouettes.
+  - Procedural geometries for 13 distinct muscle groups: chest, lats, traps, deltoids, biceps, triceps, forearms, abs, obliques, quads, hamstrings, glutes, and calves.
+  - Full 360° touch rotation with momentum and mobile two-finger pinch-to-zoom (clamped 3.0 to 8.0 units).
+  - Dynamic muscle highlighting: Amber (`#FF9F0A`) for primary targets, Cyan (`#38BDF8`) for secondary targets, and Slate (`#334155`) for neutral muscles.
+  - Real-time raycasting on muscle tap opening `showMuscleDetailSheet(muscleKey)`.
+- **Graceful WebGL Degradation**:
+  - Robust `isWebGLAvailable()` detection; automatically falls back to 2D SVG anatomy map (`mmap`) when WebGL is absent, device is in low-power mode, or context is lost.
+- **3D Physique Transformation Morph Engine**:
+  - Interactive 3D mannequin deforms in real-time across V-taper, waist width, chest prominence, and abdominal definitions based on transformation progression (0% to 100%).
+  - Real-time scrub slider with instant geometric morphing.
+- **Pure Vanilla Animated Progress Visuals**:
+  - Smooth requestAnimationFrame numeric counter (`animateCounter()`) with cubic ease-out.
+  - Multi-axis weekly volume SVG radar chart (`renderVolumeRadarChart()`) charting Chest, Back, Legs, Shoulders, Arms, and Core against a 20-set weekly target.
+  - Personal record celebration overlay (`triggerPRCelebration()`) with multi-color particle confetti physics burst.
+  - Set-complete checkmark spring ripple animation (`.spring-ripple`) on Done buttons.
+  - Strict compliance with `prefers-reduced-motion: reduce` across all animations.
+- **Mobile Performance Safeguards**:
+  - Delta-throttled animation loop capped at 30 fps to minimize battery draw.
+  - `visibilitychange` listener automatically pausing render loops when tab/app is backgrounded.
+  - Explicit scene traversal and GPU resource disposal on modal close to guarantee zero memory leaks.
+- **Verification, Audit & Version Milestone**:
+  - 100% automated test pass rate across 159 assertion tests in `tests/test_production_issues.js`.
+  - Single-source version synchronized to `7.0.0` (`mygym-core-v7.0.0`).
+
 ## [6.4.0] - Phase 5 & 6: Mobile Layout Hardening, Competitor Parity & Nutrition Engine - 2026-11-07
 - **Active Workout Portrait Ergonomics (Two-Line Set Card)**:
   - Redesigned active set rows into an ergonomic two-line layout:

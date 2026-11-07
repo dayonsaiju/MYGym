@@ -242,8 +242,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '6.4.0';
-const SHELL_VERSION = 'mygym-core-v6.4.0';
+const APP_VERSION = '7.0.0';
+const SHELL_VERSION = 'mygym-core-v7.0.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -888,8 +888,13 @@ const mmap = (p = [], q = [], opts = {}) => {
   const gender = opts.gender || S.cfg?.bodyModel || 'male';
   const svg = generateAnatomySvg(gender, p, q, opts);
   if (opts.wrap === false) return svg;
+  const priStr = (p || []).join(',');
+  const secStr = (q || []).join(',');
   return `
     <div class="mm-wrap" id="mm-container">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:6px;">
+        <button class="chip mm-3d-toggle-btn" data-a="open-3d-anatomy" data-p="${esc(priStr)}" data-s="${esc(secStr)}" title="Open interactive 3D anatomical viewer" style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:4px 10px;cursor:pointer;">📐 3D View</button>
+      </div>
       ${svg}
       <div id="mm-explore-sheet" class="mm-explore-drawer"></div>
     </div>
@@ -983,6 +988,801 @@ function showMuscleDetailSheet(muscleKey) {
       </div>
     `);
   }
+}
+
+// ---- 3D Anatomical Engine & Procedural Visuals ----
+function isWebGLAvailable() {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  try {
+    const canvas = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+  } catch (_) {
+    return false;
+  }
+}
+
+let _threePromise = null;
+async function lazyLoadThree() {
+  if (typeof window !== 'undefined' && window.THREE) {
+    return window.THREE;
+  }
+  if (!_threePromise) {
+    _threePromise = import('./vendor/three.module.js').then(mod => {
+      if (typeof window !== 'undefined') window.THREE = mod;
+      return mod;
+    });
+  }
+  return _threePromise;
+}
+
+function buildProceduralAnatomyModel(THREE, gender = 'male', primaryMuscles = [], secondaryMuscles = [], physiqueProgress = null) {
+  const modelGroup = new THREE.Group();
+  const isFemale = gender === 'female';
+  const pri = new Set(primaryMuscles.map(m => String(m).toLowerCase()));
+  const sec = new Set(secondaryMuscles.map(m => String(m).toLowerCase()));
+
+  const getMat = (muscleKey) => {
+    const k = muscleKey.toLowerCase();
+    const color = pri.has(k) ? 0xFF9F0A : (sec.has(k) ? 0x38BDF8 : 0x334155);
+    const roughness = pri.has(k) || sec.has(k) ? 0.35 : 0.6;
+    const metalness = pri.has(k) || sec.has(k) ? 0.2 : 0.1;
+    return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+  };
+
+  const boneMat = new THREE.MeshStandardMaterial({ color: 0x1E293B, roughness: 0.8 });
+
+  // Physique morph scaling factors
+  const morph = physiqueProgress != null ? Math.max(0, Math.min(1, physiqueProgress)) : null;
+  const chestScale = morph != null ? (1.0 + morph * 0.18) : 1.0;
+  const latsScale = morph != null ? (1.0 + morph * 0.22) : 1.0;
+  const waistScale = morph != null ? (1.15 - morph * 0.25) : 1.0;
+  const armScale = morph != null ? (0.95 + morph * 0.15) : 1.0;
+  const legScale = morph != null ? (0.95 + morph * 0.12) : 1.0;
+
+  // Head and Neck
+  const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 16, 16), boneMat);
+  headMesh.position.y = 2.15;
+  modelGroup.add(headMesh);
+
+  const neckMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.28, 14), boneMat);
+  neckMesh.position.y = 1.82;
+  modelGroup.add(neckMesh);
+
+  // Traps
+  const trapsGeo = new THREE.BoxGeometry(isFemale ? 0.75 : 0.95, 0.3, 0.45);
+  const trapsMesh = new THREE.Mesh(trapsGeo, getMat('traps'));
+  trapsMesh.position.set(0, 1.7, -0.05);
+  trapsMesh.userData = { muscleKey: 'traps', label: 'Trapezius' };
+  modelGroup.add(trapsMesh);
+
+  // Chest (Pectorals)
+  const chestWidth = (isFemale ? 1.05 : 1.35) * chestScale;
+  const chestGeo = new THREE.BoxGeometry(chestWidth, 0.52, 0.55);
+  const chestMesh = new THREE.Mesh(chestGeo, getMat('chest'));
+  chestMesh.position.set(0, 1.38, 0.08);
+  chestMesh.userData = { muscleKey: 'chest', label: 'Chest (Pectorals)' };
+  modelGroup.add(chestMesh);
+
+  // Lats (Latissimus Dorsi)
+  const latsWidth = (isFemale ? 1.0 : 1.3) * latsScale;
+  const latsGeo = new THREE.BoxGeometry(latsWidth, 0.65, 0.5);
+  const latsMesh = new THREE.Mesh(latsGeo, getMat('lats'));
+  latsMesh.position.set(0, 1.25, -0.1);
+  latsMesh.userData = { muscleKey: 'lats', label: 'Lats (Latissimus)' };
+  modelGroup.add(latsMesh);
+
+  // Abs (Abdominals)
+  const absWidth = (isFemale ? 0.75 : 0.85) * waistScale;
+  const absGeo = new THREE.BoxGeometry(absWidth, 0.6, 0.45);
+  const absMesh = new THREE.Mesh(absGeo, getMat('abs'));
+  absMesh.position.set(0, 0.85, 0.06);
+  absMesh.userData = { muscleKey: 'abs', label: 'Abs (Abdominals)' };
+  modelGroup.add(absMesh);
+
+  // Obliques
+  const obliqWidth = (isFemale ? 0.82 : 0.95) * waistScale;
+  const obliqGeo = new THREE.BoxGeometry(obliqWidth, 0.5, 0.46);
+  const obliqMesh = new THREE.Mesh(obliqGeo, getMat('obliques'));
+  obliqMesh.position.set(0, 0.82, 0);
+  obliqMesh.userData = { muscleKey: 'obliques', label: 'Obliques' };
+  modelGroup.add(obliqMesh);
+
+  // Shoulders (Deltoids)
+  const shoulderOffset = (isFemale ? 0.72 : 0.9) * (morph != null ? (0.95 + morph * 0.1) : 1.0);
+  const deltRad = isFemale ? 0.22 : 0.28;
+  const leftDelt = new THREE.Mesh(new THREE.SphereGeometry(deltRad, 16, 16), getMat('deltoids'));
+  leftDelt.position.set(-shoulderOffset, 1.45, 0);
+  leftDelt.userData = { muscleKey: 'deltoids', label: 'Shoulders (Deltoids)' };
+  modelGroup.add(leftDelt);
+
+  const rightDelt = new THREE.Mesh(new THREE.SphereGeometry(deltRad, 16, 16), getMat('deltoids'));
+  rightDelt.position.set(shoulderOffset, 1.45, 0);
+  rightDelt.userData = { muscleKey: 'deltoids', label: 'Shoulders (Deltoids)' };
+  modelGroup.add(rightDelt);
+
+  // Upper Arms: Biceps & Triceps
+  const armRadius = (isFemale ? 0.14 : 0.18) * armScale;
+  const leftArm = new THREE.Mesh(new THREE.CylinderGeometry(armRadius, armRadius * 0.9, 0.65, 12), getMat('biceps'));
+  leftArm.position.set(-shoulderOffset - 0.05, 1.0, 0.03);
+  leftArm.userData = { muscleKey: 'biceps', label: 'Biceps' };
+  modelGroup.add(leftArm);
+
+  const rightArm = new THREE.Mesh(new THREE.CylinderGeometry(armRadius, armRadius * 0.9, 0.65, 12), getMat('biceps'));
+  rightArm.position.set(shoulderOffset + 0.05, 1.0, 0.03);
+  rightArm.userData = { muscleKey: 'biceps', label: 'Biceps' };
+  modelGroup.add(rightArm);
+
+  const leftTri = new THREE.Mesh(new THREE.CylinderGeometry(armRadius * 0.95, armRadius * 0.85, 0.65, 12), getMat('triceps'));
+  leftTri.position.set(-shoulderOffset - 0.05, 1.0, -0.06);
+  leftTri.userData = { muscleKey: 'triceps', label: 'Triceps' };
+  modelGroup.add(leftTri);
+
+  const rightTri = new THREE.Mesh(new THREE.CylinderGeometry(armRadius * 0.95, armRadius * 0.85, 0.65, 12), getMat('triceps'));
+  rightTri.position.set(shoulderOffset + 0.05, 1.0, -0.06);
+  rightTri.userData = { muscleKey: 'triceps', label: 'Triceps' };
+  modelGroup.add(rightTri);
+
+  // Forearms
+  const forearmRad = armRadius * 0.85;
+  const leftForearm = new THREE.Mesh(new THREE.CylinderGeometry(forearmRad, forearmRad * 0.75, 0.65, 12), getMat('forearms'));
+  leftForearm.position.set(-shoulderOffset - 0.08, 0.38, 0);
+  leftForearm.userData = { muscleKey: 'forearms', label: 'Forearms' };
+  modelGroup.add(leftForearm);
+
+  const rightForearm = new THREE.Mesh(new THREE.CylinderGeometry(forearmRad, forearmRad * 0.75, 0.65, 12), getMat('forearms'));
+  rightForearm.position.set(shoulderOffset + 0.08, 0.38, 0);
+  rightForearm.userData = { muscleKey: 'forearms', label: 'Forearms' };
+  modelGroup.add(rightForearm);
+
+  // Hips / Glutes
+  const hipWidth = isFemale ? 1.15 : 0.98;
+  const glutesGeo = new THREE.BoxGeometry(hipWidth, 0.48, 0.58);
+  const glutesMesh = new THREE.Mesh(glutesGeo, getMat('glutes'));
+  glutesMesh.position.set(0, 0.38, -0.05);
+  glutesMesh.userData = { muscleKey: 'glutes', label: 'Glutes' };
+  modelGroup.add(glutesMesh);
+
+  // Upper Legs: Quads & Hamstrings
+  const legOffset = isFemale ? 0.32 : 0.28;
+  const quadRad = (isFemale ? 0.24 : 0.22) * legScale;
+  const leftQuad = new THREE.Mesh(new THREE.CylinderGeometry(quadRad, quadRad * 0.82, 0.85, 14), getMat('quads'));
+  leftQuad.position.set(-legOffset, -0.25, 0.04);
+  leftQuad.userData = { muscleKey: 'quads', label: 'Quadriceps' };
+  modelGroup.add(leftQuad);
+
+  const rightQuad = new THREE.Mesh(new THREE.CylinderGeometry(quadRad, quadRad * 0.82, 0.85, 14), getMat('quads'));
+  rightQuad.position.set(legOffset, -0.25, 0.04);
+  rightQuad.userData = { muscleKey: 'quads', label: 'Quadriceps' };
+  modelGroup.add(rightQuad);
+
+  const leftHam = new THREE.Mesh(new THREE.CylinderGeometry(quadRad * 0.95, quadRad * 0.78, 0.85, 14), getMat('hamstrings'));
+  leftHam.position.set(-legOffset, -0.25, -0.06);
+  leftHam.userData = { muscleKey: 'hamstrings', label: 'Hamstrings' };
+  modelGroup.add(leftHam);
+
+  const rightHam = new THREE.Mesh(new THREE.CylinderGeometry(quadRad * 0.95, quadRad * 0.78, 0.85, 14), getMat('hamstrings'));
+  rightHam.position.set(legOffset, -0.25, -0.06);
+  rightHam.userData = { muscleKey: 'hamstrings', label: 'Hamstrings' };
+  modelGroup.add(rightHam);
+
+  // Lower Legs: Calves
+  const calfRad = quadRad * 0.75;
+  const leftCalf = new THREE.Mesh(new THREE.CylinderGeometry(calfRad, calfRad * 0.6, 0.85, 12), getMat('calves'));
+  leftCalf.position.set(-legOffset, -1.08, 0);
+  leftCalf.userData = { muscleKey: 'calves', label: 'Calves' };
+  modelGroup.add(leftCalf);
+
+  const rightCalf = new THREE.Mesh(new THREE.CylinderGeometry(calfRad, calfRad * 0.6, 0.85, 12), getMat('calves'));
+  rightCalf.position.set(legOffset, -1.08, 0);
+  rightCalf.userData = { muscleKey: 'calves', label: 'Calves' };
+  modelGroup.add(rightCalf);
+
+  return modelGroup;
+}
+
+let active3DViewer = null;
+
+async function init3DViewer(options = {}) {
+  const {
+    container,
+    gender = S.cfg?.bodyModel || 'male',
+    primaryMuscles = [],
+    secondaryMuscles = [],
+    physiqueProgress = null,
+    onMuscleSelect = null
+  } = options;
+
+  if (!container) return null;
+  const THREE = await lazyLoadThree();
+  if (!THREE) return null;
+
+  const width = container.clientWidth || 340;
+  const height = container.clientHeight || 420;
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 100);
+  camera.position.set(0, 0.4, 5.2);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(width, height);
+  renderer.setPixelRatio(Math.min(typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1, 2));
+
+  container.innerHTML = '';
+  container.appendChild(renderer.domElement);
+
+  // Lighting
+  const ambLight = new THREE.AmbientLight(0xFFFFFF, 0.7);
+  scene.add(ambLight);
+
+  const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.85);
+  dirLight1.position.set(3, 4, 5);
+  scene.add(dirLight1);
+
+  const dirLight2 = new THREE.DirectionalLight(0x60A5FA, 0.4);
+  dirLight2.position.set(-3, -2, -3);
+  scene.add(dirLight2);
+
+  // Model setup
+  let currentGender = gender;
+  let currentProgress = physiqueProgress;
+  let model = buildProceduralAnatomyModel(THREE, currentGender, primaryMuscles, secondaryMuscles, currentProgress);
+  scene.add(model);
+
+  // Interaction & Touch / Mouse Orbit controls
+  let isDragging = false;
+  let prevPointerX = 0;
+  let prevPointerY = 0;
+  let pointerStartX = 0;
+  let pointerStartY = 0;
+  let autoRotate = true;
+  let pinchStartDist = 0;
+  let animId = null;
+  let isDestroyed = false;
+  let lastFrameTime = 0;
+  let isPaused = false;
+
+  const raycaster = new THREE.Raycaster();
+  const mouse = new THREE.Vector2();
+
+  const onPointerDown = (e) => {
+    isDragging = true;
+    prevPointerX = e.clientX;
+    prevPointerY = e.clientY;
+    pointerStartX = e.clientX;
+    pointerStartY = e.clientY;
+  };
+
+  const onPointerMove = (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - prevPointerX;
+    const dy = e.clientY - prevPointerY;
+    prevPointerX = e.clientX;
+    prevPointerY = e.clientY;
+
+    if (model) {
+      model.rotation.y += dx * 0.01;
+      model.rotation.x = Math.max(-0.4, Math.min(0.4, model.rotation.x + dy * 0.008));
+    }
+  };
+
+  const onPointerUp = (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+
+    // Tap/click detection (delta < 6px)
+    const dist = Math.hypot(e.clientX - pointerStartX, e.clientY - pointerStartY);
+    if (dist < 6 && model) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(model.children, true);
+      if (intersects && intersects.length > 0) {
+        for (const hit of intersects) {
+          if (hit.object && hit.object.userData && hit.object.userData.muscleKey) {
+            const mKey = hit.object.userData.muscleKey;
+            if (typeof onMuscleSelect === 'function') {
+              onMuscleSelect(mKey);
+            } else if (typeof showMuscleDetailSheet === 'function') {
+              showMuscleDetailSheet(mKey);
+            }
+            break;
+          }
+        }
+      }
+    }
+  };
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    camera.position.z = Math.max(3.0, Math.min(8.0, camera.position.z + e.deltaY * 0.004));
+  };
+
+  // Touch handlers for mobile pinch-to-zoom
+  const onTouchStart = (e) => {
+    if (e.touches && e.touches.length === 2) {
+      pinchStartDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  };
+
+  const onTouchMove = (e) => {
+    if (e.touches && e.touches.length === 2 && pinchStartDist > 0) {
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const diff = pinchStartDist - currentDist;
+      camera.position.z = Math.max(3.0, Math.min(8.0, camera.position.z + diff * 0.01));
+      pinchStartDist = currentDist;
+      e.preventDefault();
+    }
+  };
+
+  const onVisibilityChange = () => {
+    if (typeof document !== 'undefined') {
+      isPaused = document.hidden;
+    }
+  };
+
+  const canvas = renderer.domElement;
+  canvas.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('touchstart', onTouchStart, { passive: true });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', onVisibilityChange);
+  }
+
+  // 30 fps delta-throttled animation loop
+  const animate = (now) => {
+    if (isDestroyed) return;
+    animId = requestAnimationFrame(animate);
+
+    if (isPaused) return;
+
+    // Delta-throttle to ~30 fps (33ms)
+    if (now - lastFrameTime < 33) return;
+    lastFrameTime = now;
+
+    if (autoRotate && !isDragging && model) {
+      model.rotation.y += 0.008;
+    }
+
+    renderer.render(scene, camera);
+  };
+  animId = requestAnimationFrame(animate);
+
+  const viewerInstance = {
+    destroy() {
+      if (isDestroyed) return;
+      isDestroyed = true;
+      if (animId) cancelAnimationFrame(animId);
+
+      canvas.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+      }
+
+      // Explicit scene traversal and disposal
+      scene.traverse(obj => {
+        if (obj.geometry && typeof obj.geometry.dispose === 'function') {
+          obj.geometry.dispose();
+        }
+        if (obj.material) {
+          if (Array.isArray(obj.material)) {
+            obj.material.forEach(m => m && typeof m.dispose === 'function' && m.dispose());
+          } else if (typeof obj.material.dispose === 'function') {
+            obj.material.dispose();
+          }
+        }
+      });
+
+      if (renderer && typeof renderer.dispose === 'function') {
+        renderer.dispose();
+      }
+      container.innerHTML = '';
+    },
+    setGender(g) {
+      currentGender = g;
+      scene.remove(model);
+      model.traverse(obj => {
+        if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+        if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+      });
+      model = buildProceduralAnatomyModel(THREE, currentGender, primaryMuscles, secondaryMuscles, currentProgress);
+      scene.add(model);
+    },
+    setPhysiqueProgress(p) {
+      currentProgress = p;
+      scene.remove(model);
+      model.traverse(obj => {
+        if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+        if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+      });
+      model = buildProceduralAnatomyModel(THREE, currentGender, primaryMuscles, secondaryMuscles, currentProgress);
+      scene.add(model);
+    },
+    resetView() {
+      if (model) {
+        model.rotation.set(0, 0, 0);
+      }
+      camera.position.set(0, 0.4, 5.2);
+    },
+    toggleAutoRotate(val) {
+      autoRotate = val != null ? val : !autoRotate;
+      return autoRotate;
+    },
+    isAutoRotate() {
+      return autoRotate;
+    }
+  };
+
+  active3DViewer = viewerInstance;
+  return viewerInstance;
+}
+
+function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
+  if (active3DViewer) {
+    try { active3DViewer.destroy(); } catch (_) {}
+    active3DViewer = null;
+  }
+
+  const pKeys = Array.isArray(primaryMuscles) ? primaryMuscles : (typeof primaryMuscles === 'string' ? primaryMuscles.split(',').filter(Boolean) : []);
+  const sKeys = Array.isArray(secondaryMuscles) ? secondaryMuscles : (typeof secondaryMuscles === 'string' ? secondaryMuscles.split(',').filter(Boolean) : []);
+  const currentGender = S.cfg?.bodyModel || 'male';
+
+  const hasWebGL = isWebGLAvailable();
+
+  if (!hasWebGL) {
+    // Graceful 2D SVG fallback
+    modal(`
+      <div class="modal-header">
+        <h3 class="modal-title">📐 Anatomical Muscle Map</h3>
+        <button class="modal-close-btn" data-a="close">✕</button>
+      </div>
+      <div style="background:var(--card-sub);padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--t2);">
+        ⚠️ WebGL 3D acceleration is not available or disabled on this device. Showing interactive 2D anatomical map.
+      </div>
+      <div style="text-align:center;">
+        ${mmap(pKeys, sKeys, { gender: currentGender, wrap: true })}
+      </div>
+    `);
+    return;
+  }
+
+  modal(`
+    <div class="modal-header">
+      <h3 class="modal-title">📐 3D Interactive Anatomy</h3>
+      <button class="modal-close-btn" data-a="close">✕</button>
+    </div>
+    <div class="canvas-3d-controls" style="display:flex;gap:6px;margin-bottom:10px;justify-content:center;flex-wrap:wrap;">
+      <button class="chip" data-a="toggle-3d-gender" id="gender-3d-btn" style="font-weight:700;">Silhouette: <span id="gender-3d-label">${currentGender === 'female' ? 'Female' : 'Male'}</span></button>
+      <button class="chip on" data-a="toggle-3d-autorotate" id="autorotate-3d-btn">🔄 Auto-Rotate: ON</button>
+      <button class="chip" data-a="reset-3d-view">↺ Reset View</button>
+    </div>
+    <div class="canvas-3d-wrap" id="anatomy-3d-canvas-wrap">
+      <div class="canvas-3d-hint">👆 Drag to 360° rotate · Pinch to zoom · Tap muscle to explore</div>
+    </div>
+    <div class="canvas-3d-overlay">
+      <span class="legend-chip"><span class="legend-color-dot dot-pri"></span> Primary Target</span>
+      <span class="legend-chip"><span class="legend-color-dot dot-sec"></span> Secondary Target</span>
+      <span class="legend-chip"><span class="legend-color-dot dot-neutral"></span> Other Muscles</span>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const container = document.getElementById('anatomy-3d-canvas-wrap');
+    if (container) {
+      init3DViewer({
+        container,
+        gender: currentGender,
+        primaryMuscles: pKeys,
+        secondaryMuscles: sKeys,
+        onMuscleSelect: (mKey) => {
+          showMuscleDetailSheet(mKey);
+        }
+      });
+    }
+  }, 30);
+}
+
+function show3DPhysiqueModal(initialProgress = 0.5) {
+  if (active3DViewer) {
+    try { active3DViewer.destroy(); } catch (_) {}
+    active3DViewer = null;
+  }
+
+  const pState = getPhysiqueState();
+  const currentGender = S.cfg?.bodyModel || 'male';
+  const hasWebGL = isWebGLAvailable();
+
+  const prog = Math.max(0, Math.min(1, initialProgress != null ? initialProgress : ((pState && pState.overallProgress != null) ? pState.overallProgress / 100 : 0.5)));
+  const displayPct = Math.round(prog * 100);
+
+  if (!hasWebGL) {
+    modal(`
+      <div class="modal-header">
+        <h3 class="modal-title">⚡ Physique Transformation</h3>
+        <button class="modal-close-btn" data-a="close">✕</button>
+      </div>
+      <div style="background:var(--card-sub);padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--t2);">
+        ⚠️ WebGL 3D acceleration is not available. Showing 2D transformation roadmap.
+      </div>
+      <div style="text-align:center;">
+        ${generateMorphSvg(currentGender, prog)}
+      </div>
+    `);
+    return;
+  }
+
+  modal(`
+    <div class="modal-header">
+      <h3 class="modal-title">⚡ 3D Physique Transformation Morph</h3>
+      <button class="modal-close-btn" data-a="close">✕</button>
+    </div>
+    <div class="canvas-3d-controls" style="display:flex;gap:6px;margin-bottom:10px;justify-content:center;flex-wrap:wrap;">
+      <button class="chip" data-a="toggle-3d-gender" id="gender-3d-btn" style="font-weight:700;">Silhouette: <span id="gender-3d-label">${currentGender === 'female' ? 'Female' : 'Male'}</span></button>
+      <button class="chip on" data-a="toggle-3d-autorotate" id="autorotate-3d-btn">🔄 Auto-Rotate: ON</button>
+      <button class="chip" data-a="reset-3d-view">↺ Reset</button>
+    </div>
+    <div class="canvas-3d-wrap" id="physique-3d-canvas-wrap">
+      <div class="canvas-3d-hint">Scrub slider below to inspect 3D V-taper, waist & chest progression</div>
+    </div>
+    <div style="margin-top:12px;padding:0 8px;">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin-bottom:4px;">
+        <span>0% Baseline</span>
+        <b id="physique-3d-pct-label" style="color:var(--ac);">${displayPct}% Progress</b>
+        <span>100% Goal</span>
+      </div>
+      <input type="range" min="0" max="100" value="${displayPct}" id="physique-3d-slider" class="morph-scrub-slider" style="width:100%;">
+    </div>
+  `);
+
+  setTimeout(() => {
+    const container = document.getElementById('physique-3d-canvas-wrap');
+    if (container) {
+      const viewer = init3DViewer({
+        container,
+        gender: currentGender,
+        physiqueProgress: prog
+      });
+
+      const slider = document.getElementById('physique-3d-slider');
+      const label = document.getElementById('physique-3d-pct-label');
+      if (slider) {
+        slider.addEventListener('input', (e) => {
+          const val = Number(e.target.value);
+          if (label) label.textContent = `${val}% Progress`;
+          if (viewer) viewer.setPhysiqueProgress(val / 100);
+        });
+      }
+    }
+  }, 30);
+}
+
+function animateCounter(el, start, end, duration = 800, suffix = '') {
+  if (!el) return;
+  const s = Number(start) || 0;
+  const e = Number(end) || 0;
+
+  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    el.textContent = `${e}${suffix}`;
+    return;
+  }
+
+  const rAF = (typeof window !== 'undefined' && window.requestAnimationFrame)
+    ? window.requestAnimationFrame.bind(window)
+    : ((typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame : (cb => setTimeout(cb, 16)));
+
+  const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const step = (currentTime) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(1, elapsed / duration);
+    // Ease-out cubic
+    const ease = 1 - Math.pow(1 - progress, 3);
+    const currentVal = Math.round(s + (e - s) * ease);
+    el.textContent = `${currentVal}${suffix}`;
+    if (progress < 1) {
+      rAF(step);
+    }
+  };
+  rAF(step);
+}
+
+function renderVolumeRadarChart(muscleVolumes = {}) {
+  let data = { Chest: 0, Back: 0, Legs: 0, Shoulders: 0, Arms: 0, Core: 0 };
+  if (Array.isArray(muscleVolumes)) {
+    for (const item of muscleVolumes) {
+      const name = item.muscle || item.name;
+      const sets = Number(item.sets || item.count || item.volume || 0);
+      if (name in data) {
+        data[name] = sets;
+      } else if (name === 'Glutes' || name === 'Hamstrings' || name === 'Quads' || name === 'Calves') {
+        data['Legs'] += sets;
+      } else if (name === 'Biceps' || name === 'Triceps' || name === 'Forearms') {
+        data['Arms'] += sets;
+      } else if (name === 'Traps' || name === 'Lats') {
+        data['Back'] += sets;
+      } else if (name === 'Deltoids') {
+        data['Shoulders'] += sets;
+      } else if (name === 'Abs' || name === 'Obliques') {
+        data['Core'] += sets;
+      }
+    }
+  } else if (muscleVolumes && typeof muscleVolumes === 'object') {
+    for (const [k, v] of Object.entries(muscleVolumes)) {
+      if (k in data) data[k] = Number(v) || 0;
+      else if (k === 'Abs' || k === 'Obliques') data['Core'] = (data['Core'] || 0) + (Number(v) || 0);
+    }
+  }
+
+  const axes = ['Chest', 'Back', 'Legs', 'Shoulders', 'Arms', 'Core'];
+  const centerX = 130;
+  const centerY = 130;
+  const radius = 80;
+  const maxSets = 20;
+
+  const getCoord = (angleRad, r) => ({
+    x: Math.round(centerX + r * Math.sin(angleRad)),
+    y: Math.round(centerY - r * Math.cos(angleRad))
+  });
+
+  // Concentric grid rings at 33%, 66%, 100%
+  const gridRings = [0.33, 0.66, 1.0].map(frac => {
+    const r = radius * frac;
+    const pts = axes.map((_, i) => {
+      const angle = (i * 2 * Math.PI) / axes.length;
+      const c = getCoord(angle, r);
+      return `${c.x},${c.y}`;
+    }).join(' ');
+    return `<polygon points="${pts}" fill="none" stroke="var(--border, rgba(255,255,255,0.12))" stroke-width="1" stroke-dasharray="${frac < 1.0 ? '2,2' : 'none'}"/>`;
+  }).join('');
+
+  // Axis lines
+  const axisLines = axes.map((label, i) => {
+    const angle = (i * 2 * Math.PI) / axes.length;
+    const end = getCoord(angle, radius);
+    const labelPos = getCoord(angle, radius + 18);
+    return `
+      <line x1="${centerX}" y1="${centerY}" x2="${end.x}" y2="${end.y}" stroke="var(--border, rgba(255,255,255,0.15))" stroke-width="1"/>
+      <text x="${labelPos.x}" y="${labelPos.y + 4}" font-size="10" font-weight="600" text-anchor="middle" fill="var(--t2, #94A3B8)">${label}</text>
+    `;
+  }).join('');
+
+  // Radar polygon points
+  const radarPoints = axes.map((axis, i) => {
+    const angle = (i * 2 * Math.PI) / axes.length;
+    const val = Math.min(maxSets, Math.max(0, data[axis] || 0));
+    const frac = val / maxSets;
+    const r = radius * Math.max(0.08, frac);
+    const coord = getCoord(angle, r);
+    return `${coord.x},${coord.y}`;
+  }).join(' ');
+
+  const vertices = axes.map((axis, i) => {
+    const angle = (i * 2 * Math.PI) / axes.length;
+    const val = Math.min(maxSets, Math.max(0, data[axis] || 0));
+    const frac = val / maxSets;
+    const r = radius * Math.max(0.08, frac);
+    const c = getCoord(angle, r);
+    return `<circle cx="${c.x}" cy="${c.y}" r="3.5" fill="#FF9F0A" stroke="#FFFFFF" stroke-width="1.5"/>`;
+  }).join('');
+
+  return `
+    <div class="radar-chart-wrap" style="text-align:center;margin:12px 0;">
+      <div style="font-size:12px;font-weight:700;color:var(--t1);margin-bottom:4px;">Weekly Volume Radar (20s Target)</div>
+      <svg class="radar-chart-svg" viewBox="0 0 260 260" width="100%" height="220" style="max-width:280px;display:inline-block;overflow:visible;">
+        ${gridRings}
+        ${axisLines}
+        <polygon points="${radarPoints}" fill="rgba(255, 159, 10, 0.25)" stroke="#FF9F0A" stroke-width="2"/>
+        ${vertices}
+      </svg>
+    </div>
+  `;
+}
+
+function triggerPRCelebration(options = {}) {
+  const { text = '🎉 NEW PERSONAL RECORD!', container = (typeof document !== 'undefined' ? document.body : null) } = options;
+  if (!container || typeof document === 'undefined' || typeof document.createElement !== 'function') return;
+
+  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (typeof toast === 'function') toast(text);
+    return;
+  }
+
+  const existing = document.getElementById ? document.getElementById('pr-celebration-overlay') : null;
+  if (existing && typeof existing.remove === 'function') existing.remove();
+
+  const overlay = document.createElement('div');
+  if (!overlay || typeof overlay.appendChild !== 'function' || typeof container.appendChild !== 'function') {
+    if (typeof toast === 'function') toast(text);
+    return;
+  }
+  overlay.id = 'pr-celebration-overlay';
+  overlay.className = 'pr-celebration-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:99999;overflow:hidden;display:flex;align-items:center;justify-content:center;';
+
+  const banner = document.createElement('div');
+  banner.className = 'pr-banner-card';
+  banner.style.cssText = 'background:rgba(10,10,12,0.92);backdrop-filter:blur(16px);border:2px solid #FF9F0A;padding:16px 24px;border-radius:16px;box-shadow:0 12px 36px rgba(255,159,10,0.35);text-align:center;color:#FFF;transform:scale(0.8);opacity:0;transition:all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);';
+  banner.innerHTML = `<div style="font-size:24px;margin-bottom:4px;">🏆</div><div style="font-size:16px;font-weight:800;color:#FF9F0A;">${esc(text)}</div>`;
+  overlay.appendChild(banner);
+
+  const colors = ['#FF9F0A', '#0A84FF', '#30D158', '#FF453A', '#BF5AF2', '#FFD60A'];
+  const confettiCount = 36;
+  const particles = [];
+
+  for (let i = 0; i < confettiCount; i++) {
+    const p = document.createElement('div');
+    const color = colors[i % colors.length];
+    const size = 6 + Math.random() * 6;
+    p.style.cssText = `position:absolute;width:${size}px;height:${size}px;background:${color};border-radius:${Math.random() > 0.5 ? '50%' : '2px'};top:50%;left:50%;opacity:1;will-change:transform,opacity;`;
+    overlay.appendChild(p);
+    particles.push({
+      el: p,
+      x: 0,
+      y: 0,
+      vx: (Math.random() - 0.5) * 16,
+      vy: (Math.random() - 0.7) * 18,
+      rot: Math.random() * 360,
+      vrot: (Math.random() - 0.5) * 20,
+      alpha: 1
+    });
+  }
+
+  const rAF = (typeof window !== 'undefined' && window.requestAnimationFrame)
+    ? window.requestAnimationFrame.bind(window)
+    : ((typeof requestAnimationFrame !== 'undefined') ? requestAnimationFrame : (cb => setTimeout(cb, 16)));
+  const cAF = (typeof window !== 'undefined' && window.cancelAnimationFrame)
+    ? window.cancelAnimationFrame.bind(window)
+    : ((typeof cancelAnimationFrame !== 'undefined') ? cancelAnimationFrame : clearTimeout);
+
+  container.appendChild(overlay);
+
+  rAF(() => {
+    banner.style.transform = 'scale(1)';
+    banner.style.opacity = '1';
+  });
+
+  const startTime = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  let animId = null;
+
+  const tickPhysics = (now) => {
+    const elapsed = now - startTime;
+    if (elapsed > 2400) {
+      if (animId) cAF(animId);
+      overlay.style.transition = 'opacity 0.3s ease';
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 320);
+      return;
+    }
+
+    particles.forEach(p => {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += 0.45;
+      p.rot += p.vrot;
+      if (elapsed > 1600) {
+        p.alpha = Math.max(0, 1 - (elapsed - 1600) / 800);
+      }
+      p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0) rotate(${p.rot}deg)`;
+      p.el.style.opacity = p.alpha;
+    });
+
+    animId = rAF(tickPhysics);
+  };
+
+  animId = rAF(tickPhysics);
 }
 
 // ---- Math & Progression Engine ----
@@ -1615,6 +2415,10 @@ const modal = (h, opts = {}) => {
 };
 
 const closeModal = () => {
+  if (active3DViewer) {
+    try { active3DViewer.destroy(); } catch (_) {}
+    active3DViewer = null;
+  }
   const m = $('#m');
   if (typeof document !== 'undefined' && modalKeydownHandler && typeof document.removeEventListener === 'function') {
     document.removeEventListener('keydown', modalKeydownHandler);
@@ -3743,6 +4547,22 @@ function handleSetCompleted(i, j, s, x) {
     navigator.vibrate(pr ? [40, 60, 120] : 40);
   }
 
+  // Checkmark spring ripple on thumb-zone Done button
+  if (typeof document !== 'undefined') {
+    const doneBtn = document.querySelector(`.set-done-btn[data-i="${i}"][data-j="${j}"]`);
+    if (doneBtn) {
+      doneBtn.classList.remove('spring-ripple');
+      void doneBtn.offsetWidth; // trigger reflow
+      doneBtn.classList.add('spring-ripple');
+    }
+  }
+
+  if (pr) {
+    const exObj = X(x.id);
+    const prText = `🎉 NEW PR! ${exObj?.name || 'Exercise'} · ${s.w}kg × ${s.r}`;
+    triggerPRCelebration({ text: prText });
+  }
+
   const ssInfo = getSupersetInfo(S.act, i);
   if (ssInfo.isSuperset && ssInfo.isPaired) {
     if (!ssInfo.isLastInGroup && ssInfo.nextInGroup) {
@@ -4647,6 +5467,7 @@ function renderTransformationRoadmapCard() {
           <input type="range" min="0" max="100" step="0.5" value="${displayPct}" id="morph-scrub-input" class="morph-scrub-slider" data-a="morph-scrub">
           <div class="morph-slider-actions">
             <button class="chip morph-reset-btn" data-a="resetmorph" data-pct="${displayPct}">↺ Snap to Current (${displayPct}%)</button>
+            <button class="chip" data-a="open-3d-physique" style="font-weight:700;margin-left:6px;">📐 3D Morph</button>
           </div>
         </div>
       </div>
@@ -5456,12 +6277,17 @@ function vBody() {
 
   const netWeightClass = diffW != null ? (isBulk ? (diffW > 0 ? 'text-green' : (diffW < 0 ? 'text-orange' : '')) : (diffW < 0 ? 'text-green' : (diffW > 0 ? 'text-orange' : ''))) : '';
 
+  const weeklyFreqs = (typeof Calc !== 'undefined' && Calc.calcWeeklyMuscleFrequency)
+    ? Calc.calcWeeklyMuscleFrequency(S.logs, Date.now(), S.cfg?.weekStartDay || 'mon', {}, X)
+    : calcWeeklyMuscleFrequency(S.logs);
+
   return viewHeader('Body & Nutrition') +
     subtabHeader +
     nutritionPreviewHtml +
     roadmapHtml +
     renderAchievementsCard(S.logs) +
     renderWeeklyMuscleFrequencyCard(S.logs) +
+    renderVolumeRadarChart(weeklyFreqs) +
     `<h2>Measurement Trends</h2>` +
     `<div class="stat-grid">` +
       `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
@@ -8720,6 +9546,45 @@ document.addEventListener('click', async e => {
     case 'tab': view = k; close(); break;
     case 'close': close(); return;
     case 'undo': U?.(); $('#toast').className = ''; return;
+    case 'open-3d-anatomy': {
+      const p = t.dataset.p ? t.dataset.p.split(',').filter(Boolean) : [];
+      const s = t.dataset.s ? t.dataset.s.split(',').filter(Boolean) : [];
+      show3DAnatomyModal(p, s);
+      return;
+    }
+    case 'open-3d-physique': {
+      const pState = getPhysiqueState();
+      const currentProg = (pState && pState.overallProgress != null) ? (pState.overallProgress / 100) : 0.5;
+      show3DPhysiqueModal(currentProg);
+      return;
+    }
+    case 'toggle-3d-gender': {
+      if (active3DViewer) {
+        const cur = S.cfg?.bodyModel === 'female' ? 'male' : 'female';
+        S.cfg.bodyModel = cur;
+        save('cfg');
+        const lbl = document.getElementById('gender-3d-label');
+        if (lbl) lbl.textContent = cur === 'female' ? 'Female' : 'Male';
+        active3DViewer.setGender(cur);
+      }
+      return;
+    }
+    case 'reset-3d-view': {
+      if (active3DViewer) active3DViewer.resetView();
+      return;
+    }
+    case 'toggle-3d-autorotate': {
+      if (active3DViewer) {
+        const next = !active3DViewer.isAutoRotate();
+        active3DViewer.toggleAutoRotate(next);
+        const btn = document.getElementById('autorotate-3d-btn');
+        if (btn) {
+          btn.classList.toggle('on', next);
+          btn.textContent = '🔄 Auto-Rotate: ' + (next ? 'ON' : 'OFF');
+        }
+      }
+      return;
+    }
     case 'r15': T.end += 15000; tick(); return;
     case 'rskip': {
       const loop = T.supersetLoop;
@@ -10788,7 +11653,7 @@ async function init() {
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.4.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -10999,7 +11864,18 @@ if (typeof globalThis !== 'undefined') {
     commitCSVImport,
     showOnboardingModal,
     renderTrainingInsightsCard,
-    getExRest
+    getExRest,
+    isWebGLAvailable,
+    lazyLoadThree,
+    buildProceduralAnatomyModel,
+    init3DViewer,
+    show3DAnatomyModal,
+    show3DPhysiqueModal,
+    animateCounter,
+    renderVolumeRadarChart,
+    triggerPRCelebration,
+    get active3DViewer() { return active3DViewer; },
+    set active3DViewer(v) { active3DViewer = v; }
   };
 }
 
