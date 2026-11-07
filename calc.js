@@ -486,8 +486,10 @@
     }
 
     const dayGroups = {};
+    const setGroups = {};
     for (const target of FULL_MUSCLE_TARGETS) {
       dayGroups[target] = new Set();
+      setGroups[target] = 0;
     }
 
     for (const log of recentLogs) {
@@ -495,14 +497,18 @@
       for (const x of (log.ex || [])) {
         const e = exLookup ? exLookup(x.id) : (x.exInfo || x);
         const stimulated = getStimulatedMuscleGroups(e);
+        const validSets = Array.isArray(x.sets) ? x.sets.filter(s => s && (s.done || Number(s.r) > 0)).length : 0;
         for (const grp of stimulated) {
           if (dayGroups[grp]) dayGroups[grp].add(dayKey);
+          if (typeof setGroups[grp] === 'number') setGroups[grp] += validSets;
         }
       }
     }
 
     const res = FULL_MUSCLE_TARGETS.map(target => {
       const count = dayGroups[target] ? dayGroups[target].size : 0;
+      const sets = setGroups[target] || 0;
+      const volStatus = calcMuscleVolumeStatus(sets);
       const opt = count >= 2;
       const partial = count === 1;
       const pips = opt ? `●● (${count}/2 Opt)` : (partial ? '●○ (1/2)' : '○○ (0/2)');
@@ -510,6 +516,8 @@
         muscle: target,
         count,
         days: count,
+        sets,
+        volumeStatus: volStatus,
         target: 2,
         status: opt ? 'optimal' : (partial ? 'moderate' : 'none'),
         pips
@@ -751,6 +759,203 @@
     };
   };
 
+  // 15. Hypertrophy Target Bands (MEV, MAV, MRV)
+  const calcMuscleVolumeStatus = (sets = 0) => {
+    const s = Math.max(0, Number(sets) || 0);
+    if (s < 8) return { status: 'below_mev', min: 8, max: 10, label: 'Under MEV' };
+    if (s <= 10) return { status: 'mev', min: 8, max: 10, label: 'MEV' };
+    if (s <= 18) return { status: 'mav', min: 12, max: 18, label: 'MAV' };
+    return { status: 'mrv', min: 20, max: null, label: 'MRV' };
+  };
+
+  // 16. Local Rule-Based Training Insights (Pure Deterministic Math)
+  const calcTrainingInsights = (logs = [], routines = [], options = {}) => {
+    const insights = [];
+    if (!Array.isArray(logs) || !logs.length) {
+      return insights;
+    }
+
+    // 1. ACWR Volume Spike check
+    const acwrRes = calcACWR(logs, options.refDate || Date.now());
+    if (acwrRes && typeof acwrRes.acwr === 'number' && acwrRes.acwr > 1.5 && acwrRes.status !== 'uncalibrated') {
+      insights.push({
+        type: 'acwr_spike',
+        level: 'warning',
+        title: 'Workload Volume Spike',
+        acwr: acwrRes.acwr,
+        message: `Acute workload is ${acwrRes.acwr.toFixed(2)}x chronic baseline (>1.5x threshold). Consider a lighter deload or rest day.`
+      });
+    }
+
+    // 2. Stalled Lifts (exercises with failed progression across last 2+ sessions)
+    const sortedLogs = [...logs].sort((a, b) => (Number(a.date || a.t0) || 0) - (Number(b.date || b.t0) || 0));
+    const exHistories = new Map();
+    for (const l of sortedLogs) {
+      if (!Array.isArray(l.ex)) continue;
+      for (const x of l.ex) {
+        if (!x || !x.id || !Array.isArray(x.sets)) continue;
+        const validSets = x.sets.filter(s => s && (s.done || Number(s.r) > 0));
+        if (!validSets.length) continue;
+        let maxW = 0, maxR = 0, rir0Count = 0;
+        for (const s of validSets) {
+          const w = Number(s.w) || 0;
+          const r = Number(s.r) || 0;
+          if (w > maxW || (w === maxW && r > maxR)) {
+            maxW = w;
+            maxR = r;
+          }
+          if (s.rir === 0 || s.rpe >= 10) rir0Count++;
+        }
+        if (!exHistories.has(x.id)) exHistories.set(x.id, []);
+        exHistories.get(x.id).push({
+          date: l.date || l.t0,
+          name: x.name || 'Exercise',
+          maxW,
+          maxR,
+          rir0Count
+        });
+      }
+    }
+
+    for (const [id, hist] of exHistories.entries()) {
+      if (hist.length >= 2) {
+        const last = hist[hist.length - 1];
+        const prev = hist[hist.length - 2];
+        const noWeightProg = last.maxW <= prev.maxW;
+        const noRepProg = last.maxR <= prev.maxR;
+        if (noWeightProg && noRepProg && (last.rir0Count > 0 || prev.rir0Count > 0)) {
+          insights.push({
+            type: 'stalled_lift',
+            level: 'info',
+            exId: id,
+            name: last.name,
+            weight: last.maxW,
+            message: `${last.name} has stalled at ${last.maxW}kg with high fatigue across the last 2 sessions.`
+          });
+        }
+      }
+    }
+
+    // 3. Neglected Muscle Groups (< MEV threshold, i.e. < 8 sets in the past 7 days)
+    if (typeof options.getEx === 'function') {
+      const freqs = calcWeeklyMuscleFrequency(logs, options.refDate || Date.now(), options.weekStart || 'mon', {}, options.getEx);
+      const majorMuscles = ['Chest', 'Back', 'Quads', 'Hamstrings', 'Deltoids'];
+      for (const m of majorMuscles) {
+        const f = freqs.find(item => item.muscle === m);
+        const count = f ? (f.count || 0) : 0;
+        if (count === 0) {
+          insights.push({
+            type: 'neglected_muscle',
+            level: 'tip',
+            muscle: m,
+            message: `${m} has 0 logged sessions this week (target: 2x/wk).`
+          });
+        }
+      }
+    }
+
+    return insights;
+  };
+
+  // 17. Robust Third-Party CSV Importer (Strong, Hevy, MyGyM)
+  const parseThirdPartyCSV = (csvText) => {
+    if (!csvText || typeof csvText !== 'string') return [];
+    const lines = csvText.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+    if (lines.length < 2) return [];
+
+    const parseLine = line => {
+      const result = [];
+      let cur = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const c = line[i];
+        if (c === '"') {
+          if (inQuotes && line[i + 1] === '"') {
+            cur += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (c === ',' && !inQuotes) {
+          result.push(cur.trim());
+          cur = '';
+        } else {
+          cur += c;
+        }
+      }
+      result.push(cur.trim());
+      return result;
+    };
+
+    const rawHeaders = parseLine(lines[0]);
+    const headers = rawHeaders.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+
+    let dateIdx = headers.findIndex(h => h.includes('date'));
+    let workoutIdx = headers.findIndex(h => h.includes('workout') && !h.includes('notes'));
+    let exIdx = headers.findIndex(h => h.includes('exercise') || h.includes('title'));
+    let setIdx = headers.findIndex(h => h.includes('set') && !h.includes('type'));
+    let weightIdx = headers.findIndex(h => h.includes('weight') || h.includes('kg') || h.includes('lbs'));
+    let repsIdx = headers.findIndex(h => h.includes('reps'));
+    let rpeIdx = headers.findIndex(h => h.includes('rpe'));
+    let rirIdx = headers.findIndex(h => h.includes('rir'));
+    let notesIdx = headers.findIndex(h => h.includes('note'));
+
+    if (dateIdx === -1 || exIdx === -1) {
+      return [];
+    }
+
+    const sessionMap = new Map();
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseLine(lines[i]);
+      if (cols.length <= Math.max(dateIdx, exIdx)) continue;
+
+      const rawDate = cols[dateIdx] || '';
+      const parsedDate = new Date(rawDate);
+      const dateVal = isNaN(parsedDate.getTime()) ? Date.now() : parsedDate.getTime();
+      const dateKey = new Date(dateVal).toISOString().slice(0, 10);
+      const workoutName = workoutIdx !== -1 && cols[workoutIdx] ? cols[workoutIdx] : 'Imported Workout';
+      const exName = cols[exIdx] || 'Exercise';
+      if (!exName) continue;
+
+      const weight = weightIdx !== -1 ? Math.max(0, parseFloat(cols[weightIdx]) || 0) : 0;
+      const reps = repsIdx !== -1 ? Math.max(0, parseInt(cols[repsIdx], 10) || 0) : 0;
+      const rpe = rpeIdx !== -1 && cols[rpeIdx] !== '' ? parseFloat(cols[rpeIdx]) || null : null;
+      const rir = rirIdx !== -1 && cols[rirIdx] !== '' ? parseInt(cols[rirIdx], 10) || null : null;
+      const note = notesIdx !== -1 ? cols[notesIdx] || '' : '';
+
+      const sessionKey = `${dateKey}_${workoutName}`;
+      if (!sessionMap.has(sessionKey)) {
+        sessionMap.set(sessionKey, {
+          date: dateVal,
+          name: workoutName,
+          exercises: []
+        });
+      }
+
+      const sess = sessionMap.get(sessionKey);
+      let curEx = sess.exercises.find(e => e.name.toLowerCase() === exName.toLowerCase());
+      if (!curEx) {
+        curEx = {
+          name: exName,
+          note,
+          sets: []
+        };
+        sess.exercises.push(curEx);
+      }
+
+      curEx.sets.push({
+        w: weight,
+        r: reps,
+        done: true,
+        ...(rpe != null ? { rpe } : {}),
+        ...(rir != null ? { rir } : {})
+      });
+    }
+
+    return Array.from(sessionMap.values());
+  };
+
   return {
     roundWeight,
     rd,
@@ -788,7 +993,10 @@
     calcMacros,
     calcEPOCBurn,
     calcWorkoutCalorieBurn,
-    calcPlates
+    calcPlates,
+    calcMuscleVolumeStatus,
+    calcTrainingInsights,
+    parseThirdPartyCSV
   };
 });
 

@@ -975,27 +975,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v6.3.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v6.3.0';"), 'sw.js must use mygym-core-v6.3.0 cache name');
-  assert(swCode.includes("'./style.css?v=6.3.0'"), 'sw.js must precache style.css?v=6.3.0');
-  assert(swCode.includes("'./app.js?v=6.3.0'"), 'sw.js must precache app.js?v=6.3.0');
-  assert(swCode.includes("'./calc.js?v=6.3.0'"), 'sw.js must precache calc.js?v=6.3.0');
+it('sw.js cache key is bumped to mygym-core-v6.4.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v6.4.0';"), 'sw.js must use mygym-core-v6.4.0 cache name');
+  assert(swCode.includes("'./style.css?v=6.4.0'"), 'sw.js must precache style.css?v=6.4.0');
+  assert(swCode.includes("'./app.js?v=6.4.0'"), 'sw.js must precache app.js?v=6.4.0');
+  assert(swCode.includes("'./calc.js?v=6.4.0'"), 'sw.js must precache calc.js?v=6.4.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=6.3.0'), 'index.html must link style.css?v=6.3.0');
-  assert(htmlCode.includes('shell.js?v=6.3.0'), 'index.html must load shell.js?v=6.3.0');
-  assert(htmlCode.includes('app.js?v=6.3.0'), 'index.html must load app.js?v=6.3.0');
-  assert(htmlCode.includes('calc.js?v=6.3.0'), 'index.html must load calc.js?v=6.3.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v6.3.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=6.4.0'), 'index.html must link style.css?v=6.4.0');
+  assert(htmlCode.includes('shell.js?v=6.4.0'), 'index.html must load shell.js?v=6.4.0');
+  assert(htmlCode.includes('app.js?v=6.4.0'), 'index.html must load app.js?v=6.4.0');
+  assert(htmlCode.includes('calc.js?v=6.4.0'), 'index.html must load calc.js?v=6.4.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v6.4.0'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '6.3.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.3.0');
+  assert.equal(api.APP_VERSION, '6.4.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v6.4.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -3979,6 +3979,132 @@ it('Modal Accessibility: dialog role, aria-modal, and focus trapping', () => {
   assert.ok(mHtml.includes('tabindex="-1"'), 'Sheet must have tabindex="-1"');
   api.closeModal();
   assert.equal(elementsMap['#m'].hidden, true, 'closeModal must hide #m');
+});
+
+console.log(`\nSuite 23: Phase 5 & 6 Mobile Layout Hardening, Competitor Parity & Nutrition Engine`);
+
+it('Two-Line Active Set Card Ergonomics & Input Formats', () => {
+  const act = {
+    rid: 'test_r1',
+    name: 'Push Workout',
+    curEx: 0,
+    ex: [
+      {
+        id: '0025',
+        sets: [
+          { w: 60, r: 8, type: 'normal', done: false }
+        ]
+      }
+    ]
+  };
+  api.S.act = act;
+  const heroHtml = api.renderWorkHeroCard(act, 0);
+
+  // Layout lines
+  assert.ok(heroHtml.includes('set-line-header'), 'Set row must render set-line-header (Line 1)');
+  assert.ok(heroHtml.includes('set-line-inputs'), 'Set row must render set-line-inputs (Line 2)');
+  assert.ok(heroHtml.includes('set-prev-microlabel') || heroHtml.includes('set-prev-cell'), 'Must display previous performance microlabel');
+  assert.ok(heroHtml.includes('set-done-btn'), 'Must render thumb-friendly set-done-btn');
+
+  // Input attributes
+  assert.ok(heroHtml.includes('inputmode="decimal"'), 'Weight input must specify inputmode="decimal"');
+  assert.ok(heroHtml.includes('inputmode="numeric"'), 'Reps input must specify inputmode="numeric"');
+
+  // Warm-up set button and rest chip
+  assert.ok(heroHtml.includes('data-a="genwarmups"'), 'Must render Warm-Up Sets generator button');
+  assert.ok(heroHtml.includes('data-a="setexrest"'), 'Must render per-exercise rest chip');
+});
+
+it('Pure Third-Party CSV Importer (Strong, Hevy, MyGyM)', () => {
+  const sampleCSV = `Date,Workout Name,Exercise Name,Set Order,Weight,Reps,RPE,RIR,Notes
+"2026-05-10 10:30:00","Morning Push","Barbell Bench Press",1,60,8,8,2,"Felt smooth"
+"2026-05-10 10:30:00","Morning Push","Barbell Bench Press",2,65,6,9,1,"Good grind"
+"2026-05-10 10:30:00","Morning Push","Incline Dumbbell Press",1,24,10,8.5,1.5,"Seat at 30 deg"
+"2026-05-12 18:00:00","Evening Pull","Barbell Bent Over Row",1,70,8,,,
+"2026-05-12 18:00:00","Evening Pull","Barbell Bent Over Row",2,70,8,,,`;
+
+  const parsed = Calc.parseThirdPartyCSV(sampleCSV);
+  assert.equal(parsed.length, 2, 'Must parse exactly 2 distinct workout sessions');
+
+  const sess1 = parsed[0];
+  assert.equal(sess1.name, 'Morning Push');
+  assert.equal(sess1.exercises.length, 2);
+  assert.equal(sess1.exercises[0].name, 'Barbell Bench Press');
+  assert.equal(sess1.exercises[0].sets.length, 2);
+  assert.equal(sess1.exercises[0].sets[0].w, 60);
+  assert.equal(sess1.exercises[0].sets[0].r, 8);
+  assert.equal(sess1.exercises[0].sets[0].rpe, 8);
+  assert.equal(sess1.exercises[0].sets[0].rir, 2);
+  assert.equal(sess1.exercises[1].name, 'Incline Dumbbell Press');
+
+  const sess2 = parsed[1];
+  assert.equal(sess2.name, 'Evening Pull');
+  assert.equal(sess2.exercises.length, 1);
+  assert.equal(sess2.exercises[0].sets.length, 2);
+
+  // Empty or malformed input returns empty array safely
+  assert.equal(Calc.parseThirdPartyCSV('').length, 0);
+  assert.equal(Calc.parseThirdPartyCSV(null).length, 0);
+  assert.equal(Calc.parseThirdPartyCSV('gibberish,text').length, 0);
+});
+
+it('Pure Hypertrophy Volume Status Bands (MEV, MAV, MRV)', () => {
+  assert.equal(Calc.calcMuscleVolumeStatus(0).status, 'below_mev');
+  assert.equal(Calc.calcMuscleVolumeStatus(5).status, 'below_mev');
+  assert.equal(Calc.calcMuscleVolumeStatus(7).status, 'below_mev');
+  assert.equal(Calc.calcMuscleVolumeStatus(8).status, 'mev');
+  assert.equal(Calc.calcMuscleVolumeStatus(10).status, 'mev');
+  assert.equal(Calc.calcMuscleVolumeStatus(11).status, 'mav');
+  assert.equal(Calc.calcMuscleVolumeStatus(15).status, 'mav');
+  assert.equal(Calc.calcMuscleVolumeStatus(18).status, 'mav');
+  assert.equal(Calc.calcMuscleVolumeStatus(20).status, 'mrv');
+  assert.equal(Calc.calcMuscleVolumeStatus(25).status, 'mrv');
+});
+
+it('Pure Training Insights Engine: ACWR Volume Spikes, Stalled Lifts, and Neglected Muscles', () => {
+  const now = Date.now();
+  const dayMs = 86400000;
+  const baselineLogs = [
+    { date: now - 25 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 22 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 18 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 15 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 11 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 8 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 7 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 10, done: true }] }] },
+    { date: now - 2 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 100, done: true }] }] },
+    { date: now - 1 * dayMs, ex: [{ id: '0025', sets: [{ w: 100, r: 100, done: true }] }] },
+    { date: now, ex: [{ id: '0025', sets: [{ w: 100, r: 100, done: true }] }] }
+  ];
+
+  const insights = Calc.calcTrainingInsights(baselineLogs, [], {
+    refDate: now,
+    getEx: id => ({ id, g: 'chest', tg: 'pectorals' }),
+    weekStart: 'mon'
+  });
+
+  assert.ok(insights.some(i => i.type === 'acwr_spike'), 'Must detect ACWR spike above 1.5 threshold');
+});
+
+it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async () => {
+  // Test Onboarding Modal markup
+  api.showOnboardingModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('Welcome to MyGyM'), 'Onboarding modal must render Welcome title');
+  assert.ok(mHtml.includes('name="units"'), 'Onboarding modal must include units picker');
+  assert.ok(mHtml.includes('name="sex"'), 'Onboarding modal must include biological sex picker');
+  assert.ok(mHtml.includes('id="ob-goal"'), 'Onboarding modal must include goal selector');
+  assert.ok(mHtml.includes('data-a="saveonboarding"'), 'Onboarding modal must have saveonboarding action');
+  api.closeModal();
+
+  // Test Settings Modal Data & Storage Meter
+  api.S.lastBackupDate = Date.now() - 2 * 86400000;
+  api.showSettingsModal();
+  const settingsHtml = elementsMap['#m'].innerHTML;
+  assert.ok(settingsHtml.includes('storage-meter-chip'), 'Settings modal must render storage-meter-chip');
+  assert.ok(settingsHtml.includes('2 days ago'), 'Settings modal must display calculated backup age');
+  assert.ok(settingsHtml.includes('opencsvimport'), 'Settings modal must contain opencsvimport button');
+  api.closeModal();
 });
 
 console.log(`\n======================================================`);

@@ -2,6 +2,56 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [6.4.0] - Phase 5 & 6: Mobile Layout Hardening, Competitor Parity & Nutrition Engine - 2026-11-07
+- **Active Workout Portrait Ergonomics (Two-Line Set Card)**:
+  - Redesigned active set rows into an ergonomic two-line layout:
+    * Line 1 (`.set-line-header`): Set type toggle badge (Normal, Warmup, Drop, Failure, AMRAP), previous session performance microlabel ("Prev: 60kg × 8"), and 44x44px circular thumb-friendly Done button (`.set-done-btn`).
+    * Line 2 (`.set-line-inputs`): Weight stepper box (`inputmode="decimal"`) with plate calculator trigger, '×' separator, reps input (`inputmode="numeric"`), and Reps In Reserve (RIR) pill.
+  - Added global single-tap text auto-selection on focus (`focusin` handler) across all set inputs for instant numerical entry.
+- **Mobile Viewport & CSS Hardening**:
+  - Prevented horizontal viewport blowout on narrow 320px screens with `overflow-x: hidden` on `html, body, #v, main`.
+  - Added `-webkit-line-clamp: 2` on exercise names and headers to prevent multiline truncation overflow.
+  - Implemented top active indicator bar for navigation tabs (`#tabs .on::after`).
+  - Added body scroll locking on modal open (`document.body.style.overflow = 'hidden'`) and restoration on close.
+  - Enforced strict safe-area insets (`env(safe-area-inset-*)`) across top headers and bottom navigation tabs.
+- **Form-Cue & Exercise Preview Media Constraints**:
+  - Constrained form-cue and exercise preview media frames to `aspect-ratio: 16/9; max-height: 28vh; width: 100%; object-fit: contain;`, ensuring visual cues and set input rows remain visible without excessive vertical scrolling.
+- **Local Screen Capture Tooling**:
+  - Created `scripts/capture-screens.js` using local Playwright for automated multi-viewport regression auditing across 320px, 390px, and 768px form factors.
+- **Per-Exercise History Screen & Dual Responsive SVG Charts**:
+  - Rendered Estimated 1RM, Max Weight, and Best Volume all-time record badges.
+  - Implemented dual responsive SVG sparkline charts displaying Estimated 1RM Strength Trend and Session Volume Trend across recent sessions.
+  - Rendered last 5 sessions timeline with set-by-set breakdown and personal notes.
+- **Offline Third-Party CSV Importer (Strong, Hevy, MyGyM)**:
+  - Built pure function `Calc.parseThirdPartyCSV()` supporting CSV exports from Strong, Hevy, and MyGyM with quoted multiline strings, automatic header resolution, and session grouping.
+  - Added interactive CSV Import modal in Settings with live preview of parsed sessions and sets before committing to `S.logs`.
+- **Settings Storage Quota Meter & Backup Tracking**:
+  - Added "Last Backup: X days ago" status card tracking `S.lastBackupDate` across JSON and CSV exports.
+  - Integrated device storage quota meter querying `navigator.storage.estimate()` showing used vs quota MB.
+- **First-Run Onboarding Flow Modal**:
+  - Implemented first-run modal for fresh installations to configure units (`kg`/`lbs`), biological sex, age, height, weight, training goal (`hypertrophy`, `strength`, `fat_loss`, `maintenance`), and week start day.
+  - Automatically calculates tailored daily calorie and macro targets on completion.
+- **Warm-Up Set Generator & Per-Exercise Rest Defaults**:
+  - Added "⚡ Warm-Up Sets" button prepending 3 progressive warm-up sets (45% × 8, 65% × 5, 85% × 3) based on working weight.
+  - Implemented per-exercise rest defaults (`S.cfg.exerciseRest[exId]`) customizable via rest chip modal.
+- **Hypertrophy Volume Status Bands (MEV, MAV, MRV)**:
+  - Implemented pure function `Calc.calcMuscleVolumeStatus(sets)` mapping weekly set volume to evidence-based hypertrophy bands (Under MEV <8, MEV 8-10, MAV 12-18, MRV 20+).
+  - Enhanced Weekly Muscle Frequency Card with weekly set counts and color-coded status badges (`.vol-band-tag`).
+- **Body Measurements & Local Progress Photos**:
+  - Expanded measurement logging to track Neck, Chest, Arms, Waist, and Hips in `vBody()`.
+  - Added local progress photos storage and thumbnail gallery in IndexedDB (`S.photos`).
+- **Calendar History Tap-to-Edit & Delete Past Logs**:
+  - Added direct ✏️ Edit (`editpastlog`) and 🗑️ Delete (`delpastlog`) actions to completed workout cards in the Calendar view.
+- **Local Rule-Based Training Insights**:
+  - Implemented pure function `Calc.calcTrainingInsights()` detecting ACWR volume spikes (>1.5), stalled lifts across recent sessions, and neglected major muscle groups (< MEV).
+  - Rendered interactive training insights card in `vTrain()`.
+- **Daily Nutrition Reactive Calorie Ring & Macro Progress**:
+  - Rendered circular SVG calorie ring with reactive stroke dash offset and color coding in `renderNutritionDashboard()`.
+  - Maintained 4 compact macro progress tracks (Protein, Carbs, Fat, Fiber).
+- **Test Suite Expansion**:
+  - Added Suite 23 with 5 comprehensive assertion tests in `tests/test_production_issues.js`, bringing total passing assertions to 153/153 (100% passing).
+  - Single-source version bumped to v6.4.0 (`mygym-core-v6.4.0`).
+
 ## [6.3.0] - Phase 3 & 4: Security, Design System, Icons & Accessibility - 2026-11-07
 - **Inline Script Purge & Strict Content Security Policy**:
   - Extracted inline self-healing and shell-reset script from `index.html` into a dedicated `shell.js` module.

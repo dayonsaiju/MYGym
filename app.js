@@ -242,8 +242,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '6.3.0';
-const SHELL_VERSION = 'mygym-core-v6.3.0';
+const APP_VERSION = '6.4.0';
+const SHELL_VERSION = 'mygym-core-v6.4.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1476,9 +1476,12 @@ const playRestChime = () => {
 
 const beep = playRestChime;
 
+const getExRest = id => (S.cfg?.exerciseRest?.[id]) || (S.cfg?.rest) || 90;
+
 function startRest(s) {
   unlock();
-  T.durMs = Math.max(1, s) * 1000;
+  const durSec = s != null ? s : (S.cfg?.rest || 90);
+  T.durMs = Math.max(1, durSec) * 1000;
   T.end = Date.now() + T.durMs;
   clearInterval(T.iv);
   T.iv = setInterval(tick, 250);
@@ -1552,6 +1555,9 @@ const modal = (h, opts = {}) => {
   if (!m) return;
   if (typeof document !== 'undefined') {
     prevActiveElement = document.activeElement;
+    if (document.body) {
+      document.body.style.overflow = 'hidden';
+    }
   }
   const showX = opts?.hideClose ? '' : '<button class="x" data-a="close" aria-label="Close dialog">Close</button>';
   const content = (h && typeof h === 'object' && h instanceof SafeHTML) ? h.str : String(h ?? '');
@@ -1621,6 +1627,9 @@ const closeModal = () => {
   if (m) {
     m.hidden = true;
     m.innerHTML = '';
+  }
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.style.overflow = '';
   }
   if (prevActiveElement && typeof prevActiveElement.focus === 'function') {
     try { prevActiveElement.focus(); } catch (_) {}
@@ -2218,12 +2227,14 @@ function calcWeeklyMuscleFrequency(logs = S.logs, refDate = Date.now(), weekStar
 }
 
 function renderWeeklyMuscleFrequencyCard(logs = S.logs) {
-  const freqs = calcWeeklyMuscleFrequency(logs);
+  const freqs = (typeof Calc !== 'undefined' && Calc.calcWeeklyMuscleFrequency)
+    ? Calc.calcWeeklyMuscleFrequency(logs, Date.now(), S.cfg?.weekStartDay || 'mon', {}, X)
+    : calcWeeklyMuscleFrequency(logs);
   return `
     <div class="card weekly-freq-card">
       <div class="weekly-freq-header">
-        <div class="wfh-title">Weekly Muscle Frequency</div>
-        <div class="wfh-target">2x / wk Hypertrophy Target</div>
+        <div class="wfh-title">Weekly Muscle Frequency & Volume</div>
+        <div class="wfh-target">2x/wk & Hypertrophy Bands</div>
       </div>
       <div class="weekly-freq-grid">
         ${freqs.map(f => {
@@ -2231,16 +2242,43 @@ function renderWeeklyMuscleFrequencyCard(logs = S.logs) {
           const dotClass = f.count >= 2 ? 'dot-green' : (f.count === 1 ? 'dot-amber' : 'dot-muted');
           const badgeClass = f.status === 'optimal' ? 'tag-green' : (f.status === 'moderate' ? 'tag-amber' : 'tag-muted');
           const label = f.count >= 2 ? `${f.count}/2 Opt` : `${f.count}/2`;
+          const volStatus = f.volumeStatus || (typeof Calc !== 'undefined' && Calc.calcMuscleVolumeStatus ? Calc.calcMuscleVolumeStatus(f.sets || 0) : { status: 'below_mev', label: 'Under MEV' });
+          const volBadgeClass = volStatus.status === 'below_mev' ? 'vol-band-under' : (volStatus.status === 'mev' ? 'vol-band-mev' : (volStatus.status === 'mav' ? 'vol-band-mav' : 'vol-band-mrv'));
           return `
             <div class="weekly-freq-item">
               <span class="wfi-name">${f.muscle}</span>
-              <div class="wfi-indicator">
+              <div class="wfi-indicator" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
                 <span class="wfi-pip ${dotClass}">${pipsText}</span>
                 <span class="wfi-label ${badgeClass}">(${label})</span>
+                <span class="vol-band-tag ${volBadgeClass}">${f.sets || 0}s (${volStatus.label})</span>
               </div>
             </div>
           `;
         }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderTrainingInsightsCard() {
+  const insights = (typeof Calc !== 'undefined' && Calc.calcTrainingInsights)
+    ? Calc.calcTrainingInsights(S.logs, S.routines, { getEx: X, weekStart: S.cfg?.weekStartDay || 'mon' })
+    : [];
+  if (!insights.length) return '';
+
+  return `
+    <div class="card insights-card" style="margin-bottom:12px">
+      <div class="insights-title" style="font-weight:700;font-size:13px;margin-bottom:8px;color:var(--tx)">💡 Smart Training Insights</div>
+      <div class="insights-list" style="display:flex;flex-direction:column;gap:6px">
+        ${insights.map(item => `
+          <div class="insight-item insight-${item.level || 'info'}" style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--c2);border:1px solid var(--bdr)">
+            <span class="insight-icon" style="font-size:16px">${item.level === 'warning' ? '⚠️' : (item.level === 'tip' ? '💡' : 'ℹ️')}</span>
+            <div class="insight-content" style="flex:1">
+              ${item.title ? `<div class="insight-item-title" style="font-weight:700;font-size:12px;color:var(--tx)">${esc(item.title)}</div>` : ''}
+              <div class="insight-text" style="font-size:11px;color:var(--t2);line-height:1.4">${esc(item.message)}</div>
+            </div>
+          </div>
+        `).join('')}
       </div>
     </div>
   `;
@@ -2527,6 +2565,9 @@ const vTrain = () => {
         <button class="btn s" data-a="tab" data-k="cal" style="min-height:32px;font-size:12px">Edit Split</button>
       </div>
     ` : '')) +
+
+    // Smart Local Training Insights
+    renderTrainingInsightsCard() +
 
     // Minimal Apple-style Weekly 2x Muscle Frequency Card
     renderWeeklyMuscleFrequencyCard(S.logs) +
@@ -3231,6 +3272,7 @@ function renderWorkHeroCard(a, curIdx) {
           ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
           ${isDoubleProgReady ? `<button class="chip chip-suggestion" data-a="applysuggestion" data-i="${curIdx}" data-inc="2.5" title="Double Progression rep ceiling met! Tap to bump +2.5kg">⚡ +2.5kg suggested</button>` : ''}
           ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
+          <button class="chip" data-a="setexrest" data-id="${esc(exInfo.id)}" title="Set custom rest timer for this exercise">⏱️ ${getExRest(exInfo.id)}s rest</button>
         </div>
       </div>
 
@@ -3238,7 +3280,7 @@ function renderWorkHeroCard(a, curIdx) {
       <div class="work-sets-container">
         <div class="set-header-row" style="display:flex;justify-content:space-between;padding:0 8px 4px;font-size:11px;font-weight:600;color:var(--t2)">
           <span style="width:36px;text-align:center">Set</span>
-          <span style="flex:1;padding-left:6px">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Duration (sec)' : 'Load & Reps'}</span>
+          <span style="flex:1;padding-left:6px">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Duration (sec)' : 'Load &amp; Reps'}</span>
           <span style="width:44px;text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
         </div>
         ${currentEx.sets.map((s, j) => {
@@ -3261,16 +3303,28 @@ function renderWorkHeroCard(a, curIdx) {
           const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
 
           return `<div class="set set-row${s.done ? ' d' : ''}" data-i="${curIdx}" data-j="${j}">
-            <!-- Col 1: Compact Set # Badge & Set Type Toggle -->
-            <div class="set-col set-col-num">
-              <button class="n set-num-badge set-type-btn set-type-${s.type ? s.type.toLowerCase() : 'normal'}" data-a="togglesettype" data-i="${curIdx}" data-j="${j}" title="Tap to toggle set type (Normal, Warm-up, Drop set, Failure, AMRAP)">
-                ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${esc(pr.desc)}">🏆</span>` : ''}
-              </button>
+            <!-- Line 1: Set Type + Num, Previous Microlabel, Done Action -->
+            <div class="set-line-header">
+              <div class="set-col set-col-num">
+                <button class="n set-num-badge set-type-btn set-type-${s.type ? s.type.toLowerCase() : 'normal'}" data-a="togglesettype" data-i="${curIdx}" data-j="${j}" title="Tap to toggle set type (Normal, Warm-up, Drop set, Failure, AMRAP)">
+                  ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${esc(pr.desc)}">🏆</span>` : ''}
+                </button>
+              </div>
+              <div class="set-prev-microlabel set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</div>
+              <div class="set-col set-col-done">
+                ${currentEx.uni ? `
+                  <div class="uni-ck-group">
+                    <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
+                    <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
+                  </div>
+                ` : `
+                  <button class="ck set-done-btn ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}" title="Mark Set Done" aria-label="Mark Set Done">${ic('chk', 20)}</button>
+                `}
+              </div>
             </div>
 
-            <!-- Col 2: Micro-label & Weight x Reps Inputs -->
-            <div class="set-col set-col-main">
-              <div class="set-prev-microlabel set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</div>
+            <!-- Line 2: Weight Stepper Box x Reps Box -->
+            <div class="set-col set-col-main set-line-inputs">
               <div class="set-inputs-row">
                 ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? `
                   <div class="set-input-box">
@@ -3294,24 +3348,13 @@ function renderWorkHeroCard(a, curIdx) {
                 <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve">${rirText}</button>
               </div>
             </div>
-
-            <!-- Col 3: Crisp 44x44px iOS Circular Done Button -->
-            <div class="set-col set-col-done">
-              ${currentEx.uni ? `
-                <div class="uni-ck-group">
-                  <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
-                  <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
-                </div>
-              ` : `
-                <button class="ck set-done-btn ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}" title="Mark Set Done">${ic('chk', 20)}</button>
-              `}
-            </div>
           </div>`;
         }).join('')}
       </div>
 
-      <div class="row g" style="margin-top:10px">
+      <div class="row g" style="margin-top:10px;flex-wrap:wrap">
         <button class="btn s" data-a="addset" data-i="${curIdx}">${ic('plus', 16)} Add set</button>
+        <button class="btn s sm-btn outline" data-a="genwarmups" data-i="${curIdx}" title="Generate 3 progressive warm-up sets">⚡ Warm-Up Sets</button>
         <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
       </div>
       <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
@@ -3498,8 +3541,9 @@ function showExerciseHistoryModal(targetId) {
   // Last 5 sessions
   const recentSessions = sessions.slice(0, 5);
 
-  // Lightweight SVG Sparkline (chronological order of last 7 sessions)
+  // Lightweight SVG Sparklines (chronological order of last 7 sessions)
   const sparklineData = sessions.slice(0, 7).reverse().map(s => s.best1RM || s.maxW || 0);
+  const volumeData = sessions.slice(0, 7).reverse().map(s => s.vol || 0);
   let sparklineSvg = '';
   if (sparklineData.length >= 2) {
     const min = Math.min(...sparklineData);
@@ -3516,7 +3560,7 @@ function showExerciseHistoryModal(targetId) {
     const lastPt = pts[pts.length - 1].split(',');
 
     sparklineSvg = `
-      <div class="ex-history-sparkline-wrap" style="background:var(--c2);border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid var(--bdr)">
+      <div class="ex-history-sparkline-wrap" style="background:var(--c2);border-radius:12px;padding:12px;margin-bottom:10px;border:1px solid var(--bdr)">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t2);margin-bottom:6px">
           <span>Strength Trend (Estimated 1RM)</span>
           <span style="font-weight:600;color:var(--ac)">Latest: ${sparklineData[sparklineData.length - 1]} kg</span>
@@ -3524,6 +3568,35 @@ function showExerciseHistoryModal(targetId) {
         <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:60px;overflow:visible">
           <polyline fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${polylinePts}" />
           <circle cx="${lastPt[0]}" cy="${lastPt[1]}" r="4" fill="var(--ac)" />
+        </svg>
+      </div>
+    `;
+  }
+
+  let volSparklineSvg = '';
+  if (volumeData.length >= 2) {
+    const minV = Math.min(...volumeData);
+    const maxV = Math.max(...volumeData);
+    const rangeV = (maxV - minV) || 1;
+    const w = 280, h = 60, pad = 12;
+    const ptsV = volumeData.map((val, idx) => {
+      const px = pad + (idx / (volumeData.length - 1)) * (w - 2 * pad);
+      const py = h - pad - ((val - minV) / rangeV) * (h - 2 * pad);
+      return `${px.toFixed(1)},${py.toFixed(1)}`;
+    });
+
+    const polylinePtsV = ptsV.join(' ');
+    const lastPtV = ptsV[ptsV.length - 1].split(',');
+
+    volSparklineSvg = `
+      <div class="ex-history-sparkline-wrap" style="background:var(--c2);border-radius:12px;padding:12px;margin-bottom:14px;border:1px solid var(--bdr)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t2);margin-bottom:6px">
+          <span>Session Volume Trend</span>
+          <span style="font-weight:600;color:var(--gn)">Latest: ${volumeData[volumeData.length - 1]} kg</span>
+        </div>
+        <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:60px;overflow:visible">
+          <polyline fill="none" stroke="var(--gn)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${polylinePtsV}" />
+          <circle cx="${lastPtV[0]}" cy="${lastPtV[1]}" r="4" fill="var(--gn)" />
         </svg>
       </div>
     `;
@@ -3558,6 +3631,7 @@ function showExerciseHistoryModal(targetId) {
       </div>
 
       ${sparklineSvg}
+      ${volSparklineSvg}
 
       <!-- Recent Sessions List -->
       <div style="flex:1;overflow-y:auto;min-height:120px">
@@ -3691,11 +3765,11 @@ function handleSetCompleted(i, j, s, x) {
           round: nextRoundSetIdx + 1,
           totalRounds: ssInfo.totalRounds
         };
-        startRest(S.cfg.rest);
+        startRest(getExRest(x.id));
         toast(`⏱️ ${ssInfo.typeLabel} Rest: Up Next Round ${nextRoundSetIdx + 1} (${esc(X(firstEx.id).name)})`);
       } else {
         T.supersetLoop = null;
-        startRest(S.cfg.rest);
+        startRest(getExRest(x.id));
         toast(`🎉 ${ssInfo.tag} All ${ssInfo.totalRounds} Rounds Complete!`);
       }
       return;
@@ -3704,7 +3778,7 @@ function handleSetCompleted(i, j, s, x) {
 
   // Regular non-superset exercise
   if (!x.ss) {
-    startRest(S.cfg.rest);
+    startRest(getExRest(x.id));
   }
   switchWorkExercise(i, false);
 }
@@ -3951,9 +4025,18 @@ function vCal() {
       `<button class="btn s sm-btn" data-a="openpastworkout" data-date="${esc(calSelectedDate)}">+ Log Past / Missed Workout</button>` +
     `</div>` +
     (selLogs.length ? selLogs.map(l => `
-      <div class="card">
-        <div class="row"><b>${esc(l.name)}</b><span class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume</span></div>
-        <div class="routine-summary-list">
+      <div class="card" style="margin-bottom:10px">
+        <div class="row" style="align-items:center;justify-content:space-between">
+          <div>
+            <b>${esc(l.name)}</b>
+            <div class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume</div>
+          </div>
+          <div class="row g">
+            <button class="btn s sm-btn" data-a="editpastlog" data-id="${esc(l.id || l.date)}">✏️ Edit</button>
+            <button class="btn s sm-btn red" data-a="delpastlog" data-id="${esc(l.id || l.date)}" title="Delete workout">🗑️</button>
+          </div>
+        </div>
+        <div class="routine-summary-list" style="margin-top:6px">
           ${l.ex.map(x => renderRoutineSummaryRow(x)).join('')}
         </div>
       </div>
@@ -4872,23 +4955,38 @@ function renderNutritionDashboard() {
         <button class="chip" data-a="next-nutrition-day" style="min-height:36px;min-width:44px">Next Day ›</button>
       </div>
 
-      <!-- Main Calorie Visualizer -->
+      <!-- Main Calorie Visualizer with Circular Reactive Ring -->
       <div class="nutrition-calorie-card">
-        <div class="nutrition-cals-header">
-          <div>
-            <span class="nutrition-cals-num" style="color:${statusColor}">${totals.calories}</span>
-            <span class="nutrition-cals-target">/ ${targets.targetCals} kcal</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:16px">
+          <div class="calorie-ring-wrap" style="position:relative;width:110px;height:110px;flex:0 0 110px;display:flex;align-items:center;justify-content:center">
+            <svg class="calorie-ring-svg" viewBox="0 0 120 120" style="width:100%;height:100%;transform:rotate(-90deg)">
+              <circle class="calorie-ring-bg" cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10"></circle>
+              <circle class="calorie-ring-fill" cx="60" cy="60" r="50" fill="none" stroke="${statusColor}" stroke-width="10" stroke-linecap="round" stroke-dasharray="314.16" stroke-dashoffset="${Math.max(0, 314.16 - (314.16 * Math.min(1, ratio)))}" style="transition:stroke-dashoffset 0.4s ease"></circle>
+            </svg>
+            <div class="calorie-ring-content" style="position:absolute;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+              <span class="calorie-ring-val" style="font-size:18px;font-weight:800;color:${statusColor}">${totals.calories}</span>
+              <span class="calorie-ring-lbl" style="font-size:10px;color:var(--t2)">kcal</span>
+            </div>
           </div>
-          <button class="chip" data-a="open-nutrition-targets" style="font-weight:600">🎯 Adjust Targets</button>
-        </div>
 
-        <div class="nutrition-progress-track">
-          <div class="nutrition-progress-bar" style="width:${fillPct}%;background:${statusColor}"></div>
-        </div>
+          <div style="flex:1;min-width:180px">
+            <div class="nutrition-cals-header" style="margin-bottom:8px">
+              <div>
+                <span class="nutrition-cals-num" style="color:${statusColor};font-size:24px;font-weight:800">${totals.calories}</span>
+                <span class="nutrition-cals-target" style="font-size:14px;color:var(--t2)">/ ${targets.targetCals} kcal</span>
+              </div>
+              <button class="chip" data-a="open-nutrition-targets" style="font-weight:600">🎯 Adjust</button>
+            </div>
 
-        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
-          <span class="t2">${fillPct}% of daily target</span>
-          ${statusBadge}
+            <div class="nutrition-progress-track" style="margin-bottom:8px">
+              <div class="nutrition-progress-bar" style="width:${fillPct}%;background:${statusColor}"></div>
+            </div>
+
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px">
+              <span class="t2">${fillPct}% daily target</span>
+              ${statusBadge}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -5386,13 +5484,36 @@ function vBody() {
     `</div>` +
     `<h2>Log Measurements</h2>` +
     `<div class="card">` +
-      `<div class="meas-inputs">` +
+      `<div class="meas-inputs" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:8px">` +
         `<input type="number" step="0.1" inputmode="decimal" id="wt-input" placeholder="Weight (kg)">` +
         `<input type="number" step="0.5" inputmode="decimal" id="waist-input" placeholder="Waist (cm)">` +
+        `<input type="number" step="0.5" inputmode="decimal" id="neck-input" placeholder="Neck (cm)">` +
+        `<input type="number" step="0.5" inputmode="decimal" id="chest-input" placeholder="Chest (cm)">` +
+        `<input type="number" step="0.5" inputmode="decimal" id="arms-input" placeholder="Arms (cm)">` +
+        `<input type="number" step="0.5" inputmode="decimal" id="hips-input" placeholder="Hips (cm)">` +
       `</div>` +
       `<div class="row" style="margin-top:8px">` +
         `<input type="date" id="wt-date" value="${esc(todayStr)}" style="flex:1">` +
         `<button class="btn" data-a="logweight" style="width:auto;flex:1;margin:0">Save Entry</button>` +
+      `</div>` +
+    `</div>` +
+    `<h2>Progress Photos 📸</h2>` +
+    `<div class="card" style="padding:14px">` +
+      `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">` +
+        `<div class="t2 sm">Stored locally on your device in offline storage.</div>` +
+        `<label class="btn s sm-btn" style="cursor:pointer;margin:0">` +
+          `📷 Add Photo` +
+          `<input type="file" id="progress-photo-picker" accept="image/*" style="display:none">` +
+        `</label>` +
+      `</div>` +
+      `<div id="progress-photos-gallery" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));gap:8px">` +
+        `${(S.photos || []).map((ph, idx) => `
+          <div style="position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;background:var(--c2)">
+            <img src="${esc(ph.data)}" alt="Progress ${esc(ph.date)}" style="width:100%;height:100%;object-fit:cover">
+            <button class="chip" data-a="delphoto" data-idx="${idx}" style="position:absolute;top:2px;right:2px;padding:1px 4px;font-size:9px;background:rgba(0,0,0,0.6);color:#fff">✕</button>
+          </div>
+        `).join('')}` +
+        `${!(S.photos && S.photos.length) ? '<div class="t2 sm" style="grid-column:1/-1;text-align:center;padding:12px 0">No progress photos saved yet.</div>' : ''}` +
       `</div>` +
     `</div>` +
     `<h2>Measurement History</h2>` +
@@ -5989,6 +6110,8 @@ function exp() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 9e3);
+  S.lastBackupDate = Date.now();
+  save('lastBackupDate');
 }
 
 async function imp(f) {
@@ -6185,7 +6308,205 @@ function expCSV() {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 9e3);
+  S.lastBackupDate = Date.now();
+  save('lastBackupDate');
   toast('Exported workouts to CSV');
+}
+
+// ---- Robust Third-Party CSV Importer (Strong / Hevy / MyGyM) ----
+let pendingImportSessions = [];
+
+function openCSVImportModal() {
+  pendingImportSessions = [];
+  modal(`
+    <div class="card" style="padding:16px">
+      <h3 style="margin-top:0">📥 Import CSV Workouts</h3>
+      <p class="t2 sm" style="line-height:1.4">
+        Import workout logs from <b>Strong</b>, <b>Hevy</b>, or <b>MyGyM</b> exports. Offline, local parsing only.
+      </p>
+      
+      <div style="margin:12px 0">
+        <label class="btn s sm-btn outline" style="display:flex;align-items:center;justify-content:center;cursor:pointer;margin-bottom:8px">
+          📁 Choose CSV File...
+          <input type="file" id="csv-file-picker" accept=".csv,text/csv" style="display:none">
+        </label>
+        <div style="text-align:center;font-size:11px;color:var(--t2);margin-bottom:8px">— or paste raw CSV text below —</div>
+        <textarea id="csv-import-textarea" class="note" placeholder="Paste Strong / Hevy / MyGyM CSV export text here..." rows="6" style="width:100%;font-family:monospace;font-size:11px"></textarea>
+      </div>
+
+      <div id="csv-preview-area" style="display:none;margin:12px 0;background:var(--c2);padding:10px;border-radius:8px;border:1px solid var(--bdr)"></div>
+
+      <div class="row g" style="margin-top:14px">
+        <button class="btn s sm-btn" data-a="parse-csv-text" style="flex:1">🔍 Preview Data</button>
+        <button class="btn s sm-btn" id="csv-commit-btn" data-a="commit-csv-import" style="flex:1;display:none">✓ Commit Import</button>
+        <button class="btn s sm-btn outline" data-a="close" style="width:auto">Cancel</button>
+      </div>
+    </div>
+  `);
+
+  const fileInput = document.getElementById('csv-file-picker');
+  if (fileInput) {
+    fileInput.addEventListener('change', async e => {
+      const file = e.target.files?.[0];
+      if (file) {
+        const text = await file.text();
+        const textarea = document.getElementById('csv-import-textarea');
+        if (textarea) textarea.value = text;
+        runCSVPreview(text);
+      }
+    });
+  }
+}
+
+function runCSVPreview(text) {
+  if (!text || !text.trim()) {
+    toast('Please select or paste CSV text');
+    return;
+  }
+  const sessions = (typeof Calc !== 'undefined' && Calc.parseThirdPartyCSV)
+    ? Calc.parseThirdPartyCSV(text)
+    : [];
+  
+  const previewArea = document.getElementById('csv-preview-area');
+  const commitBtn = document.getElementById('csv-commit-btn');
+  if (!previewArea || !commitBtn) return;
+
+  if (!sessions.length) {
+    previewArea.style.display = 'block';
+    previewArea.innerHTML = `<div style="color:#FF453A;font-size:12px">⚠️ No valid workout sessions recognized. Ensure headers include Date, Exercise, Weight, Reps.</div>`;
+    commitBtn.style.display = 'none';
+    return;
+  }
+
+  pendingImportSessions = sessions;
+  const totalSets = sessions.reduce((acc, s) => acc + s.exercises.reduce((exAcc, e) => exAcc + e.sets.length, 0), 0);
+
+  previewArea.style.display = 'block';
+  previewArea.innerHTML = `
+    <div style="font-weight:700;color:var(--gn);font-size:13px;margin-bottom:6px">
+      ✓ Ready to import ${sessions.length} workouts (${totalSets} total sets)
+    </div>
+    <div style="max-height:160px;overflow-y:auto;font-size:11px;color:var(--t2)">
+      ${sessions.slice(0, 5).map(s => `
+        <div style="padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.06)">
+          <b>${new Date(s.date).toISOString().slice(0, 10)}:</b> ${esc(s.name)} (${s.exercises.length} exercises)
+        </div>
+      `).join('')}
+      ${sessions.length > 5 ? `<div style="font-style:italic;padding-top:4px">+ ${sessions.length - 5} more sessions...</div>` : ''}
+    </div>
+  `;
+  commitBtn.style.display = 'block';
+}
+
+function commitCSVImport() {
+  if (!pendingImportSessions.length) {
+    toast('No sessions to import');
+    return;
+  }
+
+  let importedCount = 0;
+  for (const s of pendingImportSessions) {
+    const logId = uid();
+    const exList = s.exercises.map(item => {
+      const matched = (EXDB || []).find(e => (e.name || '').toLowerCase() === item.name.toLowerCase());
+      const exId = matched ? matched.id : uid();
+      return {
+        id: exId,
+        name: item.name,
+        note: item.note || '',
+        sets: item.sets.map(st => ({
+          w: st.w,
+          r: st.r,
+          done: true,
+          ...(st.rpe != null ? { rpe: st.rpe } : {}),
+          ...(st.rir != null ? { rir: st.rir } : {})
+        }))
+      };
+    });
+
+    S.logs.push({
+      id: logId,
+      date: s.date,
+      t0: s.date,
+      t1: s.date + (s.exercises.length * 600000),
+      dur: s.exercises.length * 600000,
+      name: s.name,
+      ex: exList
+    });
+    importedCount++;
+  }
+
+  save('logs');
+  ls.set('logs', S.logs);
+  closeModal();
+  toast(`🎉 Successfully imported ${importedCount} workouts!`);
+  render();
+}
+
+// ---- First-Run Onboarding Modal ----
+function showOnboardingModal() {
+  modal(`
+    <div class="card onboarding-card" style="padding:18px">
+      <div style="text-align:center;margin-bottom:14px">
+        <div style="font-size:32px">🏋️</div>
+        <h2 style="margin:4px 0 2px">Welcome to MyGyM</h2>
+        <p class="t2 sm" style="margin:0">Personalize your offline training profile</p>
+      </div>
+
+      <form id="onboarding-form" onsubmit="event.preventDefault()">
+        <div class="settings-row" style="margin-bottom:10px">
+          <span class="settings-label">Preferred Units</span>
+          <div class="row g">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="units" value="kg" checked> kg</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="units" value="lbs"> lbs</label>
+          </div>
+        </div>
+
+        <div class="settings-row" style="margin-bottom:10px">
+          <span class="settings-label">Biological Sex</span>
+          <div class="row g">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="sex" value="male" checked> Male</label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="sex" value="female"> Female</label>
+          </div>
+        </div>
+
+        <div class="row g" style="margin-bottom:10px">
+          <div style="flex:1">
+            <label class="t2 sm" for="ob-age">Age (years)</label>
+            <input type="number" id="ob-age" class="txt" value="${S.cfg?.age || 28}" min="12" max="100" style="width:100%;padding:8px">
+          </div>
+          <div style="flex:1">
+            <label class="t2 sm" for="ob-height">Height (cm)</label>
+            <input type="number" id="ob-height" class="txt" value="${S.cfg?.height || 178}" min="100" max="250" style="width:100%;padding:8px">
+          </div>
+          <div style="flex:1">
+            <label class="t2 sm" for="ob-weight">Weight (kg)</label>
+            <input type="number" id="ob-weight" class="txt" value="${S.cfg?.weight || 75}" step="0.5" min="30" max="300" style="width:100%;padding:8px">
+          </div>
+        </div>
+
+        <div class="settings-row" style="margin-bottom:10px">
+          <span class="settings-label">Primary Training Goal</span>
+          <select id="ob-goal" class="settings-select" style="max-width:180px">
+            <option value="hypertrophy" selected>Muscle Hypertrophy</option>
+            <option value="strength">Raw Strength</option>
+            <option value="fat_loss">Fat Loss / Conditioning</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+        </div>
+
+        <div class="settings-row" style="margin-bottom:14px">
+          <span class="settings-label">Week Start Day</span>
+          <select id="ob-weekstart" class="settings-select" style="max-width:180px">
+            <option value="mon" selected>Monday (00:00)</option>
+            <option value="sun">Sunday (00:00)</option>
+          </select>
+        </div>
+
+        <button class="btn" data-a="saveonboarding" style="width:100%;min-height:44px;font-weight:700">Get Started 🚀</button>
+      </form>
+    </div>
+  `, { hideClose: true });
 }
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
@@ -6351,6 +6672,16 @@ function showSettingsModal() {
             <span class="chip" style="font-size:11px;color:var(--gn)">100% Offline</span>
           </div>
           <div class="settings-divider"></div>
+          <div class="settings-row">
+            <span class="settings-label">Device Storage Quota</span>
+            <span id="storage-meter-chip" class="chip">Estimating...</span>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-row">
+            <span class="settings-label">Last Backup</span>
+            <span class="chip ${S.lastBackupDate ? 'on' : ''}">${S.lastBackupDate ? `${Math.max(0, Math.round((Date.now() - S.lastBackupDate) / (1000 * 60 * 60 * 24)))} days ago` : 'Never backed up'}</span>
+          </div>
+          <div class="settings-divider"></div>
           <div style="padding:10px 0">
             <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} ♻️ Force Cache Reload</button>
           </div>
@@ -6365,10 +6696,13 @@ function showSettingsModal() {
               <button class="btn s" data-a="exp" style="flex:1">Export Backup (JSON)</button>
               <button class="btn s" data-a="expcsv" style="flex:1">Export to CSV</button>
             </div>
-            <label class="btn s" style="display:flex;align-items:center;justify-content:center;cursor:pointer;margin-bottom:4px">
-              Restore Backup (JSON)
-              <input type="file" id="f" accept=".json" style="display:none">
-            </label>
+            <div class="row g" style="margin-bottom:4px">
+              <label class="btn s" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0">
+                Restore Backup (JSON)
+                <input type="file" id="f" accept=".json" style="display:none">
+              </label>
+              <button class="btn s sm-btn outline" data-a="opencsvimport" style="flex:1">📥 Import CSV</button>
+            </div>
           </div>
         </div>
 
@@ -6401,6 +6735,17 @@ function showSettingsModal() {
   if (refreshBtn) {
     refreshBtn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); refreshAIModels(document.getElementById('ai-provider-select')?.value); };
     refreshBtn.ontouchend = (e) => { e.preventDefault(); e.stopPropagation(); refreshAIModels(document.getElementById('ai-provider-select')?.value); };
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(est => {
+      const chip = document.getElementById('storage-meter-chip');
+      if (chip && est && est.quota) {
+        const usedMB = ((est.usage || 0) / (1024 * 1024)).toFixed(1);
+        const quotaMB = ((est.quota || 0) / (1024 * 1024)).toFixed(0);
+        chip.textContent = `${usedMB} MB / ${quotaMB} MB`;
+      }
+    }).catch(() => {});
   }
 }
 
@@ -8352,6 +8697,17 @@ _global.openPastWorkoutModal = openPastWorkoutModal;
 _global.savePastWorkout = savePastWorkout;
 _global.editPastWorkout = editPastWorkout;
 
+// On focus of any set input, automatically select full text for single-tap replacement
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+  document.addEventListener('focusin', e => {
+    if (e.target && e.target.matches && e.target.matches('.set-val-input, input[data-f="w"], input[data-f="r"]')) {
+      if (typeof e.target.select === 'function') {
+        setTimeout(() => { try { e.target.select(); } catch (_) {} }, 10);
+      }
+    }
+  });
+}
+
 // ---- Event Listeners ----
 document.addEventListener('click', async e => {
   unlock();
@@ -8543,16 +8899,28 @@ document.addEventListener('click', async e => {
     case 'logweight': {
       const inpW = $('#wt-input');
       const inpWaist = $('#waist-input');
+      const inpNeck = $('#neck-input');
+      const inpChest = $('#chest-input');
+      const inpArms = $('#arms-input');
+      const inpHips = $('#hips-input');
       const dinp = $('#wt-date');
       const valW = parseFloat(inpW?.value);
       const valWaist = parseFloat(inpWaist?.value);
+      const valNeck = parseFloat(inpNeck?.value);
+      const valChest = parseFloat(inpChest?.value);
+      const valArms = parseFloat(inpArms?.value);
+      const valHips = parseFloat(inpHips?.value);
       const dateVal = dinp?.value || new Date().toISOString().slice(0, 10);
 
       const hasW = Number.isFinite(valW) && valW > 0 && valW < 500;
       const hasWaist = Number.isFinite(valWaist) && valWaist > 0 && valWaist < 300;
+      const hasNeck = Number.isFinite(valNeck) && valNeck > 0 && valNeck < 200;
+      const hasChest = Number.isFinite(valChest) && valChest > 0 && valChest < 300;
+      const hasArms = Number.isFinite(valArms) && valArms > 0 && valArms < 200;
+      const hasHips = Number.isFinite(valHips) && valHips > 0 && valHips < 300;
 
-      if (!hasW && !hasWaist) {
-        toast('Please enter a valid weight or waist size');
+      if (!hasW && !hasWaist && !hasNeck && !hasChest && !hasArms && !hasHips) {
+        toast('Please enter a valid measurement');
         return;
       }
 
@@ -8561,6 +8929,10 @@ document.addEventListener('click', async e => {
       if (existing) {
         if (hasW) existing.w = rd(valW);
         if (hasWaist) existing.waist = rd(valWaist);
+        if (hasNeck) existing.neck = rd(valNeck);
+        if (hasChest) existing.chest = rd(valChest);
+        if (hasArms) existing.arms = rd(valArms);
+        if (hasHips) existing.hips = rd(valHips);
         existing.t = new Date(dateVal + 'T12:00:00').getTime();
       } else {
         S.weights.push({
@@ -8568,15 +8940,27 @@ document.addEventListener('click', async e => {
           date: dateVal,
           w: hasW ? rd(valW) : null,
           waist: hasWaist ? rd(valWaist) : null,
+          neck: hasNeck ? rd(valNeck) : null,
+          chest: hasChest ? rd(valChest) : null,
+          arms: hasArms ? rd(valArms) : null,
+          hips: hasHips ? rd(valHips) : null,
           t: new Date(dateVal + 'T12:00:00').getTime()
         });
       }
       save('weights');
       if (inpW) inpW.value = '';
       if (inpWaist) inpWaist.value = '';
+      if (inpNeck) inpNeck.value = '';
+      if (inpChest) inpChest.value = '';
+      if (inpArms) inpArms.value = '';
+      if (inpHips) inpHips.value = '';
       const feedback = [
         hasW ? `${rd(valW)} kg` : null,
-        hasWaist ? `${rd(valWaist)} cm waist` : null
+        hasWaist ? `${rd(valWaist)} cm waist` : null,
+        hasNeck ? `${rd(valNeck)} cm neck` : null,
+        hasChest ? `${rd(valChest)} cm chest` : null,
+        hasArms ? `${rd(valArms)} cm arms` : null,
+        hasHips ? `${rd(valHips)} cm hips` : null
       ].filter(Boolean).join(' · ');
       toast(`Logged ${feedback}`);
       render();
@@ -9041,6 +9425,165 @@ document.addEventListener('click', async e => {
         ls.set('act', S.act);
         save('act');
         break;
+      }
+      return;
+    }
+    case 'genwarmups': {
+      const curEx = S.act?.ex[i];
+      if (!curEx) return;
+      const exInfo = X(curEx.id);
+      const isTimed = exInfo?.type === 'timed_cardio' || exInfo?.t === 't';
+      if (isTimed) {
+        toast('Warm-up generator is for resistance exercises');
+        return;
+      }
+      const existingSets = curEx.sets || [];
+      const nonWarmups = existingSets.filter(s => s.type !== 'W');
+      let baseW = 60;
+      if (nonWarmups.length && Number(nonWarmups[0].w) > 0) {
+        baseW = Number(nonWarmups[0].w);
+      } else if (existingSets.length && Number(existingSets[0].w) > 0) {
+        baseW = Number(existingSets[0].w);
+      }
+      const roundW = w => Math.max(20, Math.round(w / 2.5) * 2.5);
+      const warmups = [
+        { w: roundW(baseW * 0.45), r: 8, type: 'W', done: false, rir: null, rpe: '' },
+        { w: roundW(baseW * 0.65), r: 5, type: 'W', done: false, rir: null, rpe: '' },
+        { w: roundW(baseW * 0.85), r: 3, type: 'W', done: false, rir: null, rpe: '' }
+      ];
+      curEx.sets = [...warmups, ...existingSets];
+      ls.set('act', S.act);
+      save('act');
+      switchWorkExercise(i, false);
+      toast('⚡ Generated 3 progressive warm-up sets (45%, 65%, 85%)');
+      return;
+    }
+    case 'setexrest': {
+      const exId = t.dataset.id || (S.act?.ex[i]?.id);
+      if (!exId) return;
+      const exInfo = X(exId);
+      const curRest = getExRest(exId);
+      const restIntervals = [30, 45, 60, 90, 120, 150, 180, 240, 300];
+      modal(`
+        <div class="card" style="padding:16px">
+          <h3 style="margin-top:0">⏱️ Rest Interval for ${esc(exInfo?.name || 'Exercise')}</h3>
+          <p class="t2 sm">Set specific rest interval for this movement (defaults to ${S.cfg?.rest || 90}s):</p>
+          <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin:16px 0">
+            ${restIntervals.map(sec => `
+              <button class="chip ${sec === curRest ? 'on' : ''}" data-a="commit-ex-rest" data-id="${esc(exId)}" data-sec="${sec}" style="min-height:44px;justify-content:center;font-weight:700">
+                ${sec >= 60 ? (sec / 60) + ' min' : sec + ' sec'}
+              </button>
+            `).join('')}
+          </div>
+          <button class="btn s sm-btn" data-a="close" style="width:100%">Cancel</button>
+        </div>
+      `);
+      return;
+    }
+    case 'commit-ex-rest': {
+      const exId = t.dataset.id;
+      const sec = Number(t.dataset.sec) || 90;
+      if (exId) {
+        S.cfg = S.cfg || {};
+        S.cfg.exerciseRest = S.cfg.exerciseRest || {};
+        S.cfg.exerciseRest[exId] = sec;
+        save('cfg');
+        closeModal();
+        toast(`⏱️ Custom rest timer set to ${sec}s for this exercise`);
+        if (view === 'work' && S.act) {
+          switchWorkExercise(S.act.curEx || 0, false);
+        }
+      }
+      return;
+    }
+    case 'saveonboarding': {
+      const form = document.getElementById('onboarding-form');
+      const units = form?.querySelector('[name="units"]:checked')?.value || 'kg';
+      const sex = form?.querySelector('[name="sex"]:checked')?.value || 'male';
+      const age = Math.max(12, Math.min(100, Number(form?.querySelector('#ob-age')?.value) || 28));
+      const height = Math.max(100, Math.min(250, Number(form?.querySelector('#ob-height')?.value) || 178));
+      const weight = Math.max(30, Math.min(300, Number(form?.querySelector('#ob-weight')?.value) || 75));
+      const goal = form?.querySelector('#ob-goal')?.value || 'hypertrophy';
+      const weekStart = form?.querySelector('#ob-weekstart')?.value || 'mon';
+
+      S.cfg = S.cfg || {};
+      S.cfg.units = units;
+      S.cfg.sex = sex;
+      S.cfg.age = age;
+      S.cfg.height = height;
+      S.cfg.weight = weight;
+      S.cfg.goalType = goal;
+      S.cfg.weekStartDay = weekStart;
+      S.cfg.onboarded = true;
+
+      if (!S.weights || !S.weights.length) {
+        S.weights = [{ date: new Date().toISOString().slice(0, 10), t: Date.now(), w: weight }];
+        save('weights');
+      }
+
+      if (typeof Calc !== 'undefined' && Calc.calcMacros) {
+        const macroCalc = Calc.calcMacros(weight, height, age, sex, goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'maintain'));
+        if (macroCalc) {
+          S.nutrition = {
+            ...S.nutrition,
+            targetCals: macroCalc.cals,
+            targetProtein: macroCalc.protein,
+            targetCarbs: macroCalc.carbs,
+            targetFat: macroCalc.fat,
+            targetFiber: macroCalc.fiber
+          };
+          save('nutrition');
+        }
+      }
+
+      save('cfg');
+      closeModal();
+      toast('Welcome aboard! Your training profile has been configured.');
+      render();
+      return;
+    }
+    case 'opencsvimport': {
+      openCSVImportModal();
+      return;
+    }
+    case 'parse-csv-text': {
+      const ta = document.getElementById('csv-import-textarea');
+      if (ta) runCSVPreview(ta.value);
+      return;
+    }
+    case 'commit-csv-import': {
+      commitCSVImport();
+      return;
+    }
+    case 'editpastlog': {
+      const logId = t.dataset.id;
+      const l = S.logs.find(item => String(item.id || item.date) === String(logId));
+      if (l) {
+        editPastWorkout(l);
+      }
+      return;
+    }
+    case 'delpastlog': {
+      const logId = t.dataset.id;
+      const idx = S.logs.findIndex(item => String(item.id || item.date) === String(logId));
+      if (idx !== -1) {
+        if (confirm('Are you sure you want to delete this completed workout?')) {
+          S.logs.splice(idx, 1);
+          save('logs');
+          ls.set('logs', S.logs);
+          toast('Workout deleted');
+          render();
+        }
+      }
+      return;
+    }
+    case 'delphoto': {
+      const idx = Number(t.dataset.idx);
+      if (Number.isInteger(idx) && S.photos && S.photos[idx]) {
+        S.photos.splice(idx, 1);
+        save('photos');
+        toast('Progress photo deleted');
+        render();
       }
       return;
     }
@@ -10118,7 +10661,7 @@ async function init() {
   await loadExercises();
 
   // 2. Load stored state from IndexedDB / localStorage
-  for (const k of ['schemaVersion', 'routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises', 'nutrition']) {
+  for (const k of ['schemaVersion', 'routines', 'logs', 'weights', 'cfg', 'sched', 'act', 'deload', 'customExercises', 'nutrition', 'photos', 'lastBackupDate']) {
     try {
       const v = await get(k);
       if (k === 'schemaVersion' && v != null) {
@@ -10240,9 +10783,12 @@ async function init() {
   }
 
   render();
+  if (!S.cfg?.onboarded) {
+    showOnboardingModal();
+  }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=6.3.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=6.4.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -10447,7 +10993,13 @@ if (typeof globalThis !== 'undefined') {
     MIGRATIONS,
     SCHEMA_VERSION,
     calcPlates,
-    applySanitizedBackup
+    applySanitizedBackup,
+    openCSVImportModal,
+    runCSVPreview,
+    commitCSVImport,
+    showOnboardingModal,
+    renderTrainingInsightsCard,
+    getExRest
   };
 }
 
