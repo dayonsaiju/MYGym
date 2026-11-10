@@ -1,6 +1,6 @@
 ================================================================================
-MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v6.4.0)
-Generated at: 2026-11-07T13:15:47.663Z
+MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v7.0.0)
+Generated at: 2026-11-10T17:07:40.297Z
 Architecture: Zero-Backend Offline-First Progressive Web App
 ================================================================================
 
@@ -18,7 +18,8 @@ TABLE OF CONTENTS:
 11. scripts/bump-version.js (5.0 KB)
 12. scripts/generate-exercise-kinds.js (2.5 KB)
 13. scripts/capture-screens.js (2.8 KB)
-14. tests/test_production_issues.js (191.4 KB)
+14. scripts/consolidate.js (2.5 KB)
+15. tests/test_production_issues.js (191.4 KB)
 ================================================================================
 
 ================================================================================
@@ -5769,12 +5770,12 @@ html, body, #v, main {
     const calLogs = (logs || []).filter(l => l && l.date >= startOfWeek && l.date <= endOfWeek);
     const rollingLogs = (logs || []).filter(l => l && l.date >= sevenDaysAgo && l.date <= refTime);
 
-    // True Calendar Week bucketing as default (Mon-Sun or Sun-Sat based on weekStartDay)
+    // Default to rolling 7 days; use calendar week when mode === 'calendar' or useCalendarWeek === true
     let recentLogs;
-    if (options.mode === 'rolling' || options.useCalendarWeek === false) {
-      recentLogs = rollingLogs;
-    } else {
+    if (options.mode === 'calendar' || options.useCalendarWeek === true) {
       recentLogs = calLogs;
+    } else {
+      recentLogs = rollingLogs;
     }
 
     const dayGroups = {};
@@ -20372,6 +20373,89 @@ capture().catch(err => {
 
 ================================================================================
 <<< END FILE: scripts/capture-screens.js
+================================================================================
+
+================================================================================
+>>> START FILE: scripts/consolidate.js
+================================================================================
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
+
+const manifestPath = path.join(rootDir, 'manifest.json');
+let appVersion = '7.0.0';
+if (fs.existsSync(manifestPath)) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (manifest.version) appVersion = manifest.version;
+  } catch (_) {}
+}
+
+const files = [
+  'manifest.json',
+  'index.html',
+  'shell.js',
+  'style.css',
+  'calc.js',
+  'ai-config.js',
+  'vendor/three.module.js',
+  'app.js',
+  'sw.js',
+  'CHANGELOG.md',
+  'scripts/bump-version.js',
+  'scripts/generate-exercise-kinds.js',
+  'scripts/capture-screens.js',
+  'scripts/consolidate.js',
+  'tests/test_production_issues.js'
+];
+
+let toc = 'TABLE OF CONTENTS:\n';
+const fileContents = [];
+
+files.forEach((relPath, idx) => {
+  const fullPath = path.join(rootDir, relPath);
+  if (fs.existsSync(fullPath)) {
+    const stats = fs.statSync(fullPath);
+    const kb = (stats.size / 1024).toFixed(1);
+    toc += `${idx + 1}. ${relPath} (${kb} KB)\n`;
+    fileContents.push({
+      relPath,
+      content: fs.readFileSync(fullPath, 'utf8')
+    });
+  }
+});
+
+const header = `================================================================================
+MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v${appVersion})
+Generated at: ${new Date().toISOString()}
+Architecture: Zero-Backend Offline-First Progressive Web App
+================================================================================
+
+${toc}================================================================================
+`;
+
+let output = header;
+for (const file of fileContents) {
+  output += `\n================================================================================\n`;
+  output += `>>> START FILE: ${file.relPath}\n`;
+  output += `================================================================================\n`;
+  output += file.content;
+  if (!file.content.endsWith('\n')) output += '\n';
+  output += `================================================================================\n`;
+  output += `<<< END FILE: ${file.relPath}\n`;
+  output += `================================================================================\n`;
+}
+
+const targetPath = path.join(rootDir, 'MYGYM_CONSOLIDATED_CODEBASE.txt');
+fs.writeFileSync(targetPath, output, 'utf8');
+console.log(`✓ Updated ${targetPath} (${(fs.statSync(targetPath).size / 1024).toFixed(1)} KB)`);
+
+================================================================================
+<<< END FILE: scripts/consolidate.js
 ================================================================================
 
 ================================================================================

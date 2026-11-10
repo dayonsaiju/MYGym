@@ -477,12 +477,12 @@
     const calLogs = (logs || []).filter(l => l && l.date >= startOfWeek && l.date <= endOfWeek);
     const rollingLogs = (logs || []).filter(l => l && l.date >= sevenDaysAgo && l.date <= refTime);
 
-    // True Calendar Week bucketing as default (Mon-Sun or Sun-Sat based on weekStartDay)
+    // Default to rolling 7 days; use calendar week when mode === 'calendar' or useCalendarWeek === true
     let recentLogs;
-    if (options.mode === 'rolling' || options.useCalendarWeek === false) {
-      recentLogs = rollingLogs;
-    } else {
+    if (options.mode === 'calendar' || options.useCalendarWeek === true) {
       recentLogs = calLogs;
+    } else {
+      recentLogs = rollingLogs;
     }
 
     const dayGroups = {};

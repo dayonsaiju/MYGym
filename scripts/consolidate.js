@@ -6,6 +6,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
+const manifestPath = path.join(rootDir, 'manifest.json');
+let appVersion = '7.0.0';
+if (fs.existsSync(manifestPath)) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    if (manifest.version) appVersion = manifest.version;
+  } catch (_) {}
+}
+
 const files = [
   'manifest.json',
   'index.html',
@@ -20,6 +29,7 @@ const files = [
   'scripts/bump-version.js',
   'scripts/generate-exercise-kinds.js',
   'scripts/capture-screens.js',
+  'scripts/consolidate.js',
   'tests/test_production_issues.js'
 ];
 
@@ -40,7 +50,7 @@ files.forEach((relPath, idx) => {
 });
 
 const header = `================================================================================
-MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v6.4.0)
+MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v${appVersion})
 Generated at: ${new Date().toISOString()}
 Architecture: Zero-Backend Offline-First Progressive Web App
 ================================================================================
