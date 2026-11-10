@@ -242,8 +242,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.0';
-const SHELL_VERSION = 'mygym-core-v7.0.0';
+const APP_VERSION = '7.0.1';
+const SHELL_VERSION = 'mygym-core-v7.0.1';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -7270,7 +7270,66 @@ function commitCSVImport() {
 }
 
 // ---- First-Run Onboarding Modal ----
+function handleOnboardingSubmit() {
+  const unit = document.querySelector('.onboarding-unit-pill.active')?.dataset.val ||
+               document.querySelector('.onboarding-unit-pill.on')?.dataset.val ||
+               'kg';
+  const sex = document.querySelector('.onboarding-sex-pill.active')?.dataset.val ||
+              document.querySelector('.onboarding-sex-pill.on')?.dataset.val ||
+              'male';
+  const age = parseInt(document.getElementById('onboard-age')?.value, 10) || 21;
+  const height = parseFloat(document.getElementById('onboard-height')?.value) || 175;
+  const weight = parseFloat(document.getElementById('onboard-weight')?.value) || 73.5;
+  const goal = document.getElementById('onboard-goal')?.value || 'hypertrophy';
+  const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
+
+  // Commit to in-memory state
+  S.cfg = S.cfg || {};
+  S.cfg.unit = unit;
+  S.cfg.units = unit;
+  S.cfg.bodyModel = sex;
+  S.cfg.sex = sex;
+  S.cfg.weekStartDay = weekStart;
+  S.cfg.onboarded = true;
+  S.cfg.physique = {
+    ...S.cfg.physique,
+    age,
+    height,
+    weight,
+    goalType: goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'recomp')
+  };
+
+  // Add baseline weight entry if weights array is empty
+  if (!S.weights || S.weights.length === 0) {
+    S.weights = [{
+      id: 'w_' + Date.now(),
+      date: new Date().toISOString().slice(0, 10),
+      w: weight,
+      t: Date.now()
+    }];
+  }
+
+  // Persist atomically to both IndexedDB and localStorage
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('mygym_onboarded', 'true');
+  }
+  save('cfg', 'weights');
+
+  // Dismiss modal immediately
+  closeModal();
+  toast('✓ Profile setup complete!');
+  render();
+}
+
 function showOnboardingModal() {
+  const age = S.cfg?.physique?.age || 21;
+  const height = S.cfg?.physique?.height || 175;
+  const weight = S.weights?.at(-1)?.w || S.cfg?.physique?.weight || 73.5;
+  const unit = S.cfg?.unit || S.cfg?.units || 'kg';
+  const sex = S.cfg?.bodyModel || S.cfg?.sex || 'male';
+  const goal = S.cfg?.physique?.goalType || S.cfg?.goalType || 'hypertrophy';
+  const weekStart = S.cfg?.weekStartDay || 'mon';
+
   modal(`
     <div class="card onboarding-card" style="padding:18px">
       <div style="text-align:center;margin-bottom:14px">
@@ -7282,57 +7341,67 @@ function showOnboardingModal() {
       <form id="onboarding-form" onsubmit="event.preventDefault()">
         <div class="settings-row" style="margin-bottom:10px">
           <span class="settings-label">Preferred Units</span>
-          <div class="row g">
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="units" value="kg" checked> kg</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="units" value="lbs"> lbs</label>
+          <div class="chips" id="onboard-units-group" style="margin:0;display:flex;gap:6px">
+            <button type="button" class="chip onboarding-unit-pill ${unit === 'kg' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="kg">kg</button>
+            <button type="button" class="chip onboarding-unit-pill ${unit === 'lbs' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="lbs">lbs</button>
           </div>
         </div>
 
         <div class="settings-row" style="margin-bottom:10px">
           <span class="settings-label">Biological Sex</span>
-          <div class="row g">
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="sex" value="male" checked> Male</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="sex" value="female"> Female</label>
+          <div class="chips" id="onboard-sex-group" style="margin:0;display:flex;gap:6px">
+            <button type="button" class="chip onboarding-sex-pill ${sex === 'male' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="male">Male</button>
+            <button type="button" class="chip onboarding-sex-pill ${sex === 'female' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="female">Female</button>
           </div>
         </div>
 
         <div class="row g" style="margin-bottom:10px">
           <div style="flex:1">
-            <label class="t2 sm" for="ob-age">Age (years)</label>
-            <input type="number" id="ob-age" class="txt" value="${S.cfg?.age || 28}" min="12" max="100" style="width:100%;padding:8px">
+            <label class="t2 sm" for="onboard-age">Age (years)</label>
+            <input type="number" id="onboard-age" name="age" class="txt" value="${age}" min="12" max="100" style="width:100%;padding:8px">
           </div>
           <div style="flex:1">
-            <label class="t2 sm" for="ob-height">Height (cm)</label>
-            <input type="number" id="ob-height" class="txt" value="${S.cfg?.height || 178}" min="100" max="250" style="width:100%;padding:8px">
+            <label class="t2 sm" for="onboard-height">Height (cm)</label>
+            <input type="number" id="onboard-height" name="height" class="txt" value="${height}" min="100" max="250" style="width:100%;padding:8px">
           </div>
           <div style="flex:1">
-            <label class="t2 sm" for="ob-weight">Weight (kg)</label>
-            <input type="number" id="ob-weight" class="txt" value="${S.cfg?.weight || 75}" step="0.5" min="30" max="300" style="width:100%;padding:8px">
+            <label class="t2 sm" for="onboard-weight">Weight (${esc(unit)})</label>
+            <input type="number" id="onboard-weight" name="weight" class="txt" value="${weight}" step="0.5" min="30" max="300" style="width:100%;padding:8px">
           </div>
         </div>
 
         <div class="settings-row" style="margin-bottom:10px">
           <span class="settings-label">Primary Training Goal</span>
-          <select id="ob-goal" class="settings-select" style="max-width:180px">
-            <option value="hypertrophy" selected>Muscle Hypertrophy</option>
-            <option value="strength">Raw Strength</option>
-            <option value="fat_loss">Fat Loss / Conditioning</option>
-            <option value="maintenance">Maintenance</option>
+          <select id="onboard-goal" name="goal" class="settings-select" style="max-width:180px">
+            <option value="hypertrophy" ${goal === 'hypertrophy' || goal === 'bulk' ? 'selected' : ''}>Muscle Hypertrophy</option>
+            <option value="strength" ${goal === 'strength' ? 'selected' : ''}>Raw Strength</option>
+            <option value="fat_loss" ${goal === 'fat_loss' || goal === 'cut' ? 'selected' : ''}>Fat Loss / Conditioning</option>
+            <option value="maintenance" ${goal === 'maintenance' || goal === 'recomp' ? 'selected' : ''}>Maintenance</option>
           </select>
         </div>
 
         <div class="settings-row" style="margin-bottom:14px">
           <span class="settings-label">Week Start Day</span>
-          <select id="ob-weekstart" class="settings-select" style="max-width:180px">
-            <option value="mon" selected>Monday (00:00)</option>
-            <option value="sun">Sunday (00:00)</option>
+          <select id="onboard-weekstart" name="weekstart" class="settings-select" style="max-width:180px">
+            <option value="mon" ${weekStart === 'mon' ? 'selected' : ''}>Monday (00:00)</option>
+            <option value="sun" ${weekStart === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
           </select>
         </div>
 
-        <button class="btn" data-a="saveonboarding" style="width:100%;min-height:44px;font-weight:700">Get Started 🚀</button>
+        <button type="button" class="btn" id="onboarding-submit-btn" data-a="submit-onboarding" style="width:100%;min-height:46px;font-weight:700">Get Started 🚀</button>
       </form>
     </div>
   `, { hideClose: true });
+
+  setTimeout(() => {
+    const submitBtn = document.getElementById('onboarding-submit-btn');
+    if (submitBtn) {
+      submitBtn.onclick = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        handleOnboardingSubmit();
+      };
+    }
+  }, 0);
 }
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
@@ -9546,6 +9615,24 @@ document.addEventListener('click', async e => {
     case 'tab': view = k; close(); break;
     case 'close': close(); return;
     case 'undo': U?.(); $('#toast').className = ''; return;
+    case 'toggle-onboard-unit': {
+      const val = t.dataset.val || 'kg';
+      document.querySelectorAll('.onboarding-unit-pill').forEach(btn => {
+        const isSelected = btn.dataset.val === val;
+        btn.classList.toggle('on', isSelected);
+        btn.classList.toggle('active', isSelected);
+      });
+      return;
+    }
+    case 'toggle-onboard-sex': {
+      const val = t.dataset.val || 'male';
+      document.querySelectorAll('.onboarding-sex-pill').forEach(btn => {
+        const isSelected = btn.dataset.val === val;
+        btn.classList.toggle('on', isSelected);
+        btn.classList.toggle('active', isSelected);
+      });
+      return;
+    }
     case 'open-3d-anatomy': {
       const p = t.dataset.p ? t.dataset.p.split(',').filter(Boolean) : [];
       const s = t.dataset.s ? t.dataset.s.split(',').filter(Boolean) : [];
@@ -10361,50 +10448,9 @@ document.addEventListener('click', async e => {
       }
       return;
     }
+    case 'submit-onboarding':
     case 'saveonboarding': {
-      const form = document.getElementById('onboarding-form');
-      const units = form?.querySelector('[name="units"]:checked')?.value || 'kg';
-      const sex = form?.querySelector('[name="sex"]:checked')?.value || 'male';
-      const age = Math.max(12, Math.min(100, Number(form?.querySelector('#ob-age')?.value) || 28));
-      const height = Math.max(100, Math.min(250, Number(form?.querySelector('#ob-height')?.value) || 178));
-      const weight = Math.max(30, Math.min(300, Number(form?.querySelector('#ob-weight')?.value) || 75));
-      const goal = form?.querySelector('#ob-goal')?.value || 'hypertrophy';
-      const weekStart = form?.querySelector('#ob-weekstart')?.value || 'mon';
-
-      S.cfg = S.cfg || {};
-      S.cfg.units = units;
-      S.cfg.sex = sex;
-      S.cfg.age = age;
-      S.cfg.height = height;
-      S.cfg.weight = weight;
-      S.cfg.goalType = goal;
-      S.cfg.weekStartDay = weekStart;
-      S.cfg.onboarded = true;
-
-      if (!S.weights || !S.weights.length) {
-        S.weights = [{ date: new Date().toISOString().slice(0, 10), t: Date.now(), w: weight }];
-        save('weights');
-      }
-
-      if (typeof Calc !== 'undefined' && Calc.calcMacros) {
-        const macroCalc = Calc.calcMacros(weight, height, age, sex, goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'maintain'));
-        if (macroCalc) {
-          S.nutrition = {
-            ...S.nutrition,
-            targetCals: macroCalc.cals,
-            targetProtein: macroCalc.protein,
-            targetCarbs: macroCalc.carbs,
-            targetFat: macroCalc.fat,
-            targetFiber: macroCalc.fiber
-          };
-          save('nutrition');
-        }
-      }
-
-      save('cfg');
-      closeModal();
-      toast('Welcome aboard! Your training profile has been configured.');
-      render();
+      handleOnboardingSubmit();
       return;
     }
     case 'opencsvimport': {
@@ -11648,12 +11694,13 @@ async function init() {
   }
 
   render();
-  if (!S.cfg?.onboarded) {
+  const isOnboarded = S.cfg?.onboarded || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true') || (S.weights && S.weights.length > 0);
+  if (!isOnboarded) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -11863,6 +11910,7 @@ if (typeof globalThis !== 'undefined') {
     runCSVPreview,
     commitCSVImport,
     showOnboardingModal,
+    handleOnboardingSubmit,
     renderTrainingInsightsCard,
     getExRest,
     isWebGLAvailable,

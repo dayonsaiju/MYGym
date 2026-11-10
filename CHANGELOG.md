@@ -2,6 +2,15 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.0.1] - First-Run Onboarding Modal Fixes & Persistence - 2026-11-10
+- **Bulletproof Onboarding Action Handler**:
+  - Replaced standard inputs with interactive unit (`kg`/`lbs`) and biological sex (`Male`/`Female`) pill button selectors (`.onboarding-unit-pill`, `.onboarding-sex-pill`).
+  - Added dedicated button `#onboarding-submit-btn` with `data-a="submit-onboarding"` and direct `.onclick` event binding fallback.
+  - Ensured atomic commit to `S.cfg`, `S.weights`, `localStorage.setItem('mygym_onboarded', 'true')`, and IndexedDB state.
+- **Reload Persistence & Suppression**:
+  - Guarded `init()` with `const isOnboarded = S.cfg?.onboarded || localStorage.getItem('mygym_onboarded') === 'true' || (S.weights && S.weights.length > 0);` to prevent repeated prompts on refresh.
+  - Dynamically pre-filled saved age, height, and weight from existing state instead of static defaults.
+
 ## [7.0.0] - Phase 7 & 8: 3D Engine, Procedural Anatomy & Production Milestone - 2026-11-07
 - **Vendored Local Three.js ES Module & Offline Precaching**:
   - Vendored local lightweight, zero-dependency Three.js ES module into `vendor/three.module.js` with full offline precaching in `sw.js`.

@@ -1,6 +1,6 @@
 ================================================================================
-MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v7.0.0)
-Generated at: 2026-11-10T17:07:40.297Z
+MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v7.0.1)
+Generated at: 2026-11-10T17:15:20.100Z
 Architecture: Zero-Backend Offline-First Progressive Web App
 ================================================================================
 
@@ -8,18 +8,18 @@ TABLE OF CONTENTS:
 1. manifest.json (0.5 KB)
 2. index.html (2.3 KB)
 3. shell.js (2.1 KB)
-4. style.css (94.8 KB)
+4. style.css (95.5 KB)
 5. calc.js (34.4 KB)
 6. ai-config.js (13.1 KB)
 7. vendor/three.module.js (34.8 KB)
-8. app.js (485.3 KB)
+8. app.js (487.4 KB)
 9. sw.js (2.6 KB)
-10. CHANGELOG.md (16.6 KB)
+10. CHANGELOG.md (17.5 KB)
 11. scripts/bump-version.js (5.0 KB)
 12. scripts/generate-exercise-kinds.js (2.5 KB)
 13. scripts/capture-screens.js (2.8 KB)
 14. scripts/consolidate.js (2.5 KB)
-15. tests/test_production_issues.js (191.4 KB)
+15. tests/test_production_issues.js (192.0 KB)
 ================================================================================
 
 ================================================================================
@@ -48,7 +48,7 @@ TABLE OF CONTENTS:
       "purpose": "maskable"
     }
   ],
-  "version": "7.0.0"
+  "version": "7.0.1"
 }
 ================================================================================
 <<< END FILE: manifest.json
@@ -72,9 +72,9 @@ TABLE OF CONTENTS:
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css?v=7.0.0">
+  <link rel="stylesheet" href="./style.css?v=7.0.1">
   <title>MyGyM</title>
-  <script src="./shell.js?v=7.0.0"></script>
+  <script src="./shell.js?v=7.0.1"></script>
 </head>
 <body>
   <main id="v"></main>
@@ -96,9 +96,9 @@ TABLE OF CONTENTS:
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script src="./calc.js?v=7.0.0"></script>
-  <script src="./ai-config.js?v=7.0.0"></script>
-  <script type="module" src="./app.js?v=7.0.0"></script>
+  <script src="./calc.js?v=7.0.1"></script>
+  <script src="./ai-config.js?v=7.0.1"></script>
+  <script type="module" src="./app.js?v=7.0.1"></script>
 </body>
 </html>
 ================================================================================
@@ -110,7 +110,7 @@ TABLE OF CONTENTS:
 ================================================================================
 // shell.js - Self-healing force cache clear & auto-reload for iOS Safari PWA
 (function() {
-  var SHELL_VERSION = 'mygym-core-v7.0.0';
+  var SHELL_VERSION = 'mygym-core-v7.0.1';
   var cachedVersion = null;
   try { cachedVersion = localStorage.getItem('mygym_shell_version'); } catch(_) {}
   if (cachedVersion !== SHELL_VERSION) {
@@ -5281,6 +5281,43 @@ html, body, #v, main {
   overflow: visible;
 }
 
+/* Onboarding Modal & Interactive Pills */
+.onboarding-card {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.onboarding-unit-pill,
+.onboarding-sex-pill {
+  min-height: 40px;
+  min-width: 68px;
+  padding: 0 16px;
+  cursor: pointer;
+  border: 1px solid var(--bd);
+  background: var(--c2);
+  color: var(--t1);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.onboarding-unit-pill.on,
+.onboarding-unit-pill.active,
+.onboarding-sex-pill.on,
+.onboarding-sex-pill.active {
+  color: #FFFFFF !important;
+  background: var(--ac) !important;
+  border-color: var(--ac) !important;
+  font-weight: 700;
+}
+
+#onboarding-submit-btn {
+  width: 100%;
+  min-height: 46px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 
 
 
@@ -8175,8 +8212,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.0';
-const SHELL_VERSION = 'mygym-core-v7.0.0';
+const APP_VERSION = '7.0.1';
+const SHELL_VERSION = 'mygym-core-v7.0.1';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -15203,7 +15240,66 @@ function commitCSVImport() {
 }
 
 // ---- First-Run Onboarding Modal ----
+function handleOnboardingSubmit() {
+  const unit = document.querySelector('.onboarding-unit-pill.active')?.dataset.val ||
+               document.querySelector('.onboarding-unit-pill.on')?.dataset.val ||
+               'kg';
+  const sex = document.querySelector('.onboarding-sex-pill.active')?.dataset.val ||
+              document.querySelector('.onboarding-sex-pill.on')?.dataset.val ||
+              'male';
+  const age = parseInt(document.getElementById('onboard-age')?.value, 10) || 21;
+  const height = parseFloat(document.getElementById('onboard-height')?.value) || 175;
+  const weight = parseFloat(document.getElementById('onboard-weight')?.value) || 73.5;
+  const goal = document.getElementById('onboard-goal')?.value || 'hypertrophy';
+  const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
+
+  // Commit to in-memory state
+  S.cfg = S.cfg || {};
+  S.cfg.unit = unit;
+  S.cfg.units = unit;
+  S.cfg.bodyModel = sex;
+  S.cfg.sex = sex;
+  S.cfg.weekStartDay = weekStart;
+  S.cfg.onboarded = true;
+  S.cfg.physique = {
+    ...S.cfg.physique,
+    age,
+    height,
+    weight,
+    goalType: goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'recomp')
+  };
+
+  // Add baseline weight entry if weights array is empty
+  if (!S.weights || S.weights.length === 0) {
+    S.weights = [{
+      id: 'w_' + Date.now(),
+      date: new Date().toISOString().slice(0, 10),
+      w: weight,
+      t: Date.now()
+    }];
+  }
+
+  // Persist atomically to both IndexedDB and localStorage
+  if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('mygym_onboarded', 'true');
+  }
+  save('cfg', 'weights');
+
+  // Dismiss modal immediately
+  closeModal();
+  toast('✓ Profile setup complete!');
+  render();
+}
+
 function showOnboardingModal() {
+  const age = S.cfg?.physique?.age || 21;
+  const height = S.cfg?.physique?.height || 175;
+  const weight = S.weights?.at(-1)?.w || S.cfg?.physique?.weight || 73.5;
+  const unit = S.cfg?.unit || S.cfg?.units || 'kg';
+  const sex = S.cfg?.bodyModel || S.cfg?.sex || 'male';
+  const goal = S.cfg?.physique?.goalType || S.cfg?.goalType || 'hypertrophy';
+  const weekStart = S.cfg?.weekStartDay || 'mon';
+
   modal(`
     <div class="card onboarding-card" style="padding:18px">
       <div style="text-align:center;margin-bottom:14px">
@@ -15215,57 +15311,67 @@ function showOnboardingModal() {
       <form id="onboarding-form" onsubmit="event.preventDefault()">
         <div class="settings-row" style="margin-bottom:10px">
           <span class="settings-label">Preferred Units</span>
-          <div class="row g">
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="units" value="kg" checked> kg</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="units" value="lbs"> lbs</label>
+          <div class="chips" id="onboard-units-group" style="margin:0;display:flex;gap:6px">
+            <button type="button" class="chip onboarding-unit-pill ${unit === 'kg' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="kg">kg</button>
+            <button type="button" class="chip onboarding-unit-pill ${unit === 'lbs' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="lbs">lbs</button>
           </div>
         </div>
 
         <div class="settings-row" style="margin-bottom:10px">
           <span class="settings-label">Biological Sex</span>
-          <div class="row g">
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="sex" value="male" checked> Male</label>
-            <label style="display:flex;align-items:center;gap:4px;font-size:13px"><input type="radio" name="sex" value="female"> Female</label>
+          <div class="chips" id="onboard-sex-group" style="margin:0;display:flex;gap:6px">
+            <button type="button" class="chip onboarding-sex-pill ${sex === 'male' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="male">Male</button>
+            <button type="button" class="chip onboarding-sex-pill ${sex === 'female' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="female">Female</button>
           </div>
         </div>
 
         <div class="row g" style="margin-bottom:10px">
           <div style="flex:1">
-            <label class="t2 sm" for="ob-age">Age (years)</label>
-            <input type="number" id="ob-age" class="txt" value="${S.cfg?.age || 28}" min="12" max="100" style="width:100%;padding:8px">
+            <label class="t2 sm" for="onboard-age">Age (years)</label>
+            <input type="number" id="onboard-age" name="age" class="txt" value="${age}" min="12" max="100" style="width:100%;padding:8px">
           </div>
           <div style="flex:1">
-            <label class="t2 sm" for="ob-height">Height (cm)</label>
-            <input type="number" id="ob-height" class="txt" value="${S.cfg?.height || 178}" min="100" max="250" style="width:100%;padding:8px">
+            <label class="t2 sm" for="onboard-height">Height (cm)</label>
+            <input type="number" id="onboard-height" name="height" class="txt" value="${height}" min="100" max="250" style="width:100%;padding:8px">
           </div>
           <div style="flex:1">
-            <label class="t2 sm" for="ob-weight">Weight (kg)</label>
-            <input type="number" id="ob-weight" class="txt" value="${S.cfg?.weight || 75}" step="0.5" min="30" max="300" style="width:100%;padding:8px">
+            <label class="t2 sm" for="onboard-weight">Weight (${esc(unit)})</label>
+            <input type="number" id="onboard-weight" name="weight" class="txt" value="${weight}" step="0.5" min="30" max="300" style="width:100%;padding:8px">
           </div>
         </div>
 
         <div class="settings-row" style="margin-bottom:10px">
           <span class="settings-label">Primary Training Goal</span>
-          <select id="ob-goal" class="settings-select" style="max-width:180px">
-            <option value="hypertrophy" selected>Muscle Hypertrophy</option>
-            <option value="strength">Raw Strength</option>
-            <option value="fat_loss">Fat Loss / Conditioning</option>
-            <option value="maintenance">Maintenance</option>
+          <select id="onboard-goal" name="goal" class="settings-select" style="max-width:180px">
+            <option value="hypertrophy" ${goal === 'hypertrophy' || goal === 'bulk' ? 'selected' : ''}>Muscle Hypertrophy</option>
+            <option value="strength" ${goal === 'strength' ? 'selected' : ''}>Raw Strength</option>
+            <option value="fat_loss" ${goal === 'fat_loss' || goal === 'cut' ? 'selected' : ''}>Fat Loss / Conditioning</option>
+            <option value="maintenance" ${goal === 'maintenance' || goal === 'recomp' ? 'selected' : ''}>Maintenance</option>
           </select>
         </div>
 
         <div class="settings-row" style="margin-bottom:14px">
           <span class="settings-label">Week Start Day</span>
-          <select id="ob-weekstart" class="settings-select" style="max-width:180px">
-            <option value="mon" selected>Monday (00:00)</option>
-            <option value="sun">Sunday (00:00)</option>
+          <select id="onboard-weekstart" name="weekstart" class="settings-select" style="max-width:180px">
+            <option value="mon" ${weekStart === 'mon' ? 'selected' : ''}>Monday (00:00)</option>
+            <option value="sun" ${weekStart === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
           </select>
         </div>
 
-        <button class="btn" data-a="saveonboarding" style="width:100%;min-height:44px;font-weight:700">Get Started 🚀</button>
+        <button type="button" class="btn" id="onboarding-submit-btn" data-a="submit-onboarding" style="width:100%;min-height:46px;font-weight:700">Get Started 🚀</button>
       </form>
     </div>
   `, { hideClose: true });
+
+  setTimeout(() => {
+    const submitBtn = document.getElementById('onboarding-submit-btn');
+    if (submitBtn) {
+      submitBtn.onclick = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        handleOnboardingSubmit();
+      };
+    }
+  }, 0);
 }
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
@@ -17479,6 +17585,24 @@ document.addEventListener('click', async e => {
     case 'tab': view = k; close(); break;
     case 'close': close(); return;
     case 'undo': U?.(); $('#toast').className = ''; return;
+    case 'toggle-onboard-unit': {
+      const val = t.dataset.val || 'kg';
+      document.querySelectorAll('.onboarding-unit-pill').forEach(btn => {
+        const isSelected = btn.dataset.val === val;
+        btn.classList.toggle('on', isSelected);
+        btn.classList.toggle('active', isSelected);
+      });
+      return;
+    }
+    case 'toggle-onboard-sex': {
+      const val = t.dataset.val || 'male';
+      document.querySelectorAll('.onboarding-sex-pill').forEach(btn => {
+        const isSelected = btn.dataset.val === val;
+        btn.classList.toggle('on', isSelected);
+        btn.classList.toggle('active', isSelected);
+      });
+      return;
+    }
     case 'open-3d-anatomy': {
       const p = t.dataset.p ? t.dataset.p.split(',').filter(Boolean) : [];
       const s = t.dataset.s ? t.dataset.s.split(',').filter(Boolean) : [];
@@ -18294,50 +18418,9 @@ document.addEventListener('click', async e => {
       }
       return;
     }
+    case 'submit-onboarding':
     case 'saveonboarding': {
-      const form = document.getElementById('onboarding-form');
-      const units = form?.querySelector('[name="units"]:checked')?.value || 'kg';
-      const sex = form?.querySelector('[name="sex"]:checked')?.value || 'male';
-      const age = Math.max(12, Math.min(100, Number(form?.querySelector('#ob-age')?.value) || 28));
-      const height = Math.max(100, Math.min(250, Number(form?.querySelector('#ob-height')?.value) || 178));
-      const weight = Math.max(30, Math.min(300, Number(form?.querySelector('#ob-weight')?.value) || 75));
-      const goal = form?.querySelector('#ob-goal')?.value || 'hypertrophy';
-      const weekStart = form?.querySelector('#ob-weekstart')?.value || 'mon';
-
-      S.cfg = S.cfg || {};
-      S.cfg.units = units;
-      S.cfg.sex = sex;
-      S.cfg.age = age;
-      S.cfg.height = height;
-      S.cfg.weight = weight;
-      S.cfg.goalType = goal;
-      S.cfg.weekStartDay = weekStart;
-      S.cfg.onboarded = true;
-
-      if (!S.weights || !S.weights.length) {
-        S.weights = [{ date: new Date().toISOString().slice(0, 10), t: Date.now(), w: weight }];
-        save('weights');
-      }
-
-      if (typeof Calc !== 'undefined' && Calc.calcMacros) {
-        const macroCalc = Calc.calcMacros(weight, height, age, sex, goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'maintain'));
-        if (macroCalc) {
-          S.nutrition = {
-            ...S.nutrition,
-            targetCals: macroCalc.cals,
-            targetProtein: macroCalc.protein,
-            targetCarbs: macroCalc.carbs,
-            targetFat: macroCalc.fat,
-            targetFiber: macroCalc.fiber
-          };
-          save('nutrition');
-        }
-      }
-
-      save('cfg');
-      closeModal();
-      toast('Welcome aboard! Your training profile has been configured.');
-      render();
+      handleOnboardingSubmit();
       return;
     }
     case 'opencsvimport': {
@@ -19581,12 +19664,13 @@ async function init() {
   }
 
   render();
-  if (!S.cfg?.onboarded) {
+  const isOnboarded = S.cfg?.onboarded || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true') || (S.weights && S.weights.length > 0);
+  if (!isOnboarded) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -19796,6 +19880,7 @@ if (typeof globalThis !== 'undefined') {
     runCSVPreview,
     commitCSVImport,
     showOnboardingModal,
+    handleOnboardingSubmit,
     renderTrainingInsightsCard,
     getExRest,
     isWebGLAvailable,
@@ -19819,22 +19904,22 @@ if (typeof globalThis !== 'undefined') {
 ================================================================================
 >>> START FILE: sw.js
 ================================================================================
-const C = 'mygym-core-v7.0.0';
+const C = 'mygym-core-v7.0.1';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=7.0.0',
+  './style.css?v=7.0.1',
   './shell.js',
-  './shell.js?v=7.0.0',
+  './shell.js?v=7.0.1',
   './calc.js',
-  './calc.js?v=7.0.0',
+  './calc.js?v=7.0.1',
   './ai-config.js',
-  './ai-config.js?v=7.0.0',
+  './ai-config.js?v=7.0.1',
   './app.js',
-  './app.js?v=7.0.0',
+  './app.js?v=7.0.1',
   './vendor/three.module.js',
-  './vendor/three.module.js?v=7.0.0',
+  './vendor/three.module.js?v=7.0.1',
   './manifest.json',
   './icon.png',
   './exercises.json',
@@ -19916,6 +20001,15 @@ self.addEventListener('fetch', e => {
 # Changelog
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
+
+## [7.0.1] - First-Run Onboarding Modal Fixes & Persistence - 2026-11-10
+- **Bulletproof Onboarding Action Handler**:
+  - Replaced standard inputs with interactive unit (`kg`/`lbs`) and biological sex (`Male`/`Female`) pill button selectors (`.onboarding-unit-pill`, `.onboarding-sex-pill`).
+  - Added dedicated button `#onboarding-submit-btn` with `data-a="submit-onboarding"` and direct `.onclick` event binding fallback.
+  - Ensured atomic commit to `S.cfg`, `S.weights`, `localStorage.setItem('mygym_onboarded', 'true')`, and IndexedDB state.
+- **Reload Persistence & Suppression**:
+  - Guarded `init()` with `const isOnboarded = S.cfg?.onboarded || localStorage.getItem('mygym_onboarded') === 'true' || (S.weights && S.weights.length > 0);` to prevent repeated prompts on refresh.
+  - Dynamically pre-filled saved age, height, and weight from existing state instead of static defaults.
 
 ## [7.0.0] - Phase 7 & 8: 3D Engine, Procedural Anatomy & Production Milestone - 2026-11-07
 - **Vendored Local Three.js ES Module & Offline Precaching**:
@@ -21455,27 +21549,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.0.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.0.0';"), 'sw.js must use mygym-core-v7.0.0 cache name');
-  assert(swCode.includes("'./style.css?v=7.0.0'"), 'sw.js must precache style.css?v=7.0.0');
-  assert(swCode.includes("'./app.js?v=7.0.0'"), 'sw.js must precache app.js?v=7.0.0');
-  assert(swCode.includes("'./calc.js?v=7.0.0'"), 'sw.js must precache calc.js?v=7.0.0');
+it('sw.js cache key is bumped to mygym-core-v7.0.1, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.0.1';"), 'sw.js must use mygym-core-v7.0.1 cache name');
+  assert(swCode.includes("'./style.css?v=7.0.1'"), 'sw.js must precache style.css?v=7.0.1');
+  assert(swCode.includes("'./app.js?v=7.0.1'"), 'sw.js must precache app.js?v=7.0.1');
+  assert(swCode.includes("'./calc.js?v=7.0.1'"), 'sw.js must precache calc.js?v=7.0.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.0.0'), 'index.html must link style.css?v=7.0.0');
-  assert(htmlCode.includes('shell.js?v=7.0.0'), 'index.html must load shell.js?v=7.0.0');
-  assert(htmlCode.includes('app.js?v=7.0.0'), 'index.html must load app.js?v=7.0.0');
-  assert(htmlCode.includes('calc.js?v=7.0.0'), 'index.html must load calc.js?v=7.0.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.0.1'), 'index.html must link style.css?v=7.0.1');
+  assert(htmlCode.includes('shell.js?v=7.0.1'), 'index.html must load shell.js?v=7.0.1');
+  assert(htmlCode.includes('app.js?v=7.0.1'), 'index.html must load app.js?v=7.0.1');
+  assert(htmlCode.includes('calc.js?v=7.0.1'), 'index.html must load calc.js?v=7.0.1');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.1'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.0.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.0');
+  assert.equal(api.APP_VERSION, '7.0.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.1');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -24567,14 +24661,24 @@ it('Pure Training Insights Engine: ACWR Volume Spikes, Stalled Lifts, and Neglec
 });
 
 it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async () => {
-  // Test Onboarding Modal markup
+  // Test Onboarding Modal markup & pills
   api.showOnboardingModal();
   const mHtml = elementsMap['#m'].innerHTML;
   assert.ok(mHtml.includes('Welcome to MyGyM'), 'Onboarding modal must render Welcome title');
-  assert.ok(mHtml.includes('name="units"'), 'Onboarding modal must include units picker');
-  assert.ok(mHtml.includes('name="sex"'), 'Onboarding modal must include biological sex picker');
-  assert.ok(mHtml.includes('id="ob-goal"'), 'Onboarding modal must include goal selector');
-  assert.ok(mHtml.includes('data-a="saveonboarding"'), 'Onboarding modal must have saveonboarding action');
+  assert.ok(mHtml.includes('onboarding-unit-pill'), 'Onboarding modal must include units pill buttons');
+  assert.ok(mHtml.includes('onboarding-sex-pill'), 'Onboarding modal must include sex pill buttons');
+  assert.ok(mHtml.includes('id="onboard-goal"'), 'Onboarding modal must include goal selector');
+  assert.ok(mHtml.includes('data-a="submit-onboarding"'), 'Onboarding modal must have submit-onboarding action');
+  assert.ok(mHtml.includes('id="onboarding-submit-btn"'), 'Onboarding modal must have id="onboarding-submit-btn"');
+
+  // Test action execution & persistence
+  api.handleOnboardingSubmit();
+  assert.equal(api.S.cfg.onboarded, true, 'S.cfg.onboarded must be true');
+  assert.equal(api.ls.get('mygym_onboarded'), 'true', 'localStorage mygym_onboarded must be true');
+  assert.ok(api.S.cfg.physique, 'S.cfg.physique must be populated');
+  assert.equal(typeof api.S.cfg.physique.weight, 'number', 'Physique weight must be number');
+  assert.ok(api.S.weights.length > 0, 'Baseline weight entry must exist');
+
   api.closeModal();
 
   // Test Settings Modal Data & Storage Meter

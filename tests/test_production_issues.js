@@ -992,27 +992,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.0.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.0.0';"), 'sw.js must use mygym-core-v7.0.0 cache name');
-  assert(swCode.includes("'./style.css?v=7.0.0'"), 'sw.js must precache style.css?v=7.0.0');
-  assert(swCode.includes("'./app.js?v=7.0.0'"), 'sw.js must precache app.js?v=7.0.0');
-  assert(swCode.includes("'./calc.js?v=7.0.0'"), 'sw.js must precache calc.js?v=7.0.0');
+it('sw.js cache key is bumped to mygym-core-v7.0.1, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.0.1';"), 'sw.js must use mygym-core-v7.0.1 cache name');
+  assert(swCode.includes("'./style.css?v=7.0.1'"), 'sw.js must precache style.css?v=7.0.1');
+  assert(swCode.includes("'./app.js?v=7.0.1'"), 'sw.js must precache app.js?v=7.0.1');
+  assert(swCode.includes("'./calc.js?v=7.0.1'"), 'sw.js must precache calc.js?v=7.0.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.0.0'), 'index.html must link style.css?v=7.0.0');
-  assert(htmlCode.includes('shell.js?v=7.0.0'), 'index.html must load shell.js?v=7.0.0');
-  assert(htmlCode.includes('app.js?v=7.0.0'), 'index.html must load app.js?v=7.0.0');
-  assert(htmlCode.includes('calc.js?v=7.0.0'), 'index.html must load calc.js?v=7.0.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.0.1'), 'index.html must link style.css?v=7.0.1');
+  assert(htmlCode.includes('shell.js?v=7.0.1'), 'index.html must load shell.js?v=7.0.1');
+  assert(htmlCode.includes('app.js?v=7.0.1'), 'index.html must load app.js?v=7.0.1');
+  assert(htmlCode.includes('calc.js?v=7.0.1'), 'index.html must load calc.js?v=7.0.1');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.1'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.0.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.0');
+  assert.equal(api.APP_VERSION, '7.0.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.1');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -4104,14 +4104,24 @@ it('Pure Training Insights Engine: ACWR Volume Spikes, Stalled Lifts, and Neglec
 });
 
 it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async () => {
-  // Test Onboarding Modal markup
+  // Test Onboarding Modal markup & pills
   api.showOnboardingModal();
   const mHtml = elementsMap['#m'].innerHTML;
   assert.ok(mHtml.includes('Welcome to MyGyM'), 'Onboarding modal must render Welcome title');
-  assert.ok(mHtml.includes('name="units"'), 'Onboarding modal must include units picker');
-  assert.ok(mHtml.includes('name="sex"'), 'Onboarding modal must include biological sex picker');
-  assert.ok(mHtml.includes('id="ob-goal"'), 'Onboarding modal must include goal selector');
-  assert.ok(mHtml.includes('data-a="saveonboarding"'), 'Onboarding modal must have saveonboarding action');
+  assert.ok(mHtml.includes('onboarding-unit-pill'), 'Onboarding modal must include units pill buttons');
+  assert.ok(mHtml.includes('onboarding-sex-pill'), 'Onboarding modal must include sex pill buttons');
+  assert.ok(mHtml.includes('id="onboard-goal"'), 'Onboarding modal must include goal selector');
+  assert.ok(mHtml.includes('data-a="submit-onboarding"'), 'Onboarding modal must have submit-onboarding action');
+  assert.ok(mHtml.includes('id="onboarding-submit-btn"'), 'Onboarding modal must have id="onboarding-submit-btn"');
+
+  // Test action execution & persistence
+  api.handleOnboardingSubmit();
+  assert.equal(api.S.cfg.onboarded, true, 'S.cfg.onboarded must be true');
+  assert.equal(api.ls.get('mygym_onboarded'), 'true', 'localStorage mygym_onboarded must be true');
+  assert.ok(api.S.cfg.physique, 'S.cfg.physique must be populated');
+  assert.equal(typeof api.S.cfg.physique.weight, 'number', 'Physique weight must be number');
+  assert.ok(api.S.weights.length > 0, 'Baseline weight entry must exist');
+
   api.closeModal();
 
   // Test Settings Modal Data & Storage Meter

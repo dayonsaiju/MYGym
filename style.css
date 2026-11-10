@@ -5115,6 +5115,43 @@ html, body, #v, main {
   overflow: visible;
 }
 
+/* Onboarding Modal & Interactive Pills */
+.onboarding-card {
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.onboarding-unit-pill,
+.onboarding-sex-pill {
+  min-height: 40px;
+  min-width: 68px;
+  padding: 0 16px;
+  cursor: pointer;
+  border: 1px solid var(--bd);
+  background: var(--c2);
+  color: var(--t1);
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.onboarding-unit-pill.on,
+.onboarding-unit-pill.active,
+.onboarding-sex-pill.on,
+.onboarding-sex-pill.active {
+  color: #FFFFFF !important;
+  background: var(--ac) !important;
+  border-color: var(--ac) !important;
+  font-weight: 700;
+}
+
+#onboarding-submit-btn {
+  width: 100%;
+  min-height: 46px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 
 
 
