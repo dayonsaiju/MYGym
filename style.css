@@ -1270,12 +1270,12 @@ input[type="checkbox"] {
 .work-nav-stepper {
   position: sticky;
   bottom: 0;
-  z-index: 20;
+  z-index: 40;
   display: flex;
   gap: 8px;
-  margin: 16px -16px -24px;
-  padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
-  background: rgba(24, 24, 26, 0.92);
+  margin: 12px -16px -24px;
+  padding: 12px 16px calc(env(safe-area-inset-bottom) + 68px);
+  background: rgba(16, 16, 20, 0.96);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
   border-top: 0.5px solid var(--bd);
@@ -3731,6 +3731,10 @@ textarea.note:focus {
 }
 
 /* Compact / Collapsible Exercise Demo GIF */
+.work-hero-media.collapsed {
+  display: none !important;
+}
+
 .work-hero-media.compact {
   max-height: 140px;
   margin: 10px 0 8px;
@@ -4605,10 +4609,11 @@ textarea.note:focus {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding: 8px 0;
+  padding: 6px 0;
+  margin-bottom: 8px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  flex: none;
+  flex-shrink: 0;
 }
 .ai-quick-chips::-webkit-scrollbar {
   display: none;

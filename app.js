@@ -242,8 +242,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.1';
-const SHELL_VERSION = 'mygym-core-v7.0.1';
+const APP_VERSION = '7.0.2';
+const SHELL_VERSION = 'mygym-core-v7.0.2';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1244,20 +1244,32 @@ async function init3DViewer(options = {}) {
   const raycaster = new THREE.Raycaster();
   const mouse = new THREE.Vector2();
 
+  const getPointerPos = (e) => {
+    if (e.touches && e.touches.length > 0) {
+      return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+    }
+    if (e.changedTouches && e.changedTouches.length > 0) {
+      return { clientX: e.changedTouches[0].clientX, clientY: e.changedTouches[0].clientY };
+    }
+    return { clientX: e.clientX, clientY: e.clientY };
+  };
+
   const onPointerDown = (e) => {
     isDragging = true;
-    prevPointerX = e.clientX;
-    prevPointerY = e.clientY;
-    pointerStartX = e.clientX;
-    pointerStartY = e.clientY;
+    const pos = getPointerPos(e);
+    prevPointerX = pos.clientX;
+    prevPointerY = pos.clientY;
+    pointerStartX = pos.clientX;
+    pointerStartY = pos.clientY;
   };
 
   const onPointerMove = (e) => {
     if (!isDragging) return;
-    const dx = e.clientX - prevPointerX;
-    const dy = e.clientY - prevPointerY;
-    prevPointerX = e.clientX;
-    prevPointerY = e.clientY;
+    const pos = getPointerPos(e);
+    const dx = pos.clientX - prevPointerX;
+    const dy = pos.clientY - prevPointerY;
+    prevPointerX = pos.clientX;
+    prevPointerY = pos.clientY;
 
     if (model) {
       model.rotation.y += dx * 0.01;
@@ -1269,24 +1281,27 @@ async function init3DViewer(options = {}) {
     if (!isDragging) return;
     isDragging = false;
 
-    // Tap/click detection (delta < 6px)
-    const dist = Math.hypot(e.clientX - pointerStartX, e.clientY - pointerStartY);
-    if (dist < 6 && model) {
+    // Tap/click detection (delta < 8px)
+    const pos = getPointerPos(e);
+    const dist = Math.hypot(pos.clientX - pointerStartX, pos.clientY - pointerStartY);
+    if (dist < 8 && model) {
       const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(model.children, true);
-      if (intersects && intersects.length > 0) {
-        for (const hit of intersects) {
-          if (hit.object && hit.object.userData && hit.object.userData.muscleKey) {
-            const mKey = hit.object.userData.muscleKey;
-            if (typeof onMuscleSelect === 'function') {
-              onMuscleSelect(mKey);
-            } else if (typeof showMuscleDetailSheet === 'function') {
-              showMuscleDetailSheet(mKey);
+      if (rect.width > 0 && rect.height > 0) {
+        mouse.x = ((pos.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((pos.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        const intersects = raycaster.intersectObjects(model.children, true);
+        if (intersects && intersects.length > 0) {
+          for (const hit of intersects) {
+            if (hit.object && hit.object.userData && hit.object.userData.muscleKey) {
+              const mKey = hit.object.userData.muscleKey;
+              if (typeof onMuscleSelect === 'function') {
+                onMuscleSelect(mKey);
+              } else if (typeof showMuscleDetailSheet === 'function') {
+                showMuscleDetailSheet(mKey);
+              }
+              break;
             }
-            break;
           }
         }
       }
@@ -1328,9 +1343,12 @@ async function init3DViewer(options = {}) {
   };
 
   const canvas = renderer.domElement;
+  canvas.style.touchAction = 'none';
   canvas.addEventListener('pointerdown', onPointerDown);
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('touchend', onPointerUp, { passive: true });
+  canvas.addEventListener('touchcancel', onPointerUp, { passive: true });
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('touchstart', onTouchStart, { passive: true });
   canvas.addEventListener('touchmove', onTouchMove, { passive: false });
@@ -1366,6 +1384,8 @@ async function init3DViewer(options = {}) {
       canvas.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      canvas.removeEventListener('touchend', onPointerUp);
+      canvas.removeEventListener('touchcancel', onPointerUp);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('touchstart', onTouchStart);
       canvas.removeEventListener('touchmove', onTouchMove);
@@ -1480,20 +1500,22 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
     </div>
   `);
 
-  setTimeout(() => {
-    const container = document.getElementById('anatomy-3d-canvas-wrap');
-    if (container) {
-      init3DViewer({
-        container,
-        gender: currentGender,
-        primaryMuscles: pKeys,
-        secondaryMuscles: sKeys,
-        onMuscleSelect: (mKey) => {
-          showMuscleDetailSheet(mKey);
-        }
-      });
-    }
-  }, 30);
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      const container = document.getElementById('anatomy-3d-canvas-wrap');
+      if (container) {
+        init3DViewer({
+          container,
+          gender: currentGender,
+          primaryMuscles: pKeys,
+          secondaryMuscles: sKeys,
+          onMuscleSelect: (mKey) => {
+            showMuscleDetailSheet(mKey);
+          }
+        });
+      }
+    }, 60);
+  });
 }
 
 function show3DPhysiqueModal(initialProgress = 0.5) {
@@ -1548,26 +1570,28 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
     </div>
   `);
 
-  setTimeout(() => {
-    const container = document.getElementById('physique-3d-canvas-wrap');
-    if (container) {
-      const viewer = init3DViewer({
-        container,
-        gender: currentGender,
-        physiqueProgress: prog
-      });
-
-      const slider = document.getElementById('physique-3d-slider');
-      const label = document.getElementById('physique-3d-pct-label');
-      if (slider) {
-        slider.addEventListener('input', (e) => {
-          const val = Number(e.target.value);
-          if (label) label.textContent = `${val}% Progress`;
-          if (viewer) viewer.setPhysiqueProgress(val / 100);
+  requestAnimationFrame(() => {
+    setTimeout(() => {
+      const container = document.getElementById('physique-3d-canvas-wrap');
+      if (container) {
+        const viewer = init3DViewer({
+          container,
+          gender: currentGender,
+          physiqueProgress: prog
         });
+
+        const slider = document.getElementById('physique-3d-slider');
+        const label = document.getElementById('physique-3d-pct-label');
+        if (slider) {
+          slider.addEventListener('input', (e) => {
+            const val = Number(e.target.value);
+            if (label) label.textContent = `${val}% Progress`;
+            if (viewer) viewer.setPhysiqueProgress(val / 100);
+          });
+        }
       }
-    }
-  }, 30);
+    }, 60);
+  });
 }
 
 function animateCounter(el, start, end, duration = 800, suffix = '') {
@@ -7284,6 +7308,7 @@ function handleOnboardingSubmit() {
   const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
 
   // Commit to in-memory state
+  S.onboarded = true;
   S.cfg = S.cfg || {};
   S.cfg.unit = unit;
   S.cfg.units = unit;
@@ -8194,8 +8219,9 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       headers['X-Title'] = 'MyGyM';
     }
 
+    const cleanModel = String(model || '').replace(/\s*\([^)]*\)\s*$/, '').trim();
     const bodyPayload = {
-      model: model,
+      model: cleanModel,
       messages,
       temperature: options.temperature != null ? options.temperature : 0.4,
       ...(options.jsonMode ? { response_format: { type: 'json_object' } } : {})
@@ -9595,7 +9621,7 @@ _global.editPastWorkout = editPastWorkout;
 // On focus of any set input, automatically select full text for single-tap replacement
 if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
   document.addEventListener('focusin', e => {
-    if (e.target && e.target.matches && e.target.matches('.set-val-input, input[data-f="w"], input[data-f="r"]')) {
+    if (e.target && e.target.matches && e.target.matches('.set-val-input, input[data-f="w"], input[data-f="r"], .settings-input-num')) {
       if (typeof e.target.select === 'function') {
         setTimeout(() => { try { e.target.select(); } catch (_) {} }, 10);
       }
@@ -11694,13 +11720,13 @@ async function init() {
   }
 
   render();
-  const isOnboarded = S.cfg?.onboarded || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true') || (S.weights && S.weights.length > 0);
+  const isOnboarded = S.onboarded === true || S.cfg?.onboarded === true || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true');
   if (!isOnboarded) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.1').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.2').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

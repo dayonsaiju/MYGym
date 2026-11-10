@@ -89,7 +89,13 @@
   };
 
   const isWarmupSet = s => Boolean(s && (s.type === 'W' || s.type === 'warmup' || s.isWarmup));
-  const isSetDone = (s, uni = false) => Boolean(s && (s.done || (uni && s.sideL && s.sideR)));
+  const isSetDone = (s, uni = false) => {
+    if (!s) return false;
+    if (s.done === true) return true;
+    if (s.done === false) return false;
+    if (uni) return Boolean(s.sideL && s.sideR);
+    return Boolean(Number(s.r) > 0 && !isWarmupSet(s));
+  };
 
   const isDumbbellMovement = ex => {
     if (!ex) return false;
@@ -667,14 +673,16 @@
       };
     }
 
-    const proteinRatio = (goal === 'cut' || goal === 'sixpack') ? 2.2 : (goal === 'bulk' ? 2.0 : 2.2);
-    const proteinG = Math.round(w * proteinRatio);
+    // Target protein: 2.0g per kg bodyweight (clamped between 50g and 300g)
+    const proteinG = Math.min(300, Math.max(50, Math.round(w * 2.0)));
     const proteinKcal = proteinG * 4;
 
-    const fatKcal = cals * 0.25;
-    const fatG = Math.round(fatKcal / 9);
+    // Fat floor: at least 30g and at least 0.8g per kg bodyweight
+    const fatFloorG = Math.max(30, Math.round(w * 0.8));
+    const fatG = Math.max(fatFloorG, Math.round((cals * 0.25) / 9));
+    const fatKcal = fatG * 9;
 
-    let carbKcal = cals - proteinKcal - (fatG * 9);
+    let carbKcal = cals - proteinKcal - fatKcal;
     let carbG = Math.round(carbKcal / 4);
     let warning = null;
 
@@ -690,7 +698,7 @@
       protein: proteinG,
       proteinKcal,
       fat: fatG,
-      fatKcal: Math.round(fatG * 9),
+      fatKcal,
       carbs: carbG,
       carbKcal,
       warning

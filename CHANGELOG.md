@@ -2,6 +2,26 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.0.2] - Architectural Repair, WebGL Canvas Rendering & Macro Engine Stabilization - 2026-11-10
+- **Onboarding Modal & Persistent Initialization (`app.js`)**:
+  - Enforced strict onboarding check in `init()`: `const isOnboarded = S.onboarded === true || S.cfg?.onboarded === true || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true');`.
+  - Guaranteed atomic persistence of `S.onboarded = true` and `S.cfg.onboarded = true` in both memory and localStorage upon onboarding submit, completely eliminating redundant first-run prompts.
+- **3D WebGL Engine & Resilient Rendering (`vendor/three.module.js`, `app.js`)**:
+  - Clamped `devicePixelRatio` to `Math.min(window.devicePixelRatio || 1, 2)` in `WebGLRenderer.setSize` to eliminate high-DPI iOS canvas buffer distortion.
+  - Wrapped `init3DViewer()` in `requestAnimationFrame(() => setTimeout(..., 60))` in `show3DAnatomyModal()` and `show3DPhysiqueModal()` to prevent black screen / 0px client dimension race conditions during modal slide-in.
+  - Tuned default ambient lighting uniform (`0.55, 0.58, 0.62`) and directional light (`1.0, 0.98, 0.95`) for clear mannequin visibility.
+  - Added robust pointer position extraction supporting touch events, normalized device coordinates raycasting using `canvas.getBoundingClientRect()`, and `touchAction: none`.
+- **Mobile Layout & Viewport Collisions (`style.css`, `app.js`)**:
+  - Elevated `.work-nav-stepper` with `z-index: 40;`, sticky bottom, and clearance padding `calc(env(safe-area-inset-bottom) + 68px)` preventing occlusion by bottom navigation.
+  - Enforced `.work-hero-media.collapsed { display: none !important; }` for reliable exercise demonstration GIF collapsing.
+  - Added `.ai-quick-chips { flex-shrink: 0; overflow-x: auto; padding: 6px 0; margin-bottom: 8px; }` with auto-scroll to bottom on chat message append.
+  - Cleaned Groq/OpenAI model IDs by stripping trailing UI annotations before network requests.
+- **Scientific Calculation & Nutrition Stabilization (`calc.js`)**:
+  - Refined `isSetDone` to preserve valid logged working sets (`r > 0`) where `done: true` was omitted while strictly honoring explicit `done: false` and excluding warmups.
+  - Calibrated `calcMacros` with bodyweight-calibrated fat floor (`Math.max(30, Math.round(weightKg * 0.8))`) and target protein (`Math.round(weightKg * 2.0)`), eliminating extreme skew on 2,100 kcal intakes.
+- **Test Suite Expansion**:
+  - Added Suite 25 in `tests/test_production_issues.js`, bringing total assertions to 164 with 100% pass rate.
+
 ## [7.0.1] - First-Run Onboarding Modal Fixes & Persistence - 2026-11-10
 - **Bulletproof Onboarding Action Handler**:
   - Replaced standard inputs with interactive unit (`kg`/`lbs`) and biological sex (`Male`/`Female`) pill button selectors (`.onboarding-unit-pill`, `.onboarding-sex-pill`).

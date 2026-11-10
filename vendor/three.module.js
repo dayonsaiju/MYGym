@@ -1069,10 +1069,11 @@ export class WebGLRenderer {
 
   setSize(width, height) {
     if (!this.domElement) return;
-    this.domElement.width = width * (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
-    this.domElement.height = height * (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1);
-    this.domElement.style.width = `${width}px`;
-    this.domElement.style.height = `${height}px`;
+    const pr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2);
+    this.domElement.width = Math.floor(width * pr);
+    this.domElement.height = Math.floor(height * pr);
+    this.domElement.style.width = width + 'px';
+    this.domElement.style.height = height + 'px';
     if (this.gl) {
       this.gl.viewport(0, 0, this.domElement.width, this.domElement.height);
     }
@@ -1095,8 +1096,8 @@ export class WebGLRenderer {
     gl.useProgram(this.program);
 
     // Extract lighting from scene
-    let amb = new Color(0.35, 0.38, 0.42);
-    let dirColor = new Color(0.9, 0.9, 0.95);
+    let amb = new Color(0.55, 0.58, 0.62);
+    let dirColor = new Color(1.0, 0.98, 0.95);
     let dirVector = new Vector3(0.5, 1.0, 0.8).normalize();
 
     scene.traverse(node => {
