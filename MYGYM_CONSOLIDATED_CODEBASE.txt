@@ -1,6 +1,6 @@
 ================================================================================
 MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v7.0.3)
-Generated at: 2026-11-10T18:01:54.389Z
+Generated at: 2026-11-10T18:11:54.595Z
 Architecture: Zero-Backend Offline-First Progressive Web App
 ================================================================================
 
@@ -12,14 +12,14 @@ TABLE OF CONTENTS:
 5. calc.js (34.7 KB)
 6. ai-config.js (13.1 KB)
 7. vendor/three.module.js (34.8 KB)
-8. app.js (490.0 KB)
+8. app.js (490.8 KB)
 9. sw.js (2.6 KB)
-10. CHANGELOG.md (21.0 KB)
+10. CHANGELOG.md (21.1 KB)
 11. scripts/bump-version.js (5.0 KB)
 12. scripts/generate-exercise-kinds.js (2.5 KB)
 13. scripts/capture-screens.js (2.8 KB)
 14. scripts/consolidate.js (2.5 KB)
-15. tests/test_production_issues.js (196.1 KB)
+15. tests/test_production_issues.js (196.3 KB)
 ================================================================================
 
 ================================================================================
@@ -8123,6 +8123,29 @@ const put = async (k, v) => {
   }
 };
 
+// Synchronous Gate Function: permanently prevent redundant onboarding prompts
+function isUserOnboarded() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (localStorage.getItem('mygym_onboarded') === 'true') return true;
+      if (localStorage.getItem('mygym_shell_onboarded') === 'true') return true;
+      if (localStorage.getItem('lift_onboarded') === 'true') return true;
+      // If user already has any logged workouts or saved weights, they are onboarded
+      const weights = localStorage.getItem('lift_weights');
+      if (weights && weights !== '[]' && weights !== 'null') return true;
+      const logs = localStorage.getItem('lift_logs');
+      if (logs && logs !== '[]' && logs !== 'null') return true;
+    }
+    if (typeof S !== 'undefined' && S) {
+      if (S?.cfg?.onboarded === true || S?.onboarded === true) return true;
+      if (Array.isArray(S?.weights) && S.weights.length > 0) return true;
+      if (Array.isArray(S?.logs) && S.logs.length > 0) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+if (typeof window !== 'undefined') window.isUserOnboarded = isUserOnboarded;
+
 const SCHEMA_VERSION = 3;
 
 let S = {
@@ -15349,7 +15372,10 @@ function handleOnboardingSubmit() {
   }
 }
 
-function showOnboardingModal() {
+function showOnboardingModal(force = false) {
+  if (!force && isUserOnboarded()) {
+    return;
+  }
   const age = S.cfg?.physique?.age || 21;
   const height = S.cfg?.physique?.height || 175;
   const weight = S.weights?.at(-1)?.w || S.cfg?.physique?.weight || 73.5;
@@ -19735,13 +19761,7 @@ async function init() {
   }
 
   render();
-  const isDone = S.onboarded === true ||
-                 S.cfg?.onboarded === true ||
-                 (typeof localStorage !== 'undefined' ? (
-                   localStorage.getItem('mygym_onboarded') === 'true' ||
-                   localStorage.getItem('mygym_shell_onboarded') === 'true'
-                 ) : false);
-  if (!isDone) {
+  if (!isUserOnboarded()) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
@@ -19957,6 +19977,7 @@ if (typeof globalThis !== 'undefined') {
     commitCSVImport,
     showOnboardingModal,
     handleOnboardingSubmit,
+    isUserOnboarded,
     renderTrainingInsightsCard,
     getExRest,
     isWebGLAvailable,
@@ -20086,8 +20107,9 @@ All notable changes to the MyGyM Progressive Web App are documented in this file
   - Wrapped `handleOnboardingSubmit()` inside a defensive `try / catch / finally` block.
   - Fallbacks added for Age, Height, Weight, Units, and Sex inputs so missing or altered DOM elements never crash execution.
   - Guaranteed modal dismissal, DOM cleanup (`m.hidden = true; m.innerHTML = ''; document.body.style.overflow = '';`), profile persistence, and toast notification inside the `finally` block.
-- **Hard Boot Bypass (`app.js`)**:
-  - In `init()`, verified onboarding completion with both memory state and persistent storage (`mygym_onboarded`, `mygym_shell_onboarded`) before invoking modal.
+- **Hard Boot Bypass & Runtime Gate (`app.js`)**:
+  - Added synchronous runtime gate `isUserOnboarded()` checking persistent storage (`mygym_onboarded`, `mygym_shell_onboarded`, `lift_onboarded`), saved weights, workout logs, and memory state.
+  - Guarded `showOnboardingModal()` and `init()` against recurring welcome modal display.
 
 ## [7.0.2] - Architectural Repair, WebGL Canvas Rendering & Macro Engine Stabilization - 2026-11-10
 - **Onboarding Modal & Persistent Initialization (`app.js`)**:
@@ -24908,6 +24930,10 @@ it('Onboarding persistence suppression, hard boot bypass and atomic profile comm
   assert.equal(checkIsOnboarded({ cfg: { onboarded: true } }, { getItem: () => null }), true);
   assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_onboarded' ? 'true' : null }), true);
   assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_shell_onboarded' ? 'true' : null }), true);
+
+  // isUserOnboarded synchronous runtime gate check
+  assert.equal(typeof api.isUserOnboarded, 'function', 'isUserOnboarded must be exported');
+  assert.equal(api.isUserOnboarded(), true, 'isUserOnboarded must return true when state is onboarded');
 
   // handleOnboardingSubmit verification
   assert.equal(typeof api.handleOnboardingSubmit, 'function', 'handleOnboardingSubmit must be exported');

@@ -4245,6 +4245,10 @@ it('Onboarding persistence suppression, hard boot bypass and atomic profile comm
   assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_onboarded' ? 'true' : null }), true);
   assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_shell_onboarded' ? 'true' : null }), true);
 
+  // isUserOnboarded synchronous runtime gate check
+  assert.equal(typeof api.isUserOnboarded, 'function', 'isUserOnboarded must be exported');
+  assert.equal(api.isUserOnboarded(), true, 'isUserOnboarded must return true when state is onboarded');
+
   // handleOnboardingSubmit verification
   assert.equal(typeof api.handleOnboardingSubmit, 'function', 'handleOnboardingSubmit must be exported');
 });

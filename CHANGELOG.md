@@ -10,8 +10,9 @@ All notable changes to the MyGyM Progressive Web App are documented in this file
   - Wrapped `handleOnboardingSubmit()` inside a defensive `try / catch / finally` block.
   - Fallbacks added for Age, Height, Weight, Units, and Sex inputs so missing or altered DOM elements never crash execution.
   - Guaranteed modal dismissal, DOM cleanup (`m.hidden = true; m.innerHTML = ''; document.body.style.overflow = '';`), profile persistence, and toast notification inside the `finally` block.
-- **Hard Boot Bypass (`app.js`)**:
-  - In `init()`, verified onboarding completion with both memory state and persistent storage (`mygym_onboarded`, `mygym_shell_onboarded`) before invoking modal.
+- **Hard Boot Bypass & Runtime Gate (`app.js`)**:
+  - Added synchronous runtime gate `isUserOnboarded()` checking persistent storage (`mygym_onboarded`, `mygym_shell_onboarded`, `lift_onboarded`), saved weights, workout logs, and memory state.
+  - Guarded `showOnboardingModal()` and `init()` against recurring welcome modal display.
 
 ## [7.0.2] - Architectural Repair, WebGL Canvas Rendering & Macro Engine Stabilization - 2026-11-10
 - **Onboarding Modal & Persistent Initialization (`app.js`)**:

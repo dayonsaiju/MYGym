@@ -139,6 +139,29 @@ const put = async (k, v) => {
   }
 };
 
+// Synchronous Gate Function: permanently prevent redundant onboarding prompts
+function isUserOnboarded() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      if (localStorage.getItem('mygym_onboarded') === 'true') return true;
+      if (localStorage.getItem('mygym_shell_onboarded') === 'true') return true;
+      if (localStorage.getItem('lift_onboarded') === 'true') return true;
+      // If user already has any logged workouts or saved weights, they are onboarded
+      const weights = localStorage.getItem('lift_weights');
+      if (weights && weights !== '[]' && weights !== 'null') return true;
+      const logs = localStorage.getItem('lift_logs');
+      if (logs && logs !== '[]' && logs !== 'null') return true;
+    }
+    if (typeof S !== 'undefined' && S) {
+      if (S?.cfg?.onboarded === true || S?.onboarded === true) return true;
+      if (Array.isArray(S?.weights) && S.weights.length > 0) return true;
+      if (Array.isArray(S?.logs) && S.logs.length > 0) return true;
+    }
+  } catch (_) {}
+  return false;
+}
+if (typeof window !== 'undefined') window.isUserOnboarded = isUserOnboarded;
+
 const SCHEMA_VERSION = 3;
 
 let S = {
@@ -7365,7 +7388,10 @@ function handleOnboardingSubmit() {
   }
 }
 
-function showOnboardingModal() {
+function showOnboardingModal(force = false) {
+  if (!force && isUserOnboarded()) {
+    return;
+  }
   const age = S.cfg?.physique?.age || 21;
   const height = S.cfg?.physique?.height || 175;
   const weight = S.weights?.at(-1)?.w || S.cfg?.physique?.weight || 73.5;
@@ -11751,13 +11777,7 @@ async function init() {
   }
 
   render();
-  const isDone = S.onboarded === true ||
-                 S.cfg?.onboarded === true ||
-                 (typeof localStorage !== 'undefined' ? (
-                   localStorage.getItem('mygym_onboarded') === 'true' ||
-                   localStorage.getItem('mygym_shell_onboarded') === 'true'
-                 ) : false);
-  if (!isDone) {
+  if (!isUserOnboarded()) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
@@ -11973,6 +11993,7 @@ if (typeof globalThis !== 'undefined') {
     commitCSVImport,
     showOnboardingModal,
     handleOnboardingSubmit,
+    isUserOnboarded,
     renderTrainingInsightsCard,
     getExRest,
     isWebGLAvailable,
