@@ -242,8 +242,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.2';
-const SHELL_VERSION = 'mygym-core-v7.0.2';
+const APP_VERSION = '7.0.3';
+const SHELL_VERSION = 'mygym-core-v7.0.3';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -7295,55 +7295,74 @@ function commitCSVImport() {
 
 // ---- First-Run Onboarding Modal ----
 function handleOnboardingSubmit() {
-  const unit = document.querySelector('.onboarding-unit-pill.active')?.dataset.val ||
-               document.querySelector('.onboarding-unit-pill.on')?.dataset.val ||
-               'kg';
-  const sex = document.querySelector('.onboarding-sex-pill.active')?.dataset.val ||
-              document.querySelector('.onboarding-sex-pill.on')?.dataset.val ||
-              'male';
-  const age = parseInt(document.getElementById('onboard-age')?.value, 10) || 21;
-  const height = parseFloat(document.getElementById('onboard-height')?.value) || 175;
-  const weight = parseFloat(document.getElementById('onboard-weight')?.value) || 73.5;
-  const goal = document.getElementById('onboard-goal')?.value || 'hypertrophy';
-  const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
+  try {
+    const age = parseInt(document.getElementById('onboard-age')?.value || document.querySelector('input[placeholder="28"]')?.value || '21', 10);
+    const height = parseFloat(document.getElementById('onboard-height')?.value || document.querySelector('input[placeholder="178"]')?.value || '175');
+    const weight = parseFloat(document.getElementById('onboard-weight')?.value || document.querySelector('input[placeholder="75"]')?.value || '73.5');
+    const unit = document.querySelector('.onboarding-unit-pill.on')?.dataset?.val ||
+                 document.querySelector('.onboarding-unit-pill.active')?.dataset?.val ||
+                 'kg';
+    const sex = document.querySelector('.onboarding-sex-pill.on')?.dataset?.val ||
+                document.querySelector('.onboarding-sex-pill.active')?.dataset?.val ||
+                'male';
+    const goal = document.getElementById('onboard-goal')?.value || 'hypertrophy';
+    const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
 
-  // Commit to in-memory state
-  S.onboarded = true;
-  S.cfg = S.cfg || {};
-  S.cfg.unit = unit;
-  S.cfg.units = unit;
-  S.cfg.bodyModel = sex;
-  S.cfg.sex = sex;
-  S.cfg.weekStartDay = weekStart;
-  S.cfg.onboarded = true;
-  S.cfg.physique = {
-    ...S.cfg.physique,
-    age,
-    height,
-    weight,
-    goalType: goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'recomp')
-  };
+    // Commit to S
+    S.onboarded = true;
+    if (!S.cfg) S.cfg = {};
+    S.cfg.onboarded = true;
+    S.cfg.unit = unit;
+    S.cfg.units = unit;
+    S.cfg.bodyModel = sex;
+    S.cfg.sex = sex;
+    S.cfg.weekStartDay = weekStart;
+    S.cfg.physique = {
+      ...(S.cfg.physique || {}),
+      age,
+      height,
+      weight,
+      goalType: goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'recomp')
+    };
 
-  // Add baseline weight entry if weights array is empty
-  if (!S.weights || S.weights.length === 0) {
-    S.weights = [{
-      id: 'w_' + Date.now(),
-      date: new Date().toISOString().slice(0, 10),
-      w: weight,
-      t: Date.now()
-    }];
+    // Add baseline weight entry if weights array is empty
+    if (!S.weights || S.weights.length === 0) {
+      S.weights = [{
+        id: 'w_' + Date.now(),
+        date: new Date().toISOString().slice(0, 10),
+        w: weight,
+        t: Date.now()
+      }];
+    }
+
+    // Persist immediately to localStorage and ls
+    try {
+      ls.set('mygym_onboarded', 'true');
+      ls.set('mygym_shell_onboarded', 'true');
+    } catch (_) {}
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('mygym_onboarded', 'true');
+        localStorage.setItem('mygym_shell_onboarded', 'true');
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.warn('handleOnboardingSubmit error:', err);
+  } finally {
+    // MUST EXECUTE IN FINALLY BLOCK:
+    closeModal();
+    const m = document.getElementById('m');
+    if (m) {
+      m.hidden = true;
+      m.innerHTML = '';
+    }
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.style.overflow = '';
+    }
+    toast('Welcome to MyGyM!');
+    render();
+    save('cfg', 'weights');
   }
-
-  // Persist atomically to both IndexedDB and localStorage
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('mygym_onboarded', 'true');
-  }
-  save('cfg', 'weights');
-
-  // Dismiss modal immediately
-  closeModal();
-  toast('✓ Profile setup complete!');
-  render();
 }
 
 function showOnboardingModal() {
@@ -7357,8 +7376,12 @@ function showOnboardingModal() {
 
   modal(`
     <div class="card onboarding-card" style="padding:18px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-size:18px;">🏋️</span>
+        <button type="button" class="x" data-a="dismiss-onboarding" style="font-size:14px; font-weight:700; color:var(--ac); cursor:pointer;">Skip / Close ✕</button>
+      </div>
+
       <div style="text-align:center;margin-bottom:14px">
-        <div style="font-size:32px">🏋️</div>
         <h2 style="margin:4px 0 2px">Welcome to MyGyM</h2>
         <p class="t2 sm" style="margin:0">Personalize your offline training profile</p>
       </div>
@@ -7416,7 +7439,7 @@ function showOnboardingModal() {
         <button type="button" class="btn" id="onboarding-submit-btn" data-a="submit-onboarding" style="width:100%;min-height:46px;font-weight:700">Get Started 🚀</button>
       </form>
     </div>
-  `, { hideClose: true });
+  `, { hideClose: false });
 
   setTimeout(() => {
     const submitBtn = document.getElementById('onboarding-submit-btn');
@@ -7426,6 +7449,13 @@ function showOnboardingModal() {
         handleOnboardingSubmit();
       };
     }
+    const dismissBtns = document.querySelectorAll('[data-a="dismiss-onboarding"]');
+    dismissBtns.forEach(b => {
+      b.onclick = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        handleOnboardingSubmit();
+      };
+    });
   }, 0);
 }
 
@@ -10475,6 +10505,7 @@ document.addEventListener('click', async e => {
       return;
     }
     case 'submit-onboarding':
+    case 'dismiss-onboarding':
     case 'saveonboarding': {
       handleOnboardingSubmit();
       return;
@@ -11720,13 +11751,18 @@ async function init() {
   }
 
   render();
-  const isOnboarded = S.onboarded === true || S.cfg?.onboarded === true || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true');
-  if (!isOnboarded) {
+  const isDone = S.onboarded === true ||
+                 S.cfg?.onboarded === true ||
+                 (typeof localStorage !== 'undefined' ? (
+                   localStorage.getItem('mygym_onboarded') === 'true' ||
+                   localStorage.getItem('mygym_shell_onboarded') === 'true'
+                 ) : false);
+  if (!isDone) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.2').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.3').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

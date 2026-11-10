@@ -1,6 +1,6 @@
 ================================================================================
-MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v7.0.2)
-Generated at: 2026-11-10T17:49:08.019Z
+MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v7.0.3)
+Generated at: 2026-11-10T18:01:54.389Z
 Architecture: Zero-Backend Offline-First Progressive Web App
 ================================================================================
 
@@ -12,14 +12,14 @@ TABLE OF CONTENTS:
 5. calc.js (34.7 KB)
 6. ai-config.js (13.1 KB)
 7. vendor/three.module.js (34.8 KB)
-8. app.js (488.5 KB)
+8. app.js (490.0 KB)
 9. sw.js (2.6 KB)
-10. CHANGELOG.md (20.0 KB)
+10. CHANGELOG.md (21.0 KB)
 11. scripts/bump-version.js (5.0 KB)
 12. scripts/generate-exercise-kinds.js (2.5 KB)
 13. scripts/capture-screens.js (2.8 KB)
 14. scripts/consolidate.js (2.5 KB)
-15. tests/test_production_issues.js (195.6 KB)
+15. tests/test_production_issues.js (196.1 KB)
 ================================================================================
 
 ================================================================================
@@ -48,7 +48,7 @@ TABLE OF CONTENTS:
       "purpose": "maskable"
     }
   ],
-  "version": "7.0.2"
+  "version": "7.0.3"
 }
 ================================================================================
 <<< END FILE: manifest.json
@@ -72,9 +72,9 @@ TABLE OF CONTENTS:
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css?v=7.0.2">
+  <link rel="stylesheet" href="./style.css?v=7.0.3">
   <title>MyGyM</title>
-  <script src="./shell.js?v=7.0.2"></script>
+  <script src="./shell.js?v=7.0.3"></script>
 </head>
 <body>
   <main id="v"></main>
@@ -96,9 +96,9 @@ TABLE OF CONTENTS:
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script src="./calc.js?v=7.0.2"></script>
-  <script src="./ai-config.js?v=7.0.2"></script>
-  <script type="module" src="./app.js?v=7.0.2"></script>
+  <script src="./calc.js?v=7.0.3"></script>
+  <script src="./ai-config.js?v=7.0.3"></script>
+  <script type="module" src="./app.js?v=7.0.3"></script>
 </body>
 </html>
 ================================================================================
@@ -110,7 +110,7 @@ TABLE OF CONTENTS:
 ================================================================================
 // shell.js - Self-healing force cache clear & auto-reload for iOS Safari PWA
 (function() {
-  var SHELL_VERSION = 'mygym-core-v7.0.2';
+  var SHELL_VERSION = 'mygym-core-v7.0.3';
   var cachedVersion = null;
   try { cachedVersion = localStorage.getItem('mygym_shell_version'); } catch(_) {}
   if (cachedVersion !== SHELL_VERSION) {
@@ -8226,8 +8226,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.2';
-const SHELL_VERSION = 'mygym-core-v7.0.2';
+const APP_VERSION = '7.0.3';
+const SHELL_VERSION = 'mygym-core-v7.0.3';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -15279,55 +15279,74 @@ function commitCSVImport() {
 
 // ---- First-Run Onboarding Modal ----
 function handleOnboardingSubmit() {
-  const unit = document.querySelector('.onboarding-unit-pill.active')?.dataset.val ||
-               document.querySelector('.onboarding-unit-pill.on')?.dataset.val ||
-               'kg';
-  const sex = document.querySelector('.onboarding-sex-pill.active')?.dataset.val ||
-              document.querySelector('.onboarding-sex-pill.on')?.dataset.val ||
-              'male';
-  const age = parseInt(document.getElementById('onboard-age')?.value, 10) || 21;
-  const height = parseFloat(document.getElementById('onboard-height')?.value) || 175;
-  const weight = parseFloat(document.getElementById('onboard-weight')?.value) || 73.5;
-  const goal = document.getElementById('onboard-goal')?.value || 'hypertrophy';
-  const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
+  try {
+    const age = parseInt(document.getElementById('onboard-age')?.value || document.querySelector('input[placeholder="28"]')?.value || '21', 10);
+    const height = parseFloat(document.getElementById('onboard-height')?.value || document.querySelector('input[placeholder="178"]')?.value || '175');
+    const weight = parseFloat(document.getElementById('onboard-weight')?.value || document.querySelector('input[placeholder="75"]')?.value || '73.5');
+    const unit = document.querySelector('.onboarding-unit-pill.on')?.dataset?.val ||
+                 document.querySelector('.onboarding-unit-pill.active')?.dataset?.val ||
+                 'kg';
+    const sex = document.querySelector('.onboarding-sex-pill.on')?.dataset?.val ||
+                document.querySelector('.onboarding-sex-pill.active')?.dataset?.val ||
+                'male';
+    const goal = document.getElementById('onboard-goal')?.value || 'hypertrophy';
+    const weekStart = document.getElementById('onboard-weekstart')?.value || 'mon';
 
-  // Commit to in-memory state
-  S.onboarded = true;
-  S.cfg = S.cfg || {};
-  S.cfg.unit = unit;
-  S.cfg.units = unit;
-  S.cfg.bodyModel = sex;
-  S.cfg.sex = sex;
-  S.cfg.weekStartDay = weekStart;
-  S.cfg.onboarded = true;
-  S.cfg.physique = {
-    ...S.cfg.physique,
-    age,
-    height,
-    weight,
-    goalType: goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'recomp')
-  };
+    // Commit to S
+    S.onboarded = true;
+    if (!S.cfg) S.cfg = {};
+    S.cfg.onboarded = true;
+    S.cfg.unit = unit;
+    S.cfg.units = unit;
+    S.cfg.bodyModel = sex;
+    S.cfg.sex = sex;
+    S.cfg.weekStartDay = weekStart;
+    S.cfg.physique = {
+      ...(S.cfg.physique || {}),
+      age,
+      height,
+      weight,
+      goalType: goal === 'fat_loss' ? 'cut' : (goal === 'hypertrophy' ? 'bulk' : 'recomp')
+    };
 
-  // Add baseline weight entry if weights array is empty
-  if (!S.weights || S.weights.length === 0) {
-    S.weights = [{
-      id: 'w_' + Date.now(),
-      date: new Date().toISOString().slice(0, 10),
-      w: weight,
-      t: Date.now()
-    }];
+    // Add baseline weight entry if weights array is empty
+    if (!S.weights || S.weights.length === 0) {
+      S.weights = [{
+        id: 'w_' + Date.now(),
+        date: new Date().toISOString().slice(0, 10),
+        w: weight,
+        t: Date.now()
+      }];
+    }
+
+    // Persist immediately to localStorage and ls
+    try {
+      ls.set('mygym_onboarded', 'true');
+      ls.set('mygym_shell_onboarded', 'true');
+    } catch (_) {}
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem('mygym_onboarded', 'true');
+        localStorage.setItem('mygym_shell_onboarded', 'true');
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.warn('handleOnboardingSubmit error:', err);
+  } finally {
+    // MUST EXECUTE IN FINALLY BLOCK:
+    closeModal();
+    const m = document.getElementById('m');
+    if (m) {
+      m.hidden = true;
+      m.innerHTML = '';
+    }
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.style.overflow = '';
+    }
+    toast('Welcome to MyGyM!');
+    render();
+    save('cfg', 'weights');
   }
-
-  // Persist atomically to both IndexedDB and localStorage
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('mygym_onboarded', 'true');
-  }
-  save('cfg', 'weights');
-
-  // Dismiss modal immediately
-  closeModal();
-  toast('✓ Profile setup complete!');
-  render();
 }
 
 function showOnboardingModal() {
@@ -15341,8 +15360,12 @@ function showOnboardingModal() {
 
   modal(`
     <div class="card onboarding-card" style="padding:18px">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <span style="font-size:18px;">🏋️</span>
+        <button type="button" class="x" data-a="dismiss-onboarding" style="font-size:14px; font-weight:700; color:var(--ac); cursor:pointer;">Skip / Close ✕</button>
+      </div>
+
       <div style="text-align:center;margin-bottom:14px">
-        <div style="font-size:32px">🏋️</div>
         <h2 style="margin:4px 0 2px">Welcome to MyGyM</h2>
         <p class="t2 sm" style="margin:0">Personalize your offline training profile</p>
       </div>
@@ -15400,7 +15423,7 @@ function showOnboardingModal() {
         <button type="button" class="btn" id="onboarding-submit-btn" data-a="submit-onboarding" style="width:100%;min-height:46px;font-weight:700">Get Started 🚀</button>
       </form>
     </div>
-  `, { hideClose: true });
+  `, { hideClose: false });
 
   setTimeout(() => {
     const submitBtn = document.getElementById('onboarding-submit-btn');
@@ -15410,6 +15433,13 @@ function showOnboardingModal() {
         handleOnboardingSubmit();
       };
     }
+    const dismissBtns = document.querySelectorAll('[data-a="dismiss-onboarding"]');
+    dismissBtns.forEach(b => {
+      b.onclick = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        handleOnboardingSubmit();
+      };
+    });
   }, 0);
 }
 
@@ -18459,6 +18489,7 @@ document.addEventListener('click', async e => {
       return;
     }
     case 'submit-onboarding':
+    case 'dismiss-onboarding':
     case 'saveonboarding': {
       handleOnboardingSubmit();
       return;
@@ -19704,13 +19735,18 @@ async function init() {
   }
 
   render();
-  const isOnboarded = S.onboarded === true || S.cfg?.onboarded === true || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true');
-  if (!isOnboarded) {
+  const isDone = S.onboarded === true ||
+                 S.cfg?.onboarded === true ||
+                 (typeof localStorage !== 'undefined' ? (
+                   localStorage.getItem('mygym_onboarded') === 'true' ||
+                   localStorage.getItem('mygym_shell_onboarded') === 'true'
+                 ) : false);
+  if (!isDone) {
     showOnboardingModal();
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.2').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.3').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -19944,22 +19980,22 @@ if (typeof globalThis !== 'undefined') {
 ================================================================================
 >>> START FILE: sw.js
 ================================================================================
-const C = 'mygym-core-v7.0.2';
+const C = 'mygym-core-v7.0.3';
 const ASSETS = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=7.0.2',
+  './style.css?v=7.0.3',
   './shell.js',
-  './shell.js?v=7.0.2',
+  './shell.js?v=7.0.3',
   './calc.js',
-  './calc.js?v=7.0.2',
+  './calc.js?v=7.0.3',
   './ai-config.js',
-  './ai-config.js?v=7.0.2',
+  './ai-config.js?v=7.0.3',
   './app.js',
-  './app.js?v=7.0.2',
+  './app.js?v=7.0.3',
   './vendor/three.module.js',
-  './vendor/three.module.js?v=7.0.2',
+  './vendor/three.module.js?v=7.0.3',
   './manifest.json',
   './icon.png',
   './exercises.json',
@@ -20041,6 +20077,17 @@ self.addEventListener('fetch', e => {
 # Changelog
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
+
+## [7.0.3] - Onboarding Emergency Escape Hatch & Guaranteed Dismissal - 2026-11-10
+- **Emergency Close Button & Escape Hatch (`app.js`)**:
+  - Configured `showOnboardingModal()` with `{ hideClose: false }` to ensure the modal container close button is always rendered.
+  - Added an explicit header row with `Skip / Close ✕` button (`data-a="dismiss-onboarding"`).
+- **Defensive Element Resolution & Guaranteed Dismissal (`app.js`)**:
+  - Wrapped `handleOnboardingSubmit()` inside a defensive `try / catch / finally` block.
+  - Fallbacks added for Age, Height, Weight, Units, and Sex inputs so missing or altered DOM elements never crash execution.
+  - Guaranteed modal dismissal, DOM cleanup (`m.hidden = true; m.innerHTML = ''; document.body.style.overflow = '';`), profile persistence, and toast notification inside the `finally` block.
+- **Hard Boot Bypass (`app.js`)**:
+  - In `init()`, verified onboarding completion with both memory state and persistent storage (`mygym_onboarded`, `mygym_shell_onboarded`) before invoking modal.
 
 ## [7.0.2] - Architectural Repair, WebGL Canvas Rendering & Macro Engine Stabilization - 2026-11-10
 - **Onboarding Modal & Persistent Initialization (`app.js`)**:
@@ -21609,27 +21656,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.0.2, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.0.2';"), 'sw.js must use mygym-core-v7.0.2 cache name');
-  assert(swCode.includes("'./style.css?v=7.0.2'"), 'sw.js must precache style.css?v=7.0.2');
-  assert(swCode.includes("'./app.js?v=7.0.2'"), 'sw.js must precache app.js?v=7.0.2');
-  assert(swCode.includes("'./calc.js?v=7.0.2'"), 'sw.js must precache calc.js?v=7.0.2');
+it('sw.js cache key is bumped to mygym-core-v7.0.3, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.0.3';"), 'sw.js must use mygym-core-v7.0.3 cache name');
+  assert(swCode.includes("'./style.css?v=7.0.3'"), 'sw.js must precache style.css?v=7.0.3');
+  assert(swCode.includes("'./app.js?v=7.0.3'"), 'sw.js must precache app.js?v=7.0.3');
+  assert(swCode.includes("'./calc.js?v=7.0.3'"), 'sw.js must precache calc.js?v=7.0.3');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.0.2'), 'index.html must link style.css?v=7.0.2');
-  assert(htmlCode.includes('shell.js?v=7.0.2'), 'index.html must load shell.js?v=7.0.2');
-  assert(htmlCode.includes('app.js?v=7.0.2'), 'index.html must load app.js?v=7.0.2');
-  assert(htmlCode.includes('calc.js?v=7.0.2'), 'index.html must load calc.js?v=7.0.2');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.2'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.0.3'), 'index.html must link style.css?v=7.0.3');
+  assert(htmlCode.includes('shell.js?v=7.0.3'), 'index.html must load shell.js?v=7.0.3');
+  assert(htmlCode.includes('app.js?v=7.0.3'), 'index.html must load app.js?v=7.0.3');
+  assert(htmlCode.includes('calc.js?v=7.0.3'), 'index.html must load calc.js?v=7.0.3');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.3'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.0.2');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.2');
+  assert.equal(api.APP_VERSION, '7.0.3');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.3');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -24730,6 +24777,8 @@ it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async ()
   assert.ok(mHtml.includes('id="onboard-goal"'), 'Onboarding modal must include goal selector');
   assert.ok(mHtml.includes('data-a="submit-onboarding"'), 'Onboarding modal must have submit-onboarding action');
   assert.ok(mHtml.includes('id="onboarding-submit-btn"'), 'Onboarding modal must have id="onboarding-submit-btn"');
+  assert.ok(mHtml.includes('data-a="dismiss-onboarding"'), 'Onboarding modal must have dismiss-onboarding action');
+  assert.ok(mHtml.includes('Skip / Close ✕'), 'Onboarding modal must render Skip / Close button');
 
   // Test action execution & persistence
   api.handleOnboardingSubmit();
@@ -24846,16 +24895,19 @@ it('Counter animation and PR celebration motion reduction compliance', async () 
 // -----------------------------------------------------------------------------
 console.log('\nSuite 25: Architectural Repair, WebGL Stabilization & Macro Boundaries (v7.0.2)');
 
-it('Onboarding persistence suppression and atomic profile commit', () => {
+it('Onboarding persistence suppression, hard boot bypass and atomic profile commit', () => {
   // Test persistence flags
   const checkIsOnboarded = (state, storage) => {
-    return state.onboarded === true || state.cfg?.onboarded === true || (storage && storage.getItem('mygym_onboarded') === 'true');
+    return state.onboarded === true ||
+           state.cfg?.onboarded === true ||
+           (storage && (storage.getItem('mygym_onboarded') === 'true' || storage.getItem('mygym_shell_onboarded') === 'true'));
   };
 
   assert.equal(checkIsOnboarded({}, { getItem: () => null }), false);
   assert.equal(checkIsOnboarded({ onboarded: true }, { getItem: () => null }), true);
   assert.equal(checkIsOnboarded({ cfg: { onboarded: true } }, { getItem: () => null }), true);
   assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_onboarded' ? 'true' : null }), true);
+  assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_shell_onboarded' ? 'true' : null }), true);
 
   // handleOnboardingSubmit verification
   assert.equal(typeof api.handleOnboardingSubmit, 'function', 'handleOnboardingSubmit must be exported');

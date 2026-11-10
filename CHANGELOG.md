@@ -2,6 +2,17 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.0.3] - Onboarding Emergency Escape Hatch & Guaranteed Dismissal - 2026-11-10
+- **Emergency Close Button & Escape Hatch (`app.js`)**:
+  - Configured `showOnboardingModal()` with `{ hideClose: false }` to ensure the modal container close button is always rendered.
+  - Added an explicit header row with `Skip / Close ✕` button (`data-a="dismiss-onboarding"`).
+- **Defensive Element Resolution & Guaranteed Dismissal (`app.js`)**:
+  - Wrapped `handleOnboardingSubmit()` inside a defensive `try / catch / finally` block.
+  - Fallbacks added for Age, Height, Weight, Units, and Sex inputs so missing or altered DOM elements never crash execution.
+  - Guaranteed modal dismissal, DOM cleanup (`m.hidden = true; m.innerHTML = ''; document.body.style.overflow = '';`), profile persistence, and toast notification inside the `finally` block.
+- **Hard Boot Bypass (`app.js`)**:
+  - In `init()`, verified onboarding completion with both memory state and persistent storage (`mygym_onboarded`, `mygym_shell_onboarded`) before invoking modal.
+
 ## [7.0.2] - Architectural Repair, WebGL Canvas Rendering & Macro Engine Stabilization - 2026-11-10
 - **Onboarding Modal & Persistent Initialization (`app.js`)**:
   - Enforced strict onboarding check in `init()`: `const isOnboarded = S.onboarded === true || S.cfg?.onboarded === true || (typeof localStorage !== 'undefined' && localStorage.getItem('mygym_onboarded') === 'true');`.

@@ -992,27 +992,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.0.2, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.0.2';"), 'sw.js must use mygym-core-v7.0.2 cache name');
-  assert(swCode.includes("'./style.css?v=7.0.2'"), 'sw.js must precache style.css?v=7.0.2');
-  assert(swCode.includes("'./app.js?v=7.0.2'"), 'sw.js must precache app.js?v=7.0.2');
-  assert(swCode.includes("'./calc.js?v=7.0.2'"), 'sw.js must precache calc.js?v=7.0.2');
+it('sw.js cache key is bumped to mygym-core-v7.0.3, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.0.3';"), 'sw.js must use mygym-core-v7.0.3 cache name');
+  assert(swCode.includes("'./style.css?v=7.0.3'"), 'sw.js must precache style.css?v=7.0.3');
+  assert(swCode.includes("'./app.js?v=7.0.3'"), 'sw.js must precache app.js?v=7.0.3');
+  assert(swCode.includes("'./calc.js?v=7.0.3'"), 'sw.js must precache calc.js?v=7.0.3');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.0.2'), 'index.html must link style.css?v=7.0.2');
-  assert(htmlCode.includes('shell.js?v=7.0.2'), 'index.html must load shell.js?v=7.0.2');
-  assert(htmlCode.includes('app.js?v=7.0.2'), 'index.html must load app.js?v=7.0.2');
-  assert(htmlCode.includes('calc.js?v=7.0.2'), 'index.html must load calc.js?v=7.0.2');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.2'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.0.3'), 'index.html must link style.css?v=7.0.3');
+  assert(htmlCode.includes('shell.js?v=7.0.3'), 'index.html must load shell.js?v=7.0.3');
+  assert(htmlCode.includes('app.js?v=7.0.3'), 'index.html must load app.js?v=7.0.3');
+  assert(htmlCode.includes('calc.js?v=7.0.3'), 'index.html must load calc.js?v=7.0.3');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.3'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.0.2');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.2');
+  assert.equal(api.APP_VERSION, '7.0.3');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.3');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -4113,6 +4113,8 @@ it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async ()
   assert.ok(mHtml.includes('id="onboard-goal"'), 'Onboarding modal must include goal selector');
   assert.ok(mHtml.includes('data-a="submit-onboarding"'), 'Onboarding modal must have submit-onboarding action');
   assert.ok(mHtml.includes('id="onboarding-submit-btn"'), 'Onboarding modal must have id="onboarding-submit-btn"');
+  assert.ok(mHtml.includes('data-a="dismiss-onboarding"'), 'Onboarding modal must have dismiss-onboarding action');
+  assert.ok(mHtml.includes('Skip / Close ✕'), 'Onboarding modal must render Skip / Close button');
 
   // Test action execution & persistence
   api.handleOnboardingSubmit();
@@ -4229,16 +4231,19 @@ it('Counter animation and PR celebration motion reduction compliance', async () 
 // -----------------------------------------------------------------------------
 console.log('\nSuite 25: Architectural Repair, WebGL Stabilization & Macro Boundaries (v7.0.2)');
 
-it('Onboarding persistence suppression and atomic profile commit', () => {
+it('Onboarding persistence suppression, hard boot bypass and atomic profile commit', () => {
   // Test persistence flags
   const checkIsOnboarded = (state, storage) => {
-    return state.onboarded === true || state.cfg?.onboarded === true || (storage && storage.getItem('mygym_onboarded') === 'true');
+    return state.onboarded === true ||
+           state.cfg?.onboarded === true ||
+           (storage && (storage.getItem('mygym_onboarded') === 'true' || storage.getItem('mygym_shell_onboarded') === 'true'));
   };
 
   assert.equal(checkIsOnboarded({}, { getItem: () => null }), false);
   assert.equal(checkIsOnboarded({ onboarded: true }, { getItem: () => null }), true);
   assert.equal(checkIsOnboarded({ cfg: { onboarded: true } }, { getItem: () => null }), true);
   assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_onboarded' ? 'true' : null }), true);
+  assert.equal(checkIsOnboarded({}, { getItem: (k) => k === 'mygym_shell_onboarded' ? 'true' : null }), true);
 
   // handleOnboardingSubmit verification
   assert.equal(typeof api.handleOnboardingSubmit, 'function', 'handleOnboardingSubmit must be exported');
