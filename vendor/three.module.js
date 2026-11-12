@@ -966,6 +966,88 @@ export class Mesh extends Object3D {
   }
 }
 
+// ---- Matrix3 ----
+export class Matrix3 {
+  constructor() {
+    this.elements = new Float32Array([
+      1, 0, 0,
+      0, 1, 0,
+      0, 0, 1
+    ]);
+  }
+
+  set(n11, n12, n13, n21, n22, n23, n31, n32, n33) {
+    const te = this.elements;
+    te[0] = n11; te[1] = n21; te[2] = n31;
+    te[3] = n12; te[4] = n22; te[5] = n32;
+    te[6] = n13; te[7] = n23; te[8] = n33;
+    return this;
+  }
+
+  identity() {
+    return this.set(1, 0, 0, 0, 1, 0, 0, 0, 1);
+  }
+
+  copy(m) {
+    const te = this.elements;
+    const me = m.elements;
+    for (let i = 0; i < 9; i++) te[i] = me[i];
+    return this;
+  }
+
+  setFromMatrix4(m) {
+    const me = m.elements;
+    return this.set(
+      me[0], me[4], me[8],
+      me[1], me[5], me[9],
+      me[2], me[6], me[10]
+    );
+  }
+
+  invert() {
+    const te = this.elements;
+    const n11 = te[0], n21 = te[1], n31 = te[2],
+          n12 = te[3], n22 = te[4], n32 = te[5],
+          n13 = te[6], n23 = te[7], n33 = te[8];
+
+    const t11 = n33 * n22 - n32 * n23;
+    const t12 = n32 * n13 - n33 * n12;
+    const t13 = n23 * n12 - n22 * n13;
+
+    const det = n11 * t11 + n21 * t12 + n31 * t13;
+    if (det === 0) return this.identity();
+
+    const detInv = 1 / det;
+
+    te[0] = t11 * detInv;
+    te[1] = (n31 * n23 - n33 * n21) * detInv;
+    te[2] = (n32 * n21 - n31 * n22) * detInv;
+
+    te[3] = t12 * detInv;
+    te[4] = (n33 * n11 - n31 * n13) * detInv;
+    te[5] = (n31 * n12 - n32 * n11) * detInv;
+
+    te[6] = t13 * detInv;
+    te[7] = (n21 * n13 - n23 * n11) * detInv;
+    te[8] = (n22 * n11 - n21 * n12) * detInv;
+
+    return this;
+  }
+
+  transpose() {
+    const te = this.elements;
+    let tmp;
+    tmp = te[1]; te[1] = te[3]; te[3] = tmp;
+    tmp = te[2]; te[2] = te[6]; te[6] = tmp;
+    tmp = te[5]; te[5] = te[7]; te[7] = tmp;
+    return this;
+  }
+
+  getNormalMatrix(matrix4) {
+    return this.setFromMatrix4(matrix4).invert().transpose();
+  }
+}
+
 // ---- WebGL Renderer ----
 export class WebGLRenderer {
   constructor(parameters = {}) {
@@ -977,6 +1059,10 @@ export class WebGLRenderer {
     this.uniforms = {};
     this.attributes = {};
     this.disposed = false;
+    this._pixelRatio = undefined;
+    this._width = 0;
+    this._height = 0;
+    this.uintIndexExt = null;
 
     if (this.domElement && typeof this.domElement.getContext === 'function') {
       try {
@@ -992,9 +1078,27 @@ export class WebGLRenderer {
     }
   }
 
+  get pixelRatio() {
+    if (this._pixelRatio !== undefined) return this._pixelRatio;
+    return Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2);
+  }
+
+  set pixelRatio(val) {
+    this._pixelRatio = Math.min(Number(val) || 1, 2);
+  }
+
+  setPixelRatio(pr) {
+    this.pixelRatio = Math.min(Number(pr) || 1, 2);
+    if (this.domElement && this._width && this._height) {
+      this.setSize(this._width, this._height);
+    }
+  }
+
   initGL() {
     const gl = this.gl;
     if (!gl) return;
+
+    this.uintIndexExt = gl.getExtension('OES_element_index_uint');
 
     // Shaders for Phong / Lambert Lit Rendering
     const vsSource = `
@@ -1023,13 +1127,26 @@ export class WebGLRenderer {
       uniform vec3 ambientColor;
       uniform vec3 lightDirection;
       uniform vec3 lightColor;
+      uniform int numDirLights;
+      uniform vec3 dirLightDirections[3];
+      uniform vec3 dirLightColors[3];
       uniform float opacity;
 
       void main() {
         vec3 normal = normalize(vNormal);
-        vec3 lightDir = normalize(lightDirection);
-        float nDotL = max(dot(normal, lightDir), 0.0);
-        vec3 lit = ambientColor + lightColor * nDotL;
+        vec3 lit = ambientColor;
+        if (numDirLights > 0) {
+          for (int i = 0; i < 3; i++) {
+            if (i >= numDirLights) break;
+            vec3 lDir = normalize(dirLightDirections[i]);
+            float nDotL = max(dot(normal, lDir), 0.0);
+            lit += dirLightColors[i] * nDotL;
+          }
+        } else {
+          vec3 lightDir = normalize(lightDirection);
+          float nDotL = max(dot(normal, lightDir), 0.0);
+          lit += lightColor * nDotL;
+        }
         vec3 color = diffuse * lit + emissive;
         gl_FragColor = vec4(color, opacity);
       }
@@ -1038,15 +1155,24 @@ export class WebGLRenderer {
     const vs = gl.createShader(gl.VERTEX_SHADER);
     gl.shaderSource(vs, vsSource);
     gl.compileShader(vs);
+    if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+      console.warn('Vertex shader compile error:', gl.getShaderInfoLog(vs));
+    }
 
     const fs = gl.createShader(gl.FRAGMENT_SHADER);
     gl.shaderSource(fs, fsSource);
     gl.compileShader(fs);
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+      console.warn('Fragment shader compile error:', gl.getShaderInfoLog(fs));
+    }
 
     const prog = gl.createProgram();
     gl.attachShader(prog, vs);
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.warn('WebGL program link error:', gl.getProgramInfoLog(prog));
+    }
     this.program = prog;
 
     this.attributes.position = gl.getAttribLocation(prog, 'position');
@@ -1060,6 +1186,9 @@ export class WebGLRenderer {
     this.uniforms.ambientColor = gl.getUniformLocation(prog, 'ambientColor');
     this.uniforms.lightDirection = gl.getUniformLocation(prog, 'lightDirection');
     this.uniforms.lightColor = gl.getUniformLocation(prog, 'lightColor');
+    this.uniforms.numDirLights = gl.getUniformLocation(prog, 'numDirLights');
+    this.uniforms.dirLightDirections = gl.getUniformLocation(prog, 'dirLightDirections');
+    this.uniforms.dirLightColors = gl.getUniformLocation(prog, 'dirLightColors');
     this.uniforms.opacity = gl.getUniformLocation(prog, 'opacity');
 
     gl.enable(gl.DEPTH_TEST);
@@ -1068,8 +1197,10 @@ export class WebGLRenderer {
   }
 
   setSize(width, height) {
+    this._width = width;
+    this._height = height;
     if (!this.domElement) return;
-    const pr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2);
+    const pr = this.pixelRatio || Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2);
     this.domElement.width = Math.floor(width * pr);
     this.domElement.height = Math.floor(height * pr);
     this.domElement.style.width = width + 'px';
@@ -1099,38 +1230,52 @@ export class WebGLRenderer {
     let amb = new Color(0.55, 0.58, 0.62);
     let dirColor = new Color(1.0, 0.98, 0.95);
     let dirVector = new Vector3(0.5, 1.0, 0.8).normalize();
+    const dirColors = [];
+    const dirDirs = [];
 
     scene.traverse(node => {
       if (node.isLight) {
-        if (node.type === 'AmbientLight') amb = node.color.clone().multiplyScalar(node.intensity || 1);
-        else if (node.type === 'DirectionalLight') {
-          dirColor = node.color.clone().multiplyScalar(node.intensity || 1);
-          dirVector = node.position.clone().normalize();
+        if (node.type === 'AmbientLight') {
+          amb = node.color.clone().multiplyScalar(node.intensity || 1);
+        } else if (node.type === 'DirectionalLight') {
+          const col = node.color.clone().multiplyScalar(node.intensity || 1);
+          const dir = node.position.clone().normalize();
+          if (dirColors.length === 0) {
+            dirColor = col;
+            dirVector = dir;
+          }
+          if (dirColors.length < 9) {
+            dirColors.push(col.r, col.g, col.b);
+            dirDirs.push(dir.x, dir.y, dir.z);
+          }
         }
       }
     });
 
+    const numLights = Math.min(3, Math.floor(dirColors.length / 3));
+    while (dirColors.length < 9) dirColors.push(0, 0, 0);
+    while (dirDirs.length < 9) dirDirs.push(0, 1, 0);
+
     gl.uniform3f(this.uniforms.ambientColor, amb.r, amb.g, amb.b);
     gl.uniform3f(this.uniforms.lightColor, dirColor.r, dirColor.g, dirColor.b);
     gl.uniform3f(this.uniforms.lightDirection, dirVector.x, dirVector.y, dirVector.z);
+    gl.uniform1i(this.uniforms.numDirLights, numLights);
+    gl.uniform3fv(this.uniforms.dirLightDirections, new Float32Array(dirDirs));
+    gl.uniform3fv(this.uniforms.dirLightColors, new Float32Array(dirColors));
     gl.uniformMatrix4fv(this.uniforms.projectionMatrix, false, camera.projectionMatrix.elements);
 
     // Render meshes
     const viewMatrix = camera.matrixWorldInverse;
     const modelView = new Matrix4();
+    const normalMatrix = new Matrix3();
 
     scene.traverse(obj => {
       if (obj.isMesh && obj.visible && obj.geometry && obj.geometry.attributes.position) {
         modelView.multiplyMatrices(viewMatrix, obj.matrixWorld);
         gl.uniformMatrix4fv(this.uniforms.modelViewMatrix, false, modelView.elements);
 
-        const mve = modelView.elements;
-        const normMat = new Float32Array([
-          mve[0], mve[1], mve[2],
-          mve[4], mve[5], mve[6],
-          mve[8], mve[9], mve[10]
-        ]);
-        gl.uniformMatrix3fv(this.uniforms.normalMatrix, false, normMat);
+        normalMatrix.getNormalMatrix(modelView);
+        gl.uniformMatrix3fv(this.uniforms.normalMatrix, false, normalMatrix.elements);
 
         const mat = obj.material || {};
         const col = mat.color || new Color(0x64748b);
@@ -1170,7 +1315,9 @@ export class WebGLRenderer {
           } else {
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, obj.geometry._idxBuf);
           }
-          gl.drawElements(gl.TRIANGLES, obj.geometry.index.length, gl.UNSIGNED_SHORT, 0);
+          const isUint32 = typeof Uint32Array !== 'undefined' && obj.geometry.index instanceof Uint32Array;
+          const indexType = (isUint32 && this.uintIndexExt) ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
+          gl.drawElements(gl.TRIANGLES, obj.geometry.index.length, indexType, 0);
         } else {
           gl.drawArrays(gl.TRIANGLES, 0, obj.geometry.attributes.position.count);
         }

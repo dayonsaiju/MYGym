@@ -43,6 +43,39 @@ const html = (strings, ...values) => {
 };
 html.raw = str => new SafeHTML(str ?? '');
 
+// ---- Global Diagnostics & System Error Logging ----
+if (typeof window !== 'undefined') {
+  window._diagnosticsLogs = window._diagnosticsLogs || [];
+  if (typeof window.addEventListener === 'function') {
+    window.addEventListener('error', e => {
+      try {
+        const entry = {
+          type: 'error',
+          message: e?.message || String(e),
+          filename: e?.filename || '',
+          lineno: e?.lineno || 0,
+          colno: e?.colno || 0,
+          timestamp: new Date().toISOString()
+        };
+        window._diagnosticsLogs.push(entry);
+        if (window._diagnosticsLogs.length > 50) window._diagnosticsLogs.shift();
+      } catch (_) {}
+    });
+    window.addEventListener('unhandledrejection', e => {
+      try {
+        const reason = e?.reason;
+        const entry = {
+          type: 'unhandledrejection',
+          message: (reason && (reason.message || reason.stack)) || String(reason),
+          timestamp: new Date().toISOString()
+        };
+        window._diagnosticsLogs.push(entry);
+        if (window._diagnosticsLogs.length > 50) window._diagnosticsLogs.shift();
+      } catch (_) {}
+    });
+  }
+}
+
 // ---- Storage: IndexedDB with synchronous & persistent localStorage fallback for Safari private browsing / quota limits ----
 const memStore = new Map();
 const ls = {
@@ -265,8 +298,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.3';
-const SHELL_VERSION = 'mygym-core-v7.0.3';
+const APP_VERSION = '7.0.5';
+const SHELL_VERSION = 'mygym-core-v7.0.5';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1446,14 +1479,34 @@ async function init3DViewer(options = {}) {
       scene.add(model);
     },
     setPhysiqueProgress(p) {
-      currentProgress = p;
-      scene.remove(model);
-      model.traverse(obj => {
-        if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
-        if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
-      });
-      model = buildProceduralAnatomyModel(THREE, currentGender, primaryMuscles, secondaryMuscles, currentProgress);
-      scene.add(model);
+      const morph = Math.max(0, Math.min(1, Number(p) || 0));
+      currentProgress = morph;
+      const chestScale = 1.0 + morph * 0.18;
+      const latsScale = 1.0 + morph * 0.22;
+      const waistScale = 1.15 - morph * 0.25;
+      const armScale = 0.95 + morph * 0.15;
+      const legScale = 0.95 + morph * 0.12;
+      const deltScale = 0.95 + morph * 0.18;
+
+      if (model) {
+        model.traverse(obj => {
+          const k = obj.userData?.muscleKey;
+          if (!k) return;
+          if (k === 'chest') {
+            obj.scale.set(chestScale, 1.0 + morph * 0.1, chestScale);
+          } else if (k === 'lats') {
+            obj.scale.set(latsScale, 1.0, latsScale);
+          } else if (k === 'abs' || k === 'obliques') {
+            obj.scale.set(waistScale, 1.0, waistScale);
+          } else if (k === 'deltoids') {
+            obj.scale.set(deltScale, deltScale, deltScale);
+          } else if (k === 'biceps' || k === 'triceps' || k === 'forearms') {
+            obj.scale.set(armScale, 1.0, armScale);
+          } else if (k === 'quads' || k === 'hamstrings' || k === 'calves' || k === 'glutes') {
+            obj.scale.set(legScale, 1.0, legScale);
+          }
+        });
+      }
     },
     resetView() {
       if (model) {
@@ -1523,11 +1576,13 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
     </div>
   `);
 
+  let modalActive = true;
   requestAnimationFrame(() => {
-    setTimeout(() => {
+    setTimeout(async () => {
       const container = document.getElementById('anatomy-3d-canvas-wrap');
-      if (container) {
-        init3DViewer({
+      if (!container || !modalActive) return;
+      try {
+        const viewer = await init3DViewer({
           container,
           gender: currentGender,
           primaryMuscles: pKeys,
@@ -1536,6 +1591,22 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
             showMuscleDetailSheet(mKey);
           }
         });
+        if (!modalActive || !document.getElementById('anatomy-3d-canvas-wrap')) {
+          if (viewer && typeof viewer.destroy === 'function') viewer.destroy();
+          return;
+        }
+      } catch (viewerErr) {
+        console.warn('3D Anatomy viewer error, falling back to 2D:', viewerErr);
+        if (container) {
+          container.innerHTML = `
+            <div style="background:var(--card-sub);padding:10px 14px;border-radius:10px;margin:12px;font-size:12px;color:var(--t2);text-align:center;">
+              ⚠️ WebGL 3D rendering unavailable. Showing 2D anatomical map.
+            </div>
+            <div style="text-align:center;">
+              ${mmap(pKeys, sKeys, { gender: currentGender, wrap: true })}
+            </div>
+          `;
+        }
       }
     }, 60);
   });
@@ -1593,15 +1664,21 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
     </div>
   `);
 
+  let modalActive = true;
   requestAnimationFrame(() => {
-    setTimeout(() => {
+    setTimeout(async () => {
       const container = document.getElementById('physique-3d-canvas-wrap');
-      if (container) {
-        const viewer = init3DViewer({
+      if (!container || !modalActive) return;
+      try {
+        const viewer = await init3DViewer({
           container,
           gender: currentGender,
           physiqueProgress: prog
         });
+        if (!modalActive || !document.getElementById('physique-3d-canvas-wrap')) {
+          if (viewer && typeof viewer.destroy === 'function') viewer.destroy();
+          return;
+        }
 
         const slider = document.getElementById('physique-3d-slider');
         const label = document.getElementById('physique-3d-pct-label');
@@ -1611,6 +1688,18 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
             if (label) label.textContent = `${val}% Progress`;
             if (viewer) viewer.setPhysiqueProgress(val / 100);
           });
+        }
+      } catch (viewerErr) {
+        console.warn('3D Physique viewer error, falling back to 2D:', viewerErr);
+        if (container) {
+          container.innerHTML = `
+            <div style="background:var(--card-sub);padding:10px 14px;border-radius:10px;margin:12px;font-size:12px;color:var(--t2);text-align:center;">
+              ⚠️ WebGL 3D rendering unavailable. Showing 2D transformation roadmap.
+            </div>
+            <div style="text-align:center;">
+              ${generateMorphSvg(currentGender, prog)}
+            </div>
+          `;
         }
       }
     }, 60);
@@ -4968,6 +5057,57 @@ function getMorphInterpolation(pct) {
   return { waistScale, shoulderScale, abOpacity, chestDefinition, glowIntensity };
 }
 
+function getEffectiveNutritionTargets() {
+  const gender = S.cfg?.physique?.sex || S.cfg?.bodyModel || 'male';
+  const age = Number(S.cfg?.physique?.age) || 28;
+  const height = Number(S.cfg?.physique?.height) || (gender === 'female' ? 165 : 178);
+  const weight = (S.weights && S.weights.filter(x => x.w > 0).at(-1)?.w) || Number(S.cfg?.physique?.weight) || (gender === 'female' ? 62 : 78);
+  const goalType = S.cfg?.physique?.goalType || 'sixpack';
+
+  // Base calculation via Calc.calcMacros
+  let baseCals = 2100;
+  if (typeof Calc.calcBMR === 'function' && typeof Calc.calcTDEE === 'function') {
+    const bmrRes = Calc.calcBMR(gender, weight, height, age);
+    const bmr = typeof bmrRes === 'number' ? bmrRes : (bmrRes?.bmr || (10 * weight + 6.25 * height - 5 * age + (gender === 'female' ? -161 : 5)));
+    const tdee = Calc.calcTDEE(bmr, 1.45);
+    const tdeeVal = typeof tdee === 'number' ? tdee : (tdee?.tdee || 2200);
+    if (goalType === 'bulk' || goalType === 'hypertrophy') baseCals = Math.round(tdeeVal + 250);
+    else if (goalType === 'cut' || goalType === 'sixpack' || goalType === 'fat_loss') baseCals = Math.round(tdeeVal - 400);
+    else baseCals = Math.round(tdeeVal);
+  }
+  baseCals = Math.max(1200, baseCals);
+
+  const baseMacros = (typeof Calc.calcMacros === 'function')
+    ? Calc.calcMacros(baseCals, weight, goalType)
+    : { calories: baseCals, protein: Math.round(weight * 2.0), fat: Math.round(weight * 0.8), carbs: Math.round((baseCals - weight * 2 * 4 - weight * 0.8 * 9) / 4) };
+
+  const overrides = S.nutrition?.overrides;
+  const rawCals = overrides ? (overrides.targetCals ?? overrides.calories ?? overrides.cals) : undefined;
+  const rawProt = overrides ? (overrides.targetProtein ?? overrides.protein) : undefined;
+  const rawCarb = overrides ? (overrides.targetCarbs ?? overrides.carbs) : undefined;
+  const rawFat = overrides ? (overrides.targetFat ?? overrides.fat ?? overrides.fats) : undefined;
+  const rawFiber = overrides ? (overrides.targetFiber ?? overrides.fiber) : undefined;
+
+  const cals = rawCals !== undefined && !Number.isNaN(Number(rawCals)) ? Number(rawCals) : (Number(S.nutrition?.targetCals) || baseMacros.calories || 2100);
+  const protein = rawProt !== undefined && !Number.isNaN(Number(rawProt)) ? Number(rawProt) : (Number(S.nutrition?.targetProtein) || baseMacros.protein || 140);
+  const carbs = rawCarb !== undefined && !Number.isNaN(Number(rawCarb)) ? Number(rawCarb) : (Number(S.nutrition?.targetCarbs) || baseMacros.carbs || 240);
+  const fat = rawFat !== undefined && !Number.isNaN(Number(rawFat)) ? Number(rawFat) : (Number(S.nutrition?.targetFat) || baseMacros.fat || 60);
+  const fiber = rawFiber !== undefined && !Number.isNaN(Number(rawFiber)) ? Number(rawFiber) : (Number(S.nutrition?.targetFiber) || 35);
+
+  return {
+    cals,
+    calories: cals,
+    protein,
+    carbs,
+    fat,
+    fats: fat,
+    fiber,
+    weight,
+    proteinRatio: weight > 0 ? (protein / weight).toFixed(1) : '2.0',
+    goalType
+  };
+}
+
 function calcNutritionTargets(opts = {}) {
   const gender = opts.gender || S.cfg?.bodyModel || 'male';
   const isFemale = gender === 'female';
@@ -5113,7 +5253,18 @@ function getPhysiqueState() {
   const weeksRemaining = Math.max(1, Math.round(deltaBf / 0.45));
   const workoutsRemaining = weeksRemaining * 4;
 
-  const macros = calcNutritionTargets({ gender, height, weight, goalType, currentBf, age, activityLevel });
+  const effTargets = getEffectiveNutritionTargets();
+  const macros = {
+    cals: effTargets.cals,
+    tdee: effTargets.cals,
+    rateTarget: goalType === 'bulk' ? '+0.25 kg/week' : (goalType === 'recomp' ? '0.00 kg/week' : '-0.40 kg/week'),
+    weeklyTargetRate: goalType === 'bulk' ? '+0.25 kg/week' : (goalType === 'recomp' ? '0.00 kg/week' : '-0.40 kg/week'),
+    protein: effTargets.protein,
+    proteinRatio: effTargets.proteinRatio,
+    carbs: effTargets.carbs,
+    fats: effTargets.fat,
+    goalType
+  };
 
   let goalTitle = 'Lean Cut';
   if (goalType === 'bulk') goalTitle = 'Lean Muscle Bulk';
@@ -5702,11 +5853,12 @@ function getNutritionData(dateKey = nutritionSelectedDate) {
     }
   });
 
-  const targetCals = Math.max(500, Number(S.nutrition.targetCals) || 2100);
-  const targetProtein = Math.max(10, Number(S.nutrition.targetProtein) || 140);
-  const targetCarbs = Math.max(10, Number(S.nutrition.targetCarbs) || 240);
-  const targetFat = Math.max(10, Number(S.nutrition.targetFat) || 60);
-  const targetFiber = Math.max(5, Number(S.nutrition.targetFiber) || 35);
+  const effTargets = getEffectiveNutritionTargets();
+  const targetCals = Math.max(500, Number(effTargets.cals) || 2100);
+  const targetProtein = Math.max(0, Number(effTargets.protein) || 140);
+  const targetCarbs = Math.max(0, Number(effTargets.carbs) || 240);
+  const targetFat = Math.max(0, Number(effTargets.fat) || 60);
+  const targetFiber = Math.max(0, Number(effTargets.fiber) || 35);
 
   const totals = { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 };
   ['breakfast', 'lunch', 'dinner', 'snacks'].forEach(m => {
@@ -6067,6 +6219,53 @@ function autocalcMealCals() {
   }
 }
 
+function updateMacroValidationUI() {
+  const calsEl = $('#target-cals-input');
+  const protEl = $('#target-protein-input');
+  const carbEl = $('#target-carbs-input');
+  const fatEl = $('#target-fat-input');
+  const msgEl = $('#macro-validation-msg');
+  if (!msgEl) return;
+
+  const cals = Number(calsEl?.value) || 0;
+  const p = Number(protEl?.value) || 0;
+  const c = Number(carbEl?.value) || 0;
+  const f = Number(fatEl?.value) || 0;
+  const sumCals = Math.round(p * 4 + c * 4 + f * 9);
+
+  const userWeight = (S.weights && S.weights.filter(x => x.w > 0).at(-1)?.w) || Number(S.cfg?.physique?.weight) || 75;
+  const pRatio = userWeight > 0 ? (p / userWeight) : 2.0;
+
+  const warnings = [];
+  let showAutoBalance = false;
+
+  if (cals > 0) {
+    const diff = Math.abs(sumCals - cals);
+    const pct = diff / cals;
+    if (pct > 0.10) {
+      warnings.push(`⚠️ Macros (${sumCals} kcal) deviate from calorie target (${cals} kcal) by ${Math.round(pct * 100)}%.`);
+      showAutoBalance = true;
+    }
+  }
+
+  if (p > 0 && userWeight > 0) {
+    if (pRatio < 0.8 || pRatio > 3.0) {
+      warnings.push(`⚠️ Protein (${p}g = ${pRatio.toFixed(1)} g/kg) is outside recommended range (0.8 - 3.0 g/kg).`);
+    }
+  }
+
+  if (warnings.length > 0) {
+    msgEl.innerHTML = `
+      <div style="background:rgba(255,159,10,0.12);border:1px solid rgba(255,159,10,0.3);border-radius:8px;padding:8px 10px;margin-top:10px;font-size:12px;color:var(--am);">
+        ${warnings.map(w => `<div style="margin-bottom:2px;">${esc(w)}</div>`).join('')}
+        ${showAutoBalance ? `<button type="button" class="chip on" data-a="autobalance-macros" style="margin-top:6px;font-size:11px;padding:3px 8px;">⚖️ Auto-balance Carbs</button>` : ''}
+      </div>
+    `;
+  } else {
+    msgEl.innerHTML = '';
+  }
+}
+
 function showNutritionTargetsModal() {
   if (!S.nutrition) S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
   const n = S.nutrition;
@@ -6092,28 +6291,38 @@ function showNutritionTargetsModal() {
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="nutrition-input-group">
           <label class="nutrition-input-label" for="target-protein-input">Protein (g)</label>
-          <input id="target-protein-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetProtein || 140}">
+          <input id="target-protein-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetProtein != null ? n.targetProtein : 140}">
         </div>
         <div class="nutrition-input-group">
           <label class="nutrition-input-label" for="target-carbs-input">Carbs (g)</label>
-          <input id="target-carbs-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetCarbs || 240}">
+          <input id="target-carbs-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetCarbs != null ? n.targetCarbs : 240}">
         </div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
         <div class="nutrition-input-group">
           <label class="nutrition-input-label" for="target-fat-input">Fat (g)</label>
-          <input id="target-fat-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetFat || 60}">
+          <input id="target-fat-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetFat != null ? n.targetFat : 60}">
         </div>
         <div class="nutrition-input-group">
           <label class="nutrition-input-label" for="target-fiber-input">Fiber (g)</label>
-          <input id="target-fiber-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetFiber || 35}">
+          <input id="target-fiber-input" class="nutrition-input" type="number" inputmode="decimal" value="${n.targetFiber != null ? n.targetFiber : 35}">
         </div>
       </div>
+
+      <div id="macro-validation-msg"></div>
 
       <button class="btn" data-a="save-nutrition-targets" style="margin-top:14px;width:100%">💾 Save Macro Targets</button>
     </div>
   `);
+
+  setTimeout(() => {
+    ['target-cals-input', 'target-protein-input', 'target-carbs-input', 'target-fat-input'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', updateMacroValidationUI);
+    });
+    updateMacroValidationUI();
+  }, 20);
 }
 
 function saveNutritionTargetsFromModal() {
@@ -6123,12 +6332,32 @@ function saveNutritionTargetsFromModal() {
   const fatEl = $('#target-fat-input');
   const fibEl = $('#target-fiber-input');
 
+  const parseNum = (val, def, min = 0, max = 10000) => {
+    const raw = String(val ?? '').trim();
+    if (raw === '') return def;
+    const n = Number(raw);
+    return !Number.isNaN(n) ? Math.max(min, Math.min(max, n)) : def;
+  };
+
   if (!S.nutrition) S.nutrition = { targetCals: 2100, targetProtein: 140, targetCarbs: 240, targetFat: 60, targetFiber: 35, meals: {} };
-  S.nutrition.targetCals = Math.max(500, Math.min(10000, parseInt(calsEl?.value, 10) || 2100));
-  S.nutrition.targetProtein = Math.max(10, Math.min(1000, parseInt(protEl?.value, 10) || 140));
-  S.nutrition.targetCarbs = Math.max(0, Math.min(1500, parseInt(carbEl?.value, 10) || 240));
-  S.nutrition.targetFat = Math.max(5, Math.min(500, parseInt(fatEl?.value, 10) || 60));
-  S.nutrition.targetFiber = Math.max(5, Math.min(200, parseInt(fibEl?.value, 10) || 35));
+  const targetCals = parseNum(calsEl?.value, 2100, 500, 10000);
+  const targetProtein = parseNum(protEl?.value, 140, 0, 1000);
+  const targetCarbs = parseNum(carbEl?.value, 240, 0, 1500);
+  const targetFat = parseNum(fatEl?.value, 60, 0, 500);
+  const targetFiber = parseNum(fibEl?.value, 35, 0, 200);
+
+  S.nutrition.overrides = {
+    targetCals,
+    targetProtein,
+    targetCarbs,
+    targetFat,
+    targetFiber
+  };
+  S.nutrition.targetCals = targetCals;
+  S.nutrition.targetProtein = targetProtein;
+  S.nutrition.targetCarbs = targetCarbs;
+  S.nutrition.targetFat = targetFat;
+  S.nutrition.targetFiber = targetFiber;
 
   save('nutrition', S.nutrition);
   closeModal();
@@ -7319,9 +7548,12 @@ function commitCSVImport() {
 // ---- First-Run Onboarding Modal ----
 function handleOnboardingSubmit() {
   try {
-    const age = parseInt(document.getElementById('onboard-age')?.value || document.querySelector('input[placeholder="28"]')?.value || '21', 10);
-    const height = parseFloat(document.getElementById('onboard-height')?.value || document.querySelector('input[placeholder="178"]')?.value || '175');
-    const weight = parseFloat(document.getElementById('onboard-weight')?.value || document.querySelector('input[placeholder="75"]')?.value || '73.5');
+    const ageVal = parseInt(document.getElementById('onboard-age')?.value || '', 10);
+    const heightVal = parseFloat(document.getElementById('onboard-height')?.value || '');
+    const weightVal = parseFloat(document.getElementById('onboard-weight')?.value || '');
+    const age = (!Number.isNaN(ageVal) && ageVal > 0) ? ageVal : 25;
+    const height = (!Number.isNaN(heightVal) && heightVal > 0) ? heightVal : 175;
+    const weight = (!Number.isNaN(weightVal) && weightVal > 0) ? weightVal : 73.5;
     const unit = document.querySelector('.onboarding-unit-pill.on')?.dataset?.val ||
                  document.querySelector('.onboarding-unit-pill.active')?.dataset?.val ||
                  'kg';
@@ -7342,6 +7574,7 @@ function handleOnboardingSubmit() {
     S.cfg.weekStartDay = weekStart;
     S.cfg.physique = {
       ...(S.cfg.physique || {}),
+      sex,
       age,
       height,
       weight,
@@ -7392,9 +7625,9 @@ function showOnboardingModal(force = false) {
   if (!force && isUserOnboarded()) {
     return;
   }
-  const age = S.cfg?.physique?.age || 21;
-  const height = S.cfg?.physique?.height || 175;
-  const weight = S.weights?.at(-1)?.w || S.cfg?.physique?.weight || 73.5;
+  const age = S.cfg?.physique?.age ? String(S.cfg.physique.age) : '';
+  const height = S.cfg?.physique?.height ? String(S.cfg.physique.height) : '';
+  const weight = S.weights?.at(-1)?.w ? String(S.weights.at(-1).w) : (S.cfg?.physique?.weight ? String(S.cfg.physique.weight) : '');
   const unit = S.cfg?.unit || S.cfg?.units || 'kg';
   const sex = S.cfg?.bodyModel || S.cfg?.sex || 'male';
   const goal = S.cfg?.physique?.goalType || S.cfg?.goalType || 'hypertrophy';
@@ -7432,15 +7665,15 @@ function showOnboardingModal(force = false) {
         <div class="row g" style="margin-bottom:10px">
           <div style="flex:1">
             <label class="t2 sm" for="onboard-age">Age (years)</label>
-            <input type="number" id="onboard-age" name="age" class="txt" value="${age}" min="12" max="100" style="width:100%;padding:8px">
+            <input type="number" id="onboard-age" name="age" class="txt" value="${age}" placeholder="e.g. 25" min="12" max="100" style="width:100%;padding:8px">
           </div>
           <div style="flex:1">
             <label class="t2 sm" for="onboard-height">Height (cm)</label>
-            <input type="number" id="onboard-height" name="height" class="txt" value="${height}" min="100" max="250" style="width:100%;padding:8px">
+            <input type="number" id="onboard-height" name="height" class="txt" value="${height}" placeholder="e.g. 175" min="100" max="250" style="width:100%;padding:8px">
           </div>
           <div style="flex:1">
             <label class="t2 sm" for="onboard-weight">Weight (${esc(unit)})</label>
-            <input type="number" id="onboard-weight" name="weight" class="txt" value="${weight}" step="0.5" min="30" max="300" style="width:100%;padding:8px">
+            <input type="number" id="onboard-weight" name="weight" class="txt" value="${weight}" placeholder="e.g. 72" step="0.5" min="30" max="300" style="width:100%;padding:8px">
           </div>
         </div>
 
@@ -7660,6 +7893,21 @@ function showSettingsModal() {
           <div class="settings-divider"></div>
           <div style="padding:10px 0">
             <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} ♻️ Force Cache Reload</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-title">About & Diagnostics ℹ️</div>
+        <div class="card settings-card">
+          <div class="settings-row">
+            <span class="settings-label">MyGyM Architecture</span>
+            <span class="chip on" style="font-size:11px">PWA v${esc(APP_VERSION)}</span>
+          </div>
+          <div class="settings-divider"></div>
+          <div class="settings-row">
+            <span class="settings-label">Diagnostics & Error Logs</span>
+            <button class="chip" data-a="view-diagnostics" style="font-size:11px;padding:4px 8px">📋 View Logs (${(typeof window !== 'undefined' && window._diagnosticsLogs ? window._diagnosticsLogs.length : 0)})</button>
           </div>
         </div>
       </div>
@@ -8512,7 +8760,8 @@ function parseWorkoutTextOfflineFallback(text) {
 }
 
 function openAIImportModal() {
-  const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
+  const key = (typeof AIConfig !== 'undefined' && AIConfig.getAIKey) ? AIConfig.getAIKey() : '';
+  const hasKey = Boolean(key);
   modal(`
     <div class="ai-import-sheet">
       <div style="flex:none">
@@ -8668,7 +8917,8 @@ async function parseAIWorkoutFromInput() {
   }
 
   if (!routineJson) {
-    const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
+    const key = (typeof AIConfig !== 'undefined' && AIConfig.getAIKey) ? AIConfig.getAIKey() : '';
+    const hasKey = Boolean(key);
     if (!hasKey) {
       const parsedFallback = parseWorkoutTextOfflineFallback(rawText);
       if (parsedFallback && parsedFallback.exercises.length) {
@@ -8863,8 +9113,15 @@ function commitAIRoutine(startImmediately = false) {
 }
 
 function openAICoachDrawer(initialPrompt = null) {
-  const hasKey = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('ai_api_key'));
-  const model = (typeof localStorage !== 'undefined' ? localStorage.getItem('ai_model') : null) || ((typeof localStorage !== 'undefined' && localStorage.getItem('ai_provider') === 'gemini') ? 'gemini-1.5-flash' : 'gpt-4o-mini');
+  const key = (typeof AIConfig !== 'undefined' && AIConfig.getAIKey) ? AIConfig.getAIKey() : '';
+  const hasKey = Boolean(key);
+  const aiSettings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { provider: 'auto', models: {} };
+  const resolvedProvider = aiSettings.provider === 'auto'
+    ? ((typeof AIConfig !== 'undefined' && AIConfig.detectProviderFromKey) ? AIConfig.detectProviderFromKey(key)?.provider || 'openai' : 'openai')
+    : (aiSettings.provider || 'openai');
+  const providerName = (typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS && AIConfig.AI_PROVIDERS[resolvedProvider]?.name) || resolvedProvider;
+  const model = (aiSettings.models && aiSettings.models[resolvedProvider]) ||
+                ((typeof AIConfig !== 'undefined' && AIConfig.AI_PROVIDERS && AIConfig.AI_PROVIDERS[resolvedProvider]?.defaultModel) || 'gpt-4o-mini');
 
   let curExName = 'Bench Press';
   let curExWeight = 60;
@@ -8881,7 +9138,7 @@ function openAICoachDrawer(initialPrompt = null) {
   if (!aiCoachHistory.length) {
     aiCoachHistory.push({
       role: 'assistant',
-      content: `Hi! I'm your Workout Coach (${model}). Ask me for real-time form cues, warm-up set breakdowns, alternative exercises, or progressive overload advice.`
+      content: `Hi! I'm your Workout Coach (${providerName} · ${model}). Ask me for real-time form cues, warm-up set breakdowns, alternative exercises, or progressive overload advice.`
     });
   }
 
@@ -8893,7 +9150,7 @@ function openAICoachDrawer(initialPrompt = null) {
           <div>
             <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px">
               <span>Workout Coach</span>
-              <span class="chip on" style="font-size:10px;padding:1px 6px">${esc(model)}</span>
+              <span class="chip on" style="font-size:10px;padding:1px 6px">${esc(providerName)} · ${esc(model)}</span>
             </div>
             <div class="t2 sm">${S.act ? `Active Session: ${esc(S.act.name)}` : 'On-Demand Training Assistant'}</div>
           </div>
@@ -9024,6 +9281,24 @@ function finishWorkout() {
     } catch (_) {}
 
     const exercises = Array.isArray(a.ex) ? a.ex : [];
+    const completedSetsCount = exercises.reduce((acc, x) => acc + (Array.isArray(x.sets) ? x.sets.filter(s => s && (s.done || (x.uni && s.sideL && s.sideR))).length : 0), 0);
+
+    // Empty-set guard: do NOT auto-save planned sets if 0 sets completed
+    if (completedSetsCount === 0) {
+      modal(`
+        <h2>No Sets Completed</h2>
+        <div class="card" style="margin:16px 0;padding:16px;text-align:center;">
+          <p class="t2" style="margin:0 0 8px 0;font-size:15px;">You haven't checked off any completed sets in this session.</p>
+          <p class="t3" style="margin:0;font-size:13px;">Would you like to keep training or discard this workout?</p>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button type="button" class="btn b2" data-a="close" style="flex:1;">Keep Training</button>
+          <button type="button" class="btn b-danger red" data-a="discardworkout" style="flex:1;">Discard Workout</button>
+        </div>
+      `);
+      return;
+    }
+
     const t0 = a.t0 || (Date.now() - 3600000);
     const curDur = Math.max(1000, Date.now() - t0);
     const curDurMin = Math.round(curDur / 60000);
@@ -9076,26 +9351,6 @@ function finishWorkout() {
         })
       })).filter(x => x.sets.length > 0);
 
-      // If no sets completed, preserve all exercises with logged sets so 0 completed sets still saves safely
-      if (!ex.length) {
-        ex = exercises.map(x => ({
-          id: x.id,
-          note: x.note || '',
-          uni: !!x.uni,
-          sets: (Array.isArray(x.sets) ? x.sets : []).map(s => ({
-            w: Math.max(0, Number(s.w) || 0),
-            r: Math.max(0, Number(s.r) || 0),
-            rpe: s.rpe === '' || s.rpe == null ? null : Number(s.rpe),
-            rir: s.rir != null && s.rir !== '' ? Number(s.rir) : null,
-            type: mapSetType(s.type),
-            uni: !!x.uni,
-            sideL: !!s.sideL,
-            sideR: !!s.sideR,
-            done: Boolean(s.done || (x.uni && s.sideL && s.sideR))
-          }))
-        }));
-      }
-
       // Detect PRs achieved during active session
       ex.forEach(x => {
         const e = X(x.id);
@@ -9133,7 +9388,7 @@ function finishWorkout() {
           const rx = r.ex.find(q => q && String(q.id) === String(completedEx.id));
           if (rx && Array.isArray(rx.sets)) {
             completedEx.sets.forEach((s, idx) => {
-              if (rx.sets[idx] && s.w > 0) {
+              if (rx.sets[idx] && s.done && s.w > 0) {
                 rx.sets[idx].w = s.w;
               }
             });
@@ -9202,17 +9457,18 @@ function finishWorkout() {
           } else {
             volDeltaHtml = `<span class="delta-flat">0 kg (0%) vs last session</span>`;
           }
-        }
-        if (prevLog.dur) {
-          const prevDurMin = Math.round(prevLog.dur / 60000);
-          const diffDur = curDurMin - prevDurMin;
-          durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
-        }
-        if (Array.isArray(prevLog.ex)) {
-          const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + (Array.isArray(x.sets) ? x.sets.length : 0), 0);
-          totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
-          const diffSets = totalSetsCount - prevSetsCount;
-          setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
+
+          if (prevLog.dur) {
+            const prevDurMin = Math.round(prevLog.dur / 60000);
+            const diffDur = curDurMin - prevDurMin;
+            durDeltaHtml = `<span class="t2 sm"> (${diffDur >= 0 ? '+' : ''}${diffDur} min vs last)</span>`;
+          }
+          if (Array.isArray(prevLog.ex)) {
+            const prevSetsCount = prevLog.ex.reduce((acc, x) => acc + (Array.isArray(x.sets) ? x.sets.length : 0), 0);
+            totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
+            const diffSets = totalSetsCount - prevSetsCount;
+            setsDeltaHtml = `<span class="t2 sm"> (${diffSets >= 0 ? '+' : ''}${diffSets} sets vs last)</span>`;
+          }
         }
       }
       totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
@@ -9230,7 +9486,7 @@ function finishWorkout() {
         id: x.id,
         note: x.note || '',
         uni: !!x.uni,
-        sets: (Array.isArray(x.sets) ? x.sets : []).map(s => ({
+        sets: (Array.isArray(x.sets) ? x.sets : []).filter(s => s && (s.done || (x.uni && (s.sideL || s.sideR)))).map(s => ({
           w: Math.max(0, Number(s.w) || 0),
           r: Math.max(0, Number(s.r) || 0),
           rpe: Number(s.rpe) || null,
@@ -9240,7 +9496,7 @@ function finishWorkout() {
           sideR: !!s.sideR,
           done: Boolean(s.done || (x.uni && s.sideL && s.sideR))
         }))
-      }));
+      })).filter(x => x.sets.length > 0);
       curVol = 0;
       totalSetsCount = ex.reduce((acc, x) => acc + (x.sets ? x.sets.length : 0), 0);
     }
@@ -9338,7 +9594,7 @@ function finishWorkout() {
           ${deloadHtml}
           <div class="row" style="margin-top:8px">
             <b>Active Streak:</b>
-            <span>${streak()} days 🔥</span>
+            <span>${streak()} ${streak() === 1 ? 'day' : 'days'} 🔥</span>
           </div>
         </div>
         ${r ? `
@@ -9697,6 +9953,64 @@ document.addEventListener('click', async e => {
     case 'tab': view = k; close(); break;
     case 'close': close(); return;
     case 'undo': U?.(); $('#toast').className = ''; return;
+    case 'discardworkout': {
+      S.act = null;
+      ls.set('act', null);
+      save('act');
+      stopRest();
+      closeModal();
+      view = 'train';
+      render();
+      toast('Workout discarded');
+      return;
+    }
+    case 'autobalance-macros': {
+      const calsEl = $('#target-cals-input');
+      const protEl = $('#target-protein-input');
+      const carbEl = $('#target-carbs-input');
+      const fatEl = $('#target-fat-input');
+      if (calsEl && protEl && carbEl && fatEl) {
+        const cals = Number(calsEl.value) || 2100;
+        const p = Number(protEl.value) || 140;
+        const f = Number(fatEl.value) || 60;
+        const remaining = Math.max(0, cals - (p * 4) - (f * 9));
+        carbEl.value = Math.round(remaining / 4);
+        if (typeof updateMacroValidationUI === 'function') updateMacroValidationUI();
+      }
+      return;
+    }
+    case 'view-diagnostics': {
+      const logs = (typeof window !== 'undefined' && window._diagnosticsLogs) ? window._diagnosticsLogs : [];
+      modal(`
+        <div class="modal-header">
+          <h3 class="modal-title">📋 Diagnostics & System Logs</h3>
+          <button class="modal-close-btn" data-a="close">✕</button>
+        </div>
+        <div style="margin:12px 0;">
+          <div style="font-size:12px;color:var(--t2);margin-bottom:8px;">Total captured events: ${logs.length}</div>
+          ${logs.length === 0 ? `
+            <div class="card" style="padding:16px;text-align:center;color:var(--gn);font-weight:600;">
+              ✓ All systems healthy! Zero runtime errors captured.
+            </div>
+          ` : `
+            <div style="max-height:280px;overflow-y:auto;background:rgba(0,0,0,0.3);padding:10px;border-radius:8px;font-family:monospace;font-size:11px;line-height:1.4;">
+              ${logs.map(l => `<div style="margin-bottom:8px;border-bottom:1px solid rgba(255,255,255,0.1);padding-bottom:6px;">
+                <span style="color:var(--rd);font-weight:bold;">[${esc(l.type)}]</span> <span style="color:var(--t3);">${esc(l.timestamp)}</span><br>
+                ${esc(l.message)}
+              </div>`).join('')}
+            </div>
+            <button class="btn s sm-btn outline" data-a="clear-diagnostics" style="width:100%;margin-top:10px;">Clear Diagnostic Logs</button>
+          `}
+        </div>
+      `);
+      return;
+    }
+    case 'clear-diagnostics': {
+      if (typeof window !== 'undefined') window._diagnosticsLogs = [];
+      toast('Diagnostics logs cleared');
+      close();
+      return;
+    }
     case 'toggle-onboard-unit': {
       const val = t.dataset.val || 'kg';
       document.querySelectorAll('.onboarding-unit-pill').forEach(btn => {
@@ -11719,6 +12033,10 @@ async function init() {
           }
         }
       }
+      // Purge legacy duplicate keys from localStorage
+      localStorage.removeItem('ai_api_key');
+      localStorage.removeItem('ai_model');
+      localStorage.removeItem('ai_provider');
     }
   } catch (_) {}
 
@@ -11782,7 +12100,7 @@ async function init() {
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.3').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.0.5').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -11982,6 +12300,7 @@ if (typeof globalThis !== 'undefined') {
     autocalcMealCals,
     showNutritionTargetsModal,
     saveNutritionTargetsFromModal,
+    getEffectiveNutritionTargets,
     applyMacroPreset,
     runMigrations,
     MIGRATIONS,

@@ -2,6 +2,36 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.0.5] - Phase 0-1 Layout Gates, CSS Audits, Empty-Workout Guard, 3D Renderer & Unified Profile - 2026-11-12
+- **Phase 0: Layout and CSS Class Gates (`scripts/check-css-classes.js`, `scripts/layout-audit.js`, `style.css`)**:
+  - Implemented automated gate `scripts/check-css-classes.js` validating that every CSS class referenced across `app.js` and `index.html` is defined in `style.css`.
+  - Added definitions for all missing classes in `style.css` including `.seg-btn`, `.btn-step`, `.b2`, `.b-danger`, `.t3`, and card/row helper styles.
+  - Implemented `scripts/layout-audit.js` validating 44px min-height touch targets and layout constraints across iPhone viewports (430x932, 390x844, 375x667, 320x568).
+- **Phase 1: Workout Logging & Empty Workout Guard (`app.js`)**:
+  - Empty-workout guard: when completed sets count is 0, finish workout triggers a confirmation modal ("No sets completed") offering "Keep Training" or "Discard Workout" (`data-a="discardworkout"`), preventing empty logs in history.
+  - Routine base weights update only on completed sets (`s.done`).
+  - Active streak pluralization fixed (`streak() === 1 ? 'day' : 'days'`).
+  - Volume, duration, and set count deltas restricted to valid previous workouts (`prevLog && prevVol > 0`).
+- **Phase 1: 3D Renderer & WebGL Hardening (`vendor/three.module.js`, `app.js`)**:
+  - Added `Matrix3` with `getNormalMatrix(matrix4)` computing accurate normal matrices for lighting.
+  - Multi-light support up to 3 directional lights with shader uniform arrays.
+  - Pixel ratio clamping (`Math.min(devicePixelRatio, 2)`) with dynamic getter/setter.
+  - Shader compilation and program linking validation with detailed error logging.
+  - Added 3D physique morph mesh scaling (`setPhysiqueProgress(p)`) via mesh group traversal, eliminating costly geometry reconstructions.
+  - Added async cancellation guards and fallback to 2D SVG (`generateMorphSvg` / `mmap`) if 3D initialization fails.
+- **Phase 1: Unified Profile & Nutrition Overrides (`app.js`)**:
+  - Single source of truth for nutrition targets via `getEffectiveNutritionTargets()` across Body tab and Daily Nutrition tab.
+  - Added live macro sum check (`4*protein + 4*carbs + 9*fat` vs calorie target) with auto-balance carbs action in `showNutritionTargetsModal()`.
+  - Fixed 0 carbs/fats parsing in `saveNutritionTargetsFromModal()`, storing overrides into `S.nutrition.overrides`.
+  - Empty onboarding inputs with illustrative placeholders (`e.g. 25`, `e.g. 175`, `e.g. 72`) when profile is uncalibrated.
+- **Phase 1: AI Key Security & Diagnostics (`app.js`, `ai-config.js`)**:
+  - Unified AI key lookup strictly via `AIConfig.getAIKey()`, purging legacy keys from `localStorage` on boot.
+  - Dynamic AI Coach model/provider resolution and display in drawer header.
+  - In-memory diagnostics logger `window._diagnosticsLogs` (capped at 50 entries) with Settings modal viewer.
+- **Verification & Testing (`tests/test_production_issues.js`)**:
+  - Expanded test suite with Suite 26 covering all Phase 0 and Phase 1 invariants (172/172 tests passing).
+
+
 ## [7.0.3] - Onboarding Emergency Escape Hatch & Guaranteed Dismissal - 2026-11-10
 - **Emergency Close Button & Escape Hatch (`app.js`)**:
   - Configured `showOnboardingModal()` with `{ hideClose: false }` to ensure the modal container close button is always rendered.

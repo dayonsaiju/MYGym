@@ -112,6 +112,8 @@ h2 {
   margin: 0 0 12px;
   display: block;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   text-align: left;
   color: inherit;
   font: inherit;
@@ -498,6 +500,8 @@ input[type="checkbox"] {
 .sheet {
   background: var(--c1);
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   max-height: 85vh;
   max-height: 85dvh;
   overflow-y: auto;
@@ -1152,6 +1156,8 @@ input[type="checkbox"] {
   border-radius: 18px;
   padding: 14px;
   margin-bottom: 12px;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .work-hero-media {
@@ -3870,6 +3876,7 @@ textarea.note:focus {
   transition: transform .15s ease-out, background .15s ease, border-color .15s ease;
   touch-action: pan-y;
   width: 100%;
+  min-width: 0;
   box-sizing: border-box;
 }
 
@@ -3946,6 +3953,8 @@ textarea.note:focus {
   align-items: center;
   gap: 6px;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .set-input-box {
@@ -5157,6 +5166,574 @@ html, body, #v, main {
   cursor: pointer;
 }
 
+/* ==========================================================================
+   PHASE 0 CSS CLASS AUDIT STYLES
+   ========================================================================== */
 
+/* 1. Segmented Control & Segment Buttons */
+.segmented-control {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--card-sub);
+  border-radius: 12px;
+  margin-bottom: 12px;
+  width: 100%;
+  box-sizing: border-box;
+}
 
+.seg-btn {
+  min-height: 44px;
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t2);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 8px 12px;
+  user-select: none;
+}
+
+.seg-btn:active {
+  transform: scale(0.98);
+}
+
+.seg-btn.on,
+.seg-btn.active {
+  color: #ffffff !important;
+  background: var(--bg-surface, #222226);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  font-weight: 700;
+}
+
+/* 2. Modal Headers, Titles & Buttons */
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 8px;
+}
+
+.modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--t1);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.modal-close-btn {
+  background: var(--c2);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t2);
+  cursor: pointer;
+  font-size: 16px;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal-close-btn:hover,
+.modal-close-btn:active {
+  background: var(--card-sub);
+  color: var(--t1);
+}
+
+.sheet-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.confirm-modal {
+  text-align: center;
+  padding: 18px 12px;
+}
+
+.custom-ex-sheet {
+  padding: 16px;
+}
+
+/* 3. 3D Mannequin & Legend Color Dots */
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--t2);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.legend-color-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.legend-color-dot.dot-pri,
+.dot-pri {
+  background: var(--ac, #FF9F0A) !important;
+}
+
+.legend-color-dot.dot-sec,
+.dot-sec {
+  background: var(--bl, #38BDF8) !important;
+}
+
+.legend-color-dot.dot-neutral,
+.dot-neutral {
+  background: #334155 !important;
+}
+
+.mm-3d-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-chip-text {
+  font-size: 12px;
+}
+
+.mm-close-btn {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--t2);
+  padding: 4px 8px;
+}
+
+.mm-explore-inner {
+  padding: 12px;
+}
+
+.mm-muscles-back,
+.mm-muscles-front {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 4. Active Workout Set Columns & Stepper Buttons */
+.set-col {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.btn-step,
+.step-btn {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  background: var(--c2);
+  border: 1px solid var(--bd);
+  color: var(--t1);
+  cursor: pointer;
+  user-select: none;
+}
+
+.step-minus,
+.step-plus {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.set-r-box,
+.set-w-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.clickable-title {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.history-icon {
+  display: inline-block;
+  font-size: 13px;
+  margin-left: 4px;
+}
+
+.gif-toggle-chip {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+
+/* 5. Physique Transformation Slider Markers & Sparklines */
+.slider-marker {
+  position: absolute;
+  font-size: 11px;
+  color: var(--t2);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.slider-marker.start,
+.start {
+  left: 0;
+  transform: none;
+}
+
+.slider-marker.current {
+  left: 50%;
+}
+
+.slider-marker.goal,
+.goal {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.ex-history-sparkline-wrap {
+  width: 100%;
+  height: 50px;
+  margin: 8px 0;
+  overflow: hidden;
+}
+
+/* 6. Superset Picker Styles */
+.ss-badge {
+  background: rgba(255, 159, 10, 0.15);
+  color: var(--ac);
+  border: 1px solid rgba(255, 159, 10, 0.3);
+  font-weight: 700;
+}
+
+.ss-chip {
+  font-size: 12px;
+}
+
+.ss-library-action-card {
+  padding: 12px;
+  margin-top: 10px;
+  background: var(--card-sub);
+  border-radius: 12px;
+}
+
+.ss-link-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ss-picker-browse-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.ss-picker-details {
+  font-size: 12px;
+  color: var(--t2);
+  margin-top: 2px;
+}
+
+.ss-picker-list-card {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.ss-picker-meta {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.ss-picker-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--t1);
+}
+
+.ss-picker-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--bd);
+}
+
+.superset-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+/* 7. Hypertrophy Volume Status & Benchmarks */
+.vol-benchmarks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--t2);
+}
+
+.vol-item {
+  padding: 8px 0;
+  border-bottom: 0.5px solid var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vol-item-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.vol-item-status {
+  font-size: 12px;
+  color: var(--t2);
+}
+
+.mev {
+  color: var(--bl);
+}
+
+.mrv {
+  color: var(--rd);
+}
+
+/* 8. Training Insights & Free Builder */
+.insights-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.insights-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.insight-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.insight-icon {
+  font-size: 18px;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.insight-item-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--t1);
+}
+
+.insight-text {
+  font-size: 12px;
+  color: var(--t2);
+  line-height: 1.4;
+}
+
+.free-builder-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.free-builder-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.free-chip {
+  margin: 2px;
+}
+
+.free-workout-banner {
+  background: var(--card-sub);
+  border: 0.5px solid var(--bd);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.past-workout-banner {
+  background: var(--card-sub);
+  border: 0.5px solid var(--bd);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+/* 9. Achievements, Buttons, PR Overlays & Input Polish */
+.achievement-desc {
+  font-size: 12px;
+  color: var(--t2);
+  line-height: 1.4;
+}
+
+.achievement-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.achievement-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--t1);
+}
+
+.ai-api-key-input,
+.ai-base-url-input,
+.ai-custom-model-input {
+  width: 100%;
+}
+
+.ai-assistant-banner {
+  background: rgba(255, 159, 10, 0.08);
+  border: 1px solid rgba(255, 159, 10, 0.25);
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.btn-primary {
+  background: var(--ac);
+  color: #000000;
+  font-weight: 700;
+  border: none;
+}
+
+.calorie-ring-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.calorie-ring-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--t2);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.calorie-ring-val {
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--t1);
+  font-variant-numeric: tabular-nums;
+}
+
+.ex-add-btn {
+  font-weight: 700;
+  min-height: 44px;
+}
+
+.outline {
+  background: transparent;
+  border: 1px solid var(--bd);
+  color: var(--t1);
+}
+
+.picker-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.picker-preview-secondary {
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.pr-banner-card {
+  background: rgba(255, 159, 10, 0.08);
+  border: 1px solid rgba(255, 159, 10, 0.3);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.pr-celebration-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.pr-trophy-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pr-trophy-desc {
+  font-size: 12px;
+  color: var(--t2);
+}
+
+.tcb-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.tg {
+  font-size: 10px;
+}
+
+.b2 {
+  background: var(--c2);
+  color: var(--t1);
+  border: 1px solid var(--bd);
+}
+
+.b-danger {
+  background: rgba(255, 69, 58, 0.15);
+  color: var(--rd);
+  border: 1px solid var(--rd);
+}
+
+.t3 {
+  color: var(--t3);
+}
 

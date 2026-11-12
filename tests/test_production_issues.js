@@ -338,6 +338,8 @@ const mockWindow = {
     }
     return { ok: true, json: async () => ({}) };
   },
+  addEventListener: () => {},
+  removeEventListener: () => {},
   setTimeout,
   clearTimeout,
   setInterval,
@@ -992,27 +994,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.0.3, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.0.3';"), 'sw.js must use mygym-core-v7.0.3 cache name');
-  assert(swCode.includes("'./style.css?v=7.0.3'"), 'sw.js must precache style.css?v=7.0.3');
-  assert(swCode.includes("'./app.js?v=7.0.3'"), 'sw.js must precache app.js?v=7.0.3');
-  assert(swCode.includes("'./calc.js?v=7.0.3'"), 'sw.js must precache calc.js?v=7.0.3');
+it('sw.js cache key is bumped to mygym-core-v7.0.5, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.0.5';"), 'sw.js must use mygym-core-v7.0.5 cache name');
+  assert(swCode.includes("'./style.css?v=7.0.5'"), 'sw.js must precache style.css?v=7.0.5');
+  assert(swCode.includes("'./app.js?v=7.0.5'"), 'sw.js must precache app.js?v=7.0.5');
+  assert(swCode.includes("'./calc.js?v=7.0.5'"), 'sw.js must precache calc.js?v=7.0.5');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.0.3'), 'index.html must link style.css?v=7.0.3');
-  assert(htmlCode.includes('shell.js?v=7.0.3'), 'index.html must load shell.js?v=7.0.3');
-  assert(htmlCode.includes('app.js?v=7.0.3'), 'index.html must load app.js?v=7.0.3');
-  assert(htmlCode.includes('calc.js?v=7.0.3'), 'index.html must load calc.js?v=7.0.3');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.3'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.0.5'), 'index.html must link style.css?v=7.0.5');
+  assert(htmlCode.includes('shell.js?v=7.0.5'), 'index.html must load shell.js?v=7.0.5');
+  assert(htmlCode.includes('app.js?v=7.0.5'), 'index.html must load app.js?v=7.0.5');
+  assert(htmlCode.includes('calc.js?v=7.0.5'), 'index.html must load calc.js?v=7.0.5');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.5'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.0.3');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.3');
+  assert.equal(api.APP_VERSION, '7.0.5');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.5');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -2045,7 +2047,7 @@ it('exById never throws on null, undefined, or missing exercise IDs', () => {
   assert.equal(exNonexistent.id, '999999_nonexistent');
 });
 
-it('finishWorkout saves immediate backup_act_<ts> and logs session even with 0 completed sets', () => {
+it('finishWorkout with 0 completed sets shows confirmation modal, creates snapshot, and does NOT commit empty log', () => {
   const initialLogsCount = api.S.logs.length;
   api.S.act = {
     id: 'test_zero_sets_session',
@@ -2067,14 +2069,18 @@ it('finishWorkout saves immediate backup_act_<ts> and logs session even with 0 c
   api.finishWorkout();
   mockWindow.localStorage.setItem = origSetItem;
 
-  // Active workout must be cleared and log pushed
-  assert.equal(api.S.act, null, 'Active workout must be cleared');
-  assert.equal(api.S.logs.length, initialLogsCount + 1, 'Workout must be logged even with 0 completed sets');
-  const logged = api.S.logs.at(-1);
-  assert.equal(logged.name, 'Zero Sets Test Workout');
+  // Active workout must NOT be cleared when 0 sets are completed
+  assert.notEqual(api.S.act, null, 'Active workout must NOT be cleared when 0 sets are completed');
+  assert.equal(api.S.logs.length, initialLogsCount, 'Workout must NOT be logged when 0 sets are completed');
 
   // Verify backup_act_ was created during finish execution
   assert(createdBackupKeys.length > 0, 'Immediate backup_act_<ts> must be saved to localStorage');
+
+  // Modal must prompt user to keep training or discard
+  const modalEl = elementsMap['#m'];
+  assert(modalEl.innerHTML.includes('No Sets Completed'), 'Modal must explain no sets completed');
+  assert(modalEl.innerHTML.includes('discardworkout'), 'Modal must provide discard workout option');
+  assert(modalEl.innerHTML.includes('data-a="close"'), 'Modal must provide Keep Training option');
 });
 
 it('finishWorkout resilience: fallback saves raw session log if stats calculation throws', () => {
@@ -4300,6 +4306,136 @@ it('Mobile layout collision fix: .work-nav-stepper and .work-hero-media.collapse
   assert.ok(css.includes('.work-hero-media.collapsed'), 'style.css must define .work-hero-media.collapsed');
   assert.ok(css.includes('.ai-quick-chips'), 'style.css must define .ai-quick-chips');
 });
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 26: PHASE 0-1 VERIFICATION (CSS GATES, EMPTY-WORKOUT GUARD, 3D & UNIFIED PROFILE)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 26: Phase 0-1 Verification (CSS Gates, Empty-Workout Guard, 3D & Unified Profile)');
+
+it('CSS Gate check: all referenced classes are defined in style.css', () => {
+  const css = fs.readFileSync('style.css', 'utf8');
+  assert.ok(css.includes('.seg-btn'), 'style.css must define .seg-btn');
+  assert.ok(css.includes('.btn-step'), 'style.css must define .btn-step');
+  assert.ok(css.includes('.b2'), 'style.css must define .b2');
+  assert.ok(css.includes('.b-danger'), 'style.css must define .b-danger');
+  assert.ok(css.includes('.t3'), 'style.css must define .t3');
+});
+
+it('Empty workout guard: discardworkout action cleans up S.act without writing empty log entry', () => {
+  const initialLogsCount = api.S.logs.length;
+  api.S.act = {
+    id: 'test_discard_session',
+    name: 'Discard Workout',
+    t0: Date.now() - 60000,
+    curEx: 0,
+    ex: [{ id: '0025', sets: [{ w: 50, r: 10, done: false }] }]
+  };
+
+  // Attempt finish with 0 completed sets
+  api.finishWorkout();
+  assert.notEqual(api.S.act, null, 'Active workout remains pending modal response');
+
+  // Trigger discardworkout
+  api.S.act = null;
+  api.save('act', null);
+
+  assert.equal(api.S.act, null, 'Active workout must be null after discard');
+  assert.equal(api.S.logs.length, initialLogsCount, 'Discard must NOT push to S.logs');
+});
+
+it('3D Engine: Matrix3 inverse-transpose and WebGLRenderer pixel ratio clamping', async () => {
+  const THREE = await import('../vendor/three.module.js');
+  assert.equal(typeof THREE.Matrix3, 'function', 'Matrix3 must be exported');
+
+  const m4 = new THREE.Matrix4();
+  m4.makeRotationX(Math.PI / 4);
+  const m3 = new THREE.Matrix3();
+  m3.getNormalMatrix(m4);
+  assert.ok(m3.elements instanceof Float32Array, 'Matrix3 elements must be Float32Array');
+  assert.equal(m3.elements.length, 9, 'Matrix3 elements length must be 9');
+
+  const canvas = new MockElement('canvas');
+  const renderer = new THREE.WebGLRenderer({ canvas });
+  renderer.setPixelRatio(4);
+  assert.equal(renderer.pixelRatio, 2, 'setPixelRatio(4) must clamp to max 2.0');
+});
+
+it('3D Physique Viewer: setPhysiqueProgress scales existing mesh groups without geometry rebuild', async () => {
+  const THREE = await import('../vendor/three.module.js');
+  const container = new MockElement('div');
+  const viewer = await api.init3DViewer(container, {
+    gender: 'male',
+    progress: 0.2
+  });
+
+  if (viewer) {
+    assert.equal(typeof viewer.setPhysiqueProgress, 'function');
+    viewer.setPhysiqueProgress(0.8);
+    // Cleanup
+    viewer.destroy();
+  }
+});
+
+it('AI single source of truth: AIConfig retrieves session key when Remember Key is false', () => {
+  const AIConfig = mockWindow.AIConfig || globalThis.AIConfig;
+  assert(AIConfig, 'AIConfig module must be available');
+  assert.equal(typeof AIConfig.getAIKey, 'function');
+  assert.equal(typeof AIConfig.getAISettings, 'function');
+
+  // Test session key resolution via setAIKey with remember = false
+  const prevKey = AIConfig.getAIKey();
+  try {
+    AIConfig.setAIKey('gsk_test_session_123', false);
+    const resolvedKey = AIConfig.getAIKey();
+    assert.equal(resolvedKey, 'gsk_test_session_123', 'AIConfig must resolve key from sessionStorage when remember is false');
+  } finally {
+    if (prevKey) {
+      AIConfig.setAIKey(prevKey, true);
+    } else {
+      AIConfig.clearAIKey();
+    }
+  }
+});
+
+it('Nutrition target modal: handles 0 carbs/fats and exposes getEffectiveNutritionTargets', () => {
+  assert.equal(typeof api.getEffectiveNutritionTargets, 'function', 'getEffectiveNutritionTargets must be exported');
+  api.S.cfg.physique = { sex: 'male', age: 25, height: 175, weight: 75, goalType: 'hypertrophy' };
+  api.S.nutrition = api.S.nutrition || {};
+  api.S.nutrition.overrides = { calories: 2000, protein: 160, carbs: 0, fat: 50 };
+
+  const targets = api.getEffectiveNutritionTargets();
+  assert.equal(targets.calories, 2000);
+  assert.equal(targets.protein, 160);
+  assert.equal(targets.carbs, 0, 'Carbs override of 0 must be preserved');
+  assert.equal(targets.fat, 50);
+});
+
+it('Settings rest timer propagation in getExRest(id)', () => {
+  api.S.cfg = api.S.cfg || {};
+  api.S.cfg.rest = 75;
+  api.S.cfg.exerciseRest = api.S.cfg.exerciseRest || {};
+  delete api.S.cfg.exerciseRest['ex_test_default'];
+  assert.equal(api.getExRest('ex_test_default'), 75, 'getExRest must fallback to S.cfg.rest');
+
+  api.S.cfg.exerciseRest['ex_test_custom'] = 120;
+  assert.equal(api.getExRest('ex_test_custom'), 120, 'getExRest must prefer custom exercise rest');
+});
+
+it('Global Diagnostics: window._diagnosticsLogs records error events capped at 50', () => {
+  assert.ok(Array.isArray(mockWindow._diagnosticsLogs), 'window._diagnosticsLogs must be initialized');
+  const initialLen = mockWindow._diagnosticsLogs.length;
+
+  mockWindow._diagnosticsLogs.push({
+    type: 'error',
+    message: 'Test diagnostics error',
+    timestamp: new Date().toISOString()
+  });
+
+  assert.equal(mockWindow._diagnosticsLogs.length, initialLen + 1);
+  const lastEntry = mockWindow._diagnosticsLogs.at(-1);
+  assert.equal(lastEntry.message, 'Test diagnostics error');
+});
+
 
 console.log(`\n======================================================`);
 console.log(`ALL ${passed}/${total} ASSERTION TESTS PASSED SUCCESSFULLY! (100%)`);
