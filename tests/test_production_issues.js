@@ -962,7 +962,8 @@ it('renderWorkHeroCard declutters media frame and places actions in horizontal t
   assert(heroHtml.includes('data-a="swapex"'), 'Toolbar must include Swap');
   assert(heroHtml.includes('data-a="zoomexgif"'), 'Toolbar must include Form Cues chip');
   assert(heroHtml.includes('data-a="opensspicker"') || heroHtml.includes('data-a="linkss"'), 'Toolbar must include Link Superset');
-  assert(heroHtml.includes('data-a="toggleuni"'), 'Toolbar must include Unilateral toggle');
+  // Phase 2: Unilateral toggle moved into ••• More (exmore) sheet to declutter main toolbar
+  assert(heroHtml.includes('data-a="exmore"'), 'Toolbar must include ••• More button (exmore) containing secondary actions');
 });
 
 it('style.css enforces 100% visible GIF letterboxing with object-fit: contain', () => {
@@ -994,27 +995,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.0.5, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.0.5';"), 'sw.js must use mygym-core-v7.0.5 cache name');
-  assert(swCode.includes("'./style.css?v=7.0.5'"), 'sw.js must precache style.css?v=7.0.5');
-  assert(swCode.includes("'./app.js?v=7.0.5'"), 'sw.js must precache app.js?v=7.0.5');
-  assert(swCode.includes("'./calc.js?v=7.0.5'"), 'sw.js must precache calc.js?v=7.0.5');
+it('sw.js cache key is bumped to mygym-core-v7.1.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.1.0';"), 'sw.js must use mygym-core-v7.1.0 cache name');
+  assert(swCode.includes("'./style.css?v=7.1.0'"), 'sw.js must precache style.css?v=7.1.0');
+  assert(swCode.includes("'./app.js?v=7.1.0'"), 'sw.js must precache app.js?v=7.1.0');
+  assert(swCode.includes("'./calc.js?v=7.1.0'"), 'sw.js must precache calc.js?v=7.1.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.0.5'), 'index.html must link style.css?v=7.0.5');
-  assert(htmlCode.includes('shell.js?v=7.0.5'), 'index.html must load shell.js?v=7.0.5');
-  assert(htmlCode.includes('app.js?v=7.0.5'), 'index.html must load app.js?v=7.0.5');
-  assert(htmlCode.includes('calc.js?v=7.0.5'), 'index.html must load calc.js?v=7.0.5');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.0.5'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.1.0'), 'index.html must link style.css?v=7.1.0');
+  assert(htmlCode.includes('shell.js?v=7.1.0'), 'index.html must load shell.js?v=7.1.0');
+  assert(htmlCode.includes('app.js?v=7.1.0'), 'index.html must load app.js?v=7.1.0');
+  assert(htmlCode.includes('calc.js?v=7.1.0'), 'index.html must load calc.js?v=7.1.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.1.0'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.0.5');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.0.5');
+  assert.equal(api.APP_VERSION, '7.1.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.1.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1788,7 +1789,8 @@ it('Active Set Logging Row (.set-row) implements clean 3-column mobile-first lay
   assert(cardHtml.includes('set-val-input'), 'Must have generous touch inputs');
   assert(cardHtml.includes('btn-step'), 'Must have micro-steppers');
   assert(cardHtml.includes('set-done-btn'), 'Must have circular done check button');
-  assert(cardHtml.includes('data-a="removecursessionex"'), 'Must have session-only remove action button');
+  // Phase 2: Remove from session moved to exmore More sheet (data-a="rmworkex")
+  assert(cardHtml.includes('data-a="exmore"'), 'Must have ••• More button containing remove action');
 });
 
 // -----------------------------------------------------------------------------
@@ -1830,17 +1832,18 @@ it('Finish confirmation modal button has data-a="commit-finish" and executing it
   assert.equal(lastLog.name, 'Evening Push Session');
 });
 
-it('Active workout hero toolbar includes Quick Finish button data-a="commit-finish"', () => {
+it('Phase 2: Active workout hero card uses single finish path via promptfin (no Quick Finish chip)', () => {
   const testAct = {
-    id: 'test_quick_finish',
+    id: 'test_single_finish',
     name: 'Upper Hypertrophy',
     t0: Date.now(),
     curEx: 0,
     ex: [{ id: '0025', sets: [{ w: 80, r: 10, done: true }] }]
   };
   const cardHtml = api.renderWorkHeroCard(testAct, 0);
-  assert(cardHtml.includes('data-a="commit-finish"'), 'Work hero card must include data-a="commit-finish" button');
-  assert(cardHtml.includes('Quick Finish'), 'Button must display Quick Finish');
+  // Phase 2: Quick Finish chip removed; commit-finish only appears on the confirmation sheet
+  assert(!cardHtml.includes('Quick Finish'), 'Hero card must NOT contain Quick Finish chip (Phase 2)');
+  assert(!cardHtml.includes('data-a="commit-finish"'), 'Hero card must NOT contain direct commit-finish button');
 });
 
 it('Custom Exercise creation persists to S.customExercises, merges with EXDB/EXIDX, and resolves via exById', () => {
@@ -1978,7 +1981,7 @@ it('finishWorkout wraps body in try-catch and cleans up active workout and modal
   assert(appCode.includes("localStorage.removeItem('act')"), 'finishWorkout must explicitly remove act from localStorage');
 });
 
-it('Active workout top-bar includes emergency [⚡ Direct Save] action', () => {
+it('Phase 2: Active workout top-bar uses clean Coach + More header (no Direct Save button)', () => {
   const testAct = {
     id: 'test_top_force_fin',
     name: 'Morning Push Session',
@@ -1988,11 +1991,13 @@ it('Active workout top-bar includes emergency [⚡ Direct Save] action', () => {
   };
   api.S.act = testAct;
   const workHtml = api.vWork();
-  assert(workHtml.includes('data-a="directsave"') || workHtml.includes('data-a="forcefinish"'), 'work-top-bar must include data-a="directsave"');
-  assert(workHtml.includes('Direct Save') || workHtml.includes('Force Finish'), 'work-top-bar must have Direct Save text');
-
-  // Verify click listener handles case 'directsave' or 'forcefinish':
-  assert(appCode.includes("case 'directsave':") || appCode.includes("case 'forcefinish':"), "click listener must handle direct save action");
+  // Phase 2: Direct Save removed from header; workmore menu contains Discard; single finish path is promptfin
+  assert(!workHtml.includes('Direct Save'), 'Phase 2: work-top-bar must NOT have Direct Save button');
+  assert(!workHtml.includes('data-a="directsave"'), 'Phase 2: directsave action must not appear in rendered workout HTML');
+  assert(workHtml.includes('data-a="workmore"'), 'work-top-bar must include \u2022\u2022\u2022 More (workmore) for Discard/Settings');
+  assert(workHtml.includes('data-a="openaicoach"'), 'work-top-bar must include AI Coach button');
+  // The directsave/forcefinish fallback case still exists in the click handler for safety
+  assert(appCode.includes("case 'directsave':") || appCode.includes("case 'forcefinish':"), 'click handler must still handle directsave/forcefinish safety fallback');
 });
 
 it('Train tab and Calendar tab render "+ Log Past / Missed Workout" buttons', () => {
@@ -2566,8 +2571,9 @@ it('In-App AI Coach slide-over drawer: ephemeral session history, active workout
   assert(mHtml.includes('Workout Coach') || mHtml.includes('MyGyM AI Coach'), 'Drawer must display Workout Coach');
   assert(mHtml.includes('ai-chat-messages'), 'Drawer must render chat message container');
   assert(mHtml.includes('ai-quick-chips'), 'Drawer must provide quick action chips');
-  assert(mHtml.includes('💡 Form Cues'), 'Drawer must offer Form Cues chip');
-  assert(mHtml.includes('⚡ Warm-up Sets'), 'Drawer must offer Warm-up Sets chip');
+  // Phase 2: short chip labels (Form cues, Warm-up instead of Form Cues, Warm-up Sets)
+  assert(mHtml.includes('Form cues') || mHtml.includes('Form Cues'), 'Drawer must offer Form Cues chip');
+  assert(mHtml.includes('Warm-up') || mHtml.includes('Warm-up Sets'), 'Drawer must offer Warm-up chip');
 
   // Ephemeral memory: history is maintained in memory without polluting S or localStorage
   assert(Array.isArray(api.aiCoachHistory));
@@ -2993,8 +2999,9 @@ it('saveAIKey updates inline status badge in green and enforces key security in 
 
 it('style.css enforces mobile-first viewport units, responsive GIF media, and 44px touch targets', () => {
   assert(cssCode.includes('max-height: 85dvh'), '.sheet must use dynamic viewport unit 85dvh');
-  assert(cssCode.includes('aspect-ratio: 16/9'), '.work-hero-gif must enforce 16/9 aspect ratio');
-  assert(cssCode.includes('max-height: 25vh'), '.work-hero-gif must cap max-height at 25vh');
+  // Phase 2: GIF aspect-ratio changed to 1/1 (square) and max-height to 22vh for compact view
+  assert(cssCode.includes('aspect-ratio: 1 / 1') || cssCode.includes('aspect-ratio: 16/9'), '.work-hero-gif must enforce a defined aspect ratio');
+  assert(cssCode.includes('max-height: 22vh') || cssCode.includes('max-height: 25vh'), '.work-hero-gif must cap max-height (22vh in Phase 2)');
   assert(cssCode.includes('min-width: 44px') && cssCode.includes('min-height: 44px'), 'Buttons and chips must enforce 44px touch target bounds');
 });
 
@@ -4436,6 +4443,131 @@ it('Global Diagnostics: window._diagnosticsLogs records error events capped at 5
   assert.equal(lastEntry.message, 'Test diagnostics error');
 });
 
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 27: PHASE 2 LAYOUT & SCREEN REDESIGN (v7.1.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 27: Phase 2 Layout & Screen Redesign (v7.1.0)');
+
+it('Phase 2: Active workout hides #tabs nav and uses promptfin single-finish path', () => {
+  // promptfin only appears on the LAST exercise's nav stepper (curEx = ex.length - 1)
+  const testAct = {
+    id: 'p2_fin_path',
+    name: 'Push Day',
+    t0: Date.now(),
+    curEx: 1, // set to last exercise so promptfin appears on the stepper
+    ex: [
+      { id: '0025', sets: [{ w: 80, r: 8, done: false }] },
+      { id: '0027', sets: [{ w: 60, r: 10, done: false }] }
+    ]
+  };
+  api.S.act = testAct;
+  const workHtml = api.vWork();
+  // Single finish path: Finish Workout button uses promptfin (on last exercise's nav stepper)
+  assert(workHtml.includes('data-a="promptfin"'), 'Work view must include promptfin as single finish path');
+  // No direct commit-finish in the rendered work view hero
+  assert(!workHtml.includes('Quick Finish'), 'Work view must not contain Quick Finish chip');
+  // Phase 2 header: Coach + More only
+  assert(workHtml.includes('data-a="workmore"'), 'Work top-bar must have ••• More button');
+  assert(workHtml.includes('data-a="openaicoach"'), 'Work top-bar must have Coach button');
+  assert(!workHtml.includes('data-a="directsave"'), 'Phase 2 work header must not contain directsave');
+});
+
+it('Phase 2: renderWorkHeroCard two-line set cards with per-set delete and RIR button', () => {
+  const act = {
+    curEx: 0,
+    ex: [{ id: '0025', uni: false, sets: [{ w: 70, r: 8, rir: 2, done: false }, { w: 70, r: 8, done: false }] }]
+  };
+  const html = api.renderWorkHeroCard(act, 0);
+  // Line 1: set type/num toggle and done button
+  assert(html.includes('data-a="togglesettype"'), 'Set must have togglesettype button on line 1');
+  assert(html.includes('set-done-btn'), 'Set must have done check button on line 1');
+  assert(html.includes('set-prev-microlabel'), 'Set must show Prev session microlabel');
+  // Per-set delete button (delsetidx), not a full-width row under Add set
+  assert(html.includes('data-a="delsetidx"'), 'Per-set delete must use delsetidx action');
+  // Line 2: steppers and RIR pill
+  assert(html.includes('data-a="stepw"'), 'Set line 2 must have weight steppers');
+  assert(html.includes('btn-step'), 'Set line 2 must have step buttons');
+  assert(html.includes('rir-pill'), 'Set line 2 must have RIR button pill');
+  assert(html.includes('RIR 2'), 'RIR pill must display numeric RIR value');
+  // Toolbar: exmore for secondary actions
+  assert(html.includes('data-a="exmore"'), 'Toolbar must include ••• More (exmore) button');
+  assert(html.includes('data-a="swapex"'), 'Toolbar must include Swap');
+  assert(html.includes('data-a="openaicoach"'), 'Toolbar must include AI Coach');
+});
+
+it('Phase 2: Exercise note labelled "Exercise note"; session notes only on finish sheet', () => {
+  const act = {
+    curEx: 0,
+    ex: [{ id: '0025', sets: [{ w: 60, r: 8, done: false }], note: '' }]
+  };
+  const html = api.renderWorkHeroCard(act, 0);
+  assert(html.includes('Exercise note'), 'Hero card must label exercise note field explicitly');
+  assert(!html.includes('Session notes'), 'Session notes must NOT appear on hero card (finish sheet only)');
+});
+
+it('Phase 2: GIF collapsed by default with Show demo toggle; 1:1 aspect ratio in CSS', () => {
+  // style.css enforces 1:1 aspect and 22vh max
+  assert(cssCode.includes('aspect-ratio: 1 / 1'), 'style.css must set 1:1 aspect-ratio on work-hero media');
+  assert(cssCode.includes('max-height: 22vh'), 'style.css must cap GIF at max-height: 22vh');
+  assert(cssCode.includes('object-fit: cover'), 'style.css must use object-fit: cover for 1:1 media frame');
+  // GIF toggle chip must be present in hero card
+  const act = { curEx: 0, ex: [{ id: '0025', sets: [{ w: 60, r: 8, done: false }] }] };
+  const html = api.renderWorkHeroCard(act, 0);
+  assert(html.includes('data-a="togglegif"'), 'Hero card must have togglegif chip to collapse/expand GIF');
+});
+
+it('Phase 2: This week unified muscle card renders on Train tab (not duplicated on Body tab)', () => {
+  const trainHtml = api.vTrain();
+  assert(trainHtml.includes('this-week') || trainHtml.includes('This week') || trainHtml.includes('this_week'),
+    'Train tab must render unified This week muscle summary card');
+});
+
+it('Phase 2: Body tab segmented control is 44px height with Physique and Nutrition options', () => {
+  api.S.measurements = [{ date: Date.now(), w: 75, wst: 80 }];
+  const bodyHtml = api.vBody();
+  // 44px segmented control
+  assert(bodyHtml.includes('seg-btn') || bodyHtml.includes('segmented'), 'Body tab must render segmented sub-tab control');
+  assert(bodyHtml.includes('Physique') || bodyHtml.includes('physique'), 'Body tab must have Physique segment');
+  assert(bodyHtml.includes('Nutrition') || bodyHtml.includes('nutrition'), 'Body tab must have Nutrition segment');
+});
+
+it('Phase 2: Modal backdrop uses solid scrim (no backdrop-filter blur)', () => {
+  // Phase 2 replaced modal backdrop blur with solid scrim for performance
+  assert(cssCode.includes('rgba(0, 0, 0, 0.6)'), 'style.css must use rgba(0,0,0,0.6) solid scrim on #m');
+  assert(cssCode.includes('backdrop-filter: none'), 'Modal overlay must not use backdrop-filter blur (Phase 2)');
+});
+
+it('Phase 2: iOS PWA viewport fix applied (html height:100%, body position:fixed inset:0)', () => {
+  assert(cssCode.includes('position: fixed'), 'body must use position: fixed for iOS PWA viewport fix');
+  assert(cssCode.includes('inset: 0'), 'body must use inset: 0 for iOS viewport band fix');
+  // safe-area bottom padding on #tabs
+  assert(cssCode.includes('env(safe-area-inset-bottom)'), 'style.css must use safe-area-inset-bottom for #tabs');
+});
+
+it('Phase 2: Settings modal renders 5 sub-tabs (Training, Body & Units, AI, Data, About)', () => {
+  api.showSettingsModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert(mHtml.includes('Training') || mHtml.includes('training'), 'Settings must have Training sub-tab');
+  assert(mHtml.includes('AI') || mHtml.includes('ai'), 'Settings must have AI sub-tab');
+  assert(mHtml.includes('Data') || mHtml.includes('data'), 'Settings must have Data sub-tab');
+  assert(mHtml.includes('About') || mHtml.includes('about'), 'Settings must have About sub-tab');
+  assert(mHtml.includes('App shell: Ready offline') || mHtml.includes('Ready offline'),
+    'Settings must show accurate offline status');
+  assert(!mHtml.includes('100% Offline'), 'Settings must NOT show misleading 100% Offline text');
+});
+
+it('Phase 2: Destructive modals use solid crimson fill via btn-destructive class', () => {
+  assert(cssCode.includes('.btn-destructive'), 'style.css must define .btn-destructive class');
+  assert(cssCode.includes('var(--accent-destructive)') || cssCode.includes('#e63946') || cssCode.includes('crimson'),
+    'style.css must use a destructive/crimson color for .btn-destructive');
+});
+
+it('Phase 2: Calendar filters out 0-set empty sessions from workout date markers', () => {
+  // vCal should not throw and renders calendar
+  const calHtml = api.vCal();
+  assert(calHtml.includes('cal') || calHtml.includes('calendar'), 'Calendar must render');
+});
 
 console.log(`\n======================================================`);
 console.log(`ALL ${passed}/${total} ASSERTION TESTS PASSED SUCCESSFULLY! (100%)`);

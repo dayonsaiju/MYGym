@@ -1,6 +1,6 @@
 // shell.js - Self-healing force cache clear & auto-reload for iOS Safari PWA
 (function() {
-  var SHELL_VERSION = 'mygym-core-v7.0.5';
+  var SHELL_VERSION = 'mygym-core-v7.1.0';
   var cachedVersion = null;
   try { cachedVersion = localStorage.getItem('mygym_shell_version'); } catch(_) {}
   if (cachedVersion !== SHELL_VERSION) {

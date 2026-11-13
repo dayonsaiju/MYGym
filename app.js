@@ -46,6 +46,15 @@ html.raw = str => new SafeHTML(str ?? '');
 // ---- Global Diagnostics & System Error Logging ----
 if (typeof window !== 'undefined') {
   window._diagnosticsLogs = window._diagnosticsLogs || [];
+  try {
+    const vvH = window.visualViewport?.height ?? window.innerHeight;
+    const scH = window.screen?.height ?? window.innerHeight;
+    window._diagnosticsLogs.push({
+      type: 'viewport',
+      message: `Viewport initialized: visualViewport.height=${vvH}px, screen.height=${scH}px`,
+      timestamp: new Date().toISOString()
+    });
+  } catch (_) {}
   if (typeof window.addEventListener === 'function') {
     window.addEventListener('error', e => {
       try {
@@ -298,23 +307,36 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.0.5';
-const SHELL_VERSION = 'mygym-core-v7.0.5';
+const APP_VERSION = '7.1.0';
+const SHELL_VERSION = 'mygym-core-v7.1.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
 let swapQuery = '', swapCategory = 'All', swapIdx = 0;
 let bodyMetricView = 'both'; // 'both', 'weight', 'waist'
+let bodyShowRollingAvg = false;
 let bodySubTab = 'physique'; // 'physique', 'nutrition'
 let nutritionSelectedDate = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
   ? Calc.toLocalDateKey(new Date())
   : new Date().toISOString().slice(0, 10);
 let histQuery = '', histRoutine = 'All';
-let workGifCollapsed = false;
+let workGifCollapsed = true;
+let settingsSubTab = 'training';
 let lastRoutineSyncBackup = null;
 let _lastDeletedLog = null;
 let _lastDeletedRoutine = null;
 let _pendingBackupData = null;
+
+function formatStandardDate(d) {
+  if (!d) return '';
+  const dt = typeof d === 'number' ? new Date(d) : new Date(String(d).includes('T') ? d : d + 'T12:00:00');
+  if (Number.isNaN(dt.getTime())) return String(d);
+  const day = dt.getDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[dt.getMonth()];
+  const year = dt.getFullYear();
+  return `${day} ${month} ${year}`;
+}
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -3224,6 +3246,70 @@ function renderTrainingInsightsCard() {
   `;
 }
 
+function renderThisWeekMuscleCard(logs = S.logs) {
+  const freqs = (typeof Calc !== 'undefined' && Calc.calcWeeklyMuscleFrequency)
+    ? Calc.calcWeeklyMuscleFrequency(logs, Date.now(), S.cfg?.weekStartDay || 'mon', {}, X)
+    : calcWeeklyMuscleFrequency(logs);
+
+  const insights = (typeof Calc !== 'undefined' && Calc.calcTrainingInsights)
+    ? Calc.calcTrainingInsights(logs, S.routines, { getEx: X, weekStart: S.cfg?.weekStartDay || 'mon' })
+    : [];
+
+  return `
+    <div class="card this-week-card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <b style="font-size:15px">📊 This Week</b>
+        <span class="t2 sm">Target: 2x / 10–20 sets</span>
+      </div>
+
+      ${insights.length ? `
+        <div class="insights-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
+          ${insights.slice(0, 2).map(item => `
+            <div class="insight-item insight-${item.level || 'info'}" style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--c2);border:1px solid var(--bd)">
+              <span class="insight-icon" style="font-size:16px">${item.level === 'warning' ? '⚠️' : (item.level === 'tip' ? '💡' : 'ℹ️')}</span>
+              <div class="insight-content" style="flex:1">
+                ${item.title ? `<div class="insight-item-title" style="font-weight:700;font-size:12px;color:var(--tx)">${esc(item.title)}</div>` : ''}
+                <div class="insight-text" style="font-size:11px;color:var(--t2);line-height:1.4">${esc(item.message)}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+
+      <div class="this-week-list">
+        ${freqs.map(f => {
+          const sets = f.sets || 0;
+          const pct = Math.min(100, Math.round((sets / 20) * 100));
+          let stateLabel = 'Low';
+          let stateClass = 'low';
+          let barColor = 'var(--ac)';
+
+          if (sets >= 10 && sets <= 20) {
+            stateLabel = 'Good';
+            stateClass = 'good';
+            barColor = 'var(--gn)';
+          } else if (sets > 20) {
+            stateLabel = 'High';
+            stateClass = 'high';
+            barColor = 'var(--am)';
+          }
+
+          return `
+            <div class="this-week-row" data-a="musclebreakdown" data-muscle="${esc(f.muscleKey || f.muscle)}" title="Tap for exercise breakdown">
+              <span class="this-week-name">${esc(f.muscle)}</span>
+              <div class="this-week-track">
+                <div class="this-week-fill" style="width: ${pct}%; background: ${barColor}"></div>
+              </div>
+              <span class="this-week-sets">${sets} sets</span>
+              <span class="state-badge ${stateClass}">${stateLabel}</span>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
 // ---- Quick / Free Workout Builder ----
 const FREE_WORKOUT_TARGETS = ['Chest', 'Back', 'Shoulders', 'Quads', 'Hamstrings', 'Biceps', 'Triceps', 'Abs'];
 let freeWorkoutMuscles = ['Chest'];
@@ -3429,41 +3515,16 @@ const vTrain = () => {
     </div>
   `;
 
-  const pastWorkoutBannerHtml = `
-    <div class="card past-workout-banner" style="margin-bottom:12px;padding:12px 14px">
-      <div class="row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div>
-          <b style="font-size:14px">📅 Log Past / Missed Workout</b>
-          <div class="t2 sm" style="margin-top:2px">Forgot to log or worked out yesterday? Backdate a completed session.</div>
-        </div>
-        <button class="btn s sm-btn" data-a="openpastworkout" style="white-space:nowrap">+ Log Past / Missed Workout</button>
-      </div>
+  const trainHeaderHtml = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px;gap:8px;flex-wrap:wrap">
+      <h1 style="margin:0">Train</h1>
+      <button class="btn s sm-btn" data-a="openpastworkout" style="white-space:nowrap">+ Log Past / Missed Workout</button>
     </div>
   `;
 
-  const aiAssistantBannerHtml = `
-    <div class="card ai-assistant-banner" style="margin-bottom:12px;padding:12px 14px;background:linear-gradient(135deg, rgba(0, 122, 255, 0.1), rgba(88, 86, 214, 0.12));border:1px solid rgba(0, 122, 255, 0.25)">
-      <div class="row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:24px">🤖</span>
-          <div>
-            <b style="font-size:14px">MyGyM AI Assistant (BYOK)</b>
-            <div class="t2 sm" style="margin-top:2px">Import routines via AI or get real-time form cues & warm-up sets</div>
-          </div>
-        </div>
-        <div class="row g">
-          <button class="btn s sm-btn" data-a="openaiimport" style="white-space:nowrap">🪄 Import Workout</button>
-          <button class="btn sm-btn" data-a="openaicoach" style="white-space:nowrap">Ask Coach →</button>
-        </div>
-      </div>
-    </div>
-  `;
-
-  return viewHeader('Train') +
+  return trainHeaderHtml +
     renderStreakBadge() +
     resumeBannerHtml +
-    pastWorkoutBannerHtml +
-    aiAssistantBannerHtml +
 
     // Active Deload Banner at top (subtle & actionable if deload is ongoing)
     (S.deload && S.deload.active ? `
@@ -3479,7 +3540,7 @@ const vTrain = () => {
       </div>
     ` : '') +
 
-    // Today's Split Banner Prominently at Top (One-Tap Start)
+    // Priority 1: Today's Split Banner Prominently at Top (One-Tap Start)
     (todayRoutine ? `
       <div class="card today-split-hero">
         <div class="row">
@@ -3506,11 +3567,11 @@ const vTrain = () => {
       </div>
     ` : '')) +
 
-    // Smart Local Training Insights
-    renderTrainingInsightsCard() +
+    // Priority 2: Start Free Workout Card
+    freeWorkoutBannerHtml +
 
-    // Minimal Apple-style Weekly 2x Muscle Frequency Card
-    renderWeeklyMuscleFrequencyCard(S.logs) +
+    // Priority 3: Unified "This Week" Muscle & Insights Summary Card
+    renderThisWeekMuscleCard(S.logs) +
 
     // Recovery & Muscle Fatigue Insights (brought higher up)
     `<details class="card recovery-accordion" ${deloadInfo.recommended ? 'open' : ''}>
@@ -3624,9 +3685,6 @@ const vTrain = () => {
         </div>
       </div>
     </details>` +
-
-    // Free Workout Secondary Action Banner
-    freeWorkoutBannerHtml +
 
     // All Routines (De-cluttered Accordion)
     (S.routines.length ? `
@@ -4199,7 +4257,7 @@ function renderWorkHeroCard(a, curIdx) {
       <div class="work-hero-info">
         <div class="row" style="margin-bottom:4px">
           <div class="work-hero-title clickable-title" data-a="showexhistory" data-id="${esc(exInfo.id)}" style="cursor:pointer" title="View exercise history & analytics">${esc(exInfo.name)} <span class="history-icon" style="font-size:13px;opacity:0.8">📈</span></div>
-          <button class="chip gif-toggle-chip" data-a="togglegif" data-i="${curIdx}" style="font-size:11px;padding:2px 8px">${workGifCollapsed ? '👁️ Show Demo GIF' : 'Hide GIF'}</button>
+          <button class="chip gif-toggle-chip" data-a="togglegif" data-i="${curIdx}" style="font-size:11px;padding:2px 8px">${workGifCollapsed ? '👁️ Show demo' : 'Hide demo'}</button>
         </div>
         <div class="work-hero-tags">
           <span class="ex-badge ac">${esc(exInfo.g)}</span>
@@ -4212,6 +4270,7 @@ function renderWorkHeroCard(a, curIdx) {
           ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
           ${isDoubleProgReady ? `<button class="chip chip-suggestion" data-a="applysuggestion" data-i="${curIdx}" data-inc="2.5" title="Double Progression rep ceiling met! Tap to bump +2.5kg">⚡ +2.5kg suggested</button>` : ''}
           ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
+          <button class="chip" data-a="genwarmups" data-i="${curIdx}" title="Generate warm-up set progression">🔥 Warm-up</button>
           <button class="chip" data-a="setexrest" data-id="${esc(exInfo.id)}" title="Set custom rest timer for this exercise">⏱️ ${getExRest(exInfo.id)}s rest</button>
         </div>
       </div>
@@ -4221,7 +4280,7 @@ function renderWorkHeroCard(a, curIdx) {
         <div class="set-header-row" style="display:flex;justify-content:space-between;padding:0 8px 4px;font-size:11px;font-weight:600;color:var(--t2)">
           <span style="width:36px;text-align:center">Set</span>
           <span style="flex:1;padding-left:6px">${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? 'Duration (sec)' : 'Load &amp; Reps'}</span>
-          <span style="width:44px;text-align:center">${currentEx.uni ? 'L / R' : 'Done'}</span>
+          <span style="width:70px;text-align:right;padding-right:4px">${currentEx.uni ? 'L / R' : 'Done'}</span>
         </div>
         ${currentEx.sets.map((s, j) => {
           const prevS = prevEx?.sets?.[j];
@@ -4238,34 +4297,39 @@ function renderWorkHeroCard(a, curIdx) {
 
           const isFail = s.rir === 0 || s.rpe >= 10;
           const isSet = s.rir != null || (s.rpe != null && s.rpe !== '');
-          const rirText = s.rir != null ? (s.rir === 0 ? '0 💥' : (s.rir >= 3 ? '3+' : s.rir)) : (s.rpe != null && s.rpe !== '' ? (10 - +s.rpe) : 'RIR');
+          const rirValText = s.rir != null ? ('RIR ' + (s.rir === 0 ? '0 💥' : s.rir)) : (s.rpe != null && s.rpe !== '' ? ('RIR ' + (10 - +s.rpe)) : 'RIR —');
           const isSetDone = s.done || (currentEx.uni && s.sideL && s.sideR);
           const pr = isSetDone ? checkSetPR(currentEx.id, s, currentEx.uni) : null;
 
           return `<div class="set set-row${s.done ? ' d' : ''}" data-i="${curIdx}" data-j="${j}">
-            <!-- Line 1: Set Type + Num, Previous Microlabel, Done Action -->
-            <div class="set-line-header">
-              <div class="set-col set-col-num">
-                <button class="n set-num-badge set-type-btn set-type-${s.type ? s.type.toLowerCase() : 'normal'}" data-a="togglesettype" data-i="${curIdx}" data-j="${j}" title="Tap to toggle set type (Normal, Warm-up, Drop set, Failure, AMRAP)">
-                  ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${esc(pr.desc)}">🏆</span>` : ''}
-                </button>
+            <!-- Line 1: Set Type + Num, Previous Microlabel, Set Delete Action, Done Action -->
+            <div class="set-line-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <div class="set-col set-col-num">
+                  <button class="n set-num-badge set-type-btn set-type-${s.type ? s.type.toLowerCase() : 'normal'}" data-a="togglesettype" data-i="${curIdx}" data-j="${j}" title="Tap to toggle set type (Normal, Warm-up, Drop set, Failure, AMRAP)">
+                    ${s.type || (j + 1)}${pr ? `<span class="set-pr-badge" title="${esc(pr.desc)}">🏆</span>` : ''}
+                  </button>
+                </div>
+                <div class="set-prev-microlabel set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</div>
               </div>
-              <div class="set-prev-microlabel set-prev-cell" title="Prev session set ${j + 1}: ${prevText}">Prev: ${esc(prevText)}</div>
-              <div class="set-col set-col-done">
-                ${currentEx.uni ? `
-                  <div class="uni-ck-group">
-                    <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
-                    <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
-                  </div>
-                ` : `
-                  <button class="ck set-done-btn ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}" title="Mark Set Done" aria-label="Mark Set Done">${ic('chk', 20)}</button>
-                `}
+              <div style="display:flex;align-items:center;gap:6px;">
+                <button class="set-del-btn" data-a="delsetidx" data-i="${curIdx}" data-j="${j}" title="Delete set ${j + 1}" aria-label="Delete set">✕</button>
+                <div class="set-col set-col-done">
+                  ${currentEx.uni ? `
+                    <div class="uni-ck-group">
+                      <button class="uni-ck ${s.sideL ? 'd' : ''}" data-a="donel" data-i="${curIdx}" data-j="${j}" title="Left Side Complete">L ${s.sideL ? '✓' : ''}</button>
+                      <button class="uni-ck ${s.sideR ? 'd' : ''}" data-a="doner" data-i="${curIdx}" data-j="${j}" title="Right Side Complete">R ${s.sideR ? '✓' : ''}</button>
+                    </div>
+                  ` : `
+                    <button class="ck set-done-btn ${s.done ? 'd' : ''}" data-a="done" data-i="${curIdx}" data-j="${j}" title="Mark Set Done" aria-label="Mark Set Done">${ic('chk', 20)}</button>
+                  `}
+                </div>
               </div>
             </div>
 
-            <!-- Line 2: Weight Stepper Box x Reps Box -->
-            <div class="set-col set-col-main set-line-inputs">
-              <div class="set-inputs-row">
+            <!-- Line 2: Weight Stepper Box x Reps Box + RIR Button -->
+            <div class="set-col set-col-main set-line-inputs" style="margin-top:6px;">
+              <div class="set-inputs-row" style="display:flex;align-items:center;gap:6px;">
                 ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? `
                   <div class="set-input-box">
                     <input type="number" inputmode="numeric" data-f="r" data-i="${curIdx}" data-j="${j}" value="${s.r}" class="set-val-input" placeholder="0">
@@ -4285,7 +4349,7 @@ function renderWorkHeroCard(a, curIdx) {
                     <span class="set-unit">reps</span>
                   </div>
                 `}
-                <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve">${rirText}</button>
+                <button class="rir-pill ${isFail ? 'rir-fail' : (isSet ? 'rir-set' : '')}" data-a="openrir" data-i="${curIdx}" data-j="${j}" title="Reps In Reserve">${rirValText}</button>
               </div>
             </div>
           </div>`;
@@ -4294,14 +4358,12 @@ function renderWorkHeroCard(a, curIdx) {
 
       <div class="row g" style="margin-top:10px;flex-wrap:wrap">
         <button class="btn s" data-a="addset" data-i="${curIdx}">${ic('plus', 16)} Add set</button>
-        <button class="btn s sm-btn outline" data-a="genwarmups" data-i="${curIdx}" title="Generate 3 progressive warm-up sets">⚡ Warm-Up Sets</button>
-        <button class="btn s" data-a="delset" data-i="${curIdx}" ${currentEx.sets.length <= 1 ? 'disabled style="opacity:0.3"' : ''}>Delete set</button>
       </div>
-      <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
-      <details class="session-notes-collapsible" ${a.note ? 'open' : ''} style="margin-top:8px">
-        <summary style="font-size:12px;color:var(--t2);cursor:pointer;padding:4px 0">📝 Session Notes ${a.note ? '(active)' : ''}</summary>
-        <textarea class="note" placeholder="Overall workout notes for today's session..." data-f="session-note" rows="2" style="margin-top:4px">${esc(a.note || '')}</textarea>
-      </details>
+
+      <div class="form-group" style="margin-top:10px;">
+        <label class="t2 sm" style="display:block;margin-bottom:4px;font-weight:600">Exercise note</label>
+        <textarea class="note" placeholder="Exercise cues/notes (seat height, grip width, tempo)..." data-f="note" data-i="${curIdx}" rows="2">${esc(currentEx.note || '')}</textarea>
+      </div>
 
       <!-- Compact / Collapsible Exercise Demonstration GIF -->
       <div class="work-hero-media" data-a="zoomexgif" data-id="${esc(exInfo.id)}" ${workGifCollapsed ? 'style="display:none"' : ''} title="Tap to expand fullscreen demonstration">
@@ -4314,31 +4376,29 @@ function renderWorkHeroCard(a, curIdx) {
         <button class="chip" data-a="showexhistory" data-id="${esc(exInfo.id)}">📈 History</button>
         <button class="chip" data-a="openaicoach" data-p="Give me 3 critical form cues and execution tips for ${esc(exInfo.name)}">🤖 AI Coach</button>
         <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
-        <button class="chip" data-a="zoomexgif" data-id="${esc(exInfo.id)}">ℹ️ Form Cues</button>
         ${ssInfo.isSuperset && ssInfo.isPaired
           ? `<button class="chip on ss-chip" data-a="opensspicker" data-i="${curIdx}">⚡ ${ssInfo.typeLabel} [${ssInfo.label}]</button>`
           : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">🔗 Link Superset</button>`
         }
-        <button class="chip ${currentEx.uni ? 'on' : ''}" data-a="toggleuni" data-i="${curIdx}">${currentEx.uni ? '⚖️ Each Side' : '⇄ Unilateral'}</button>
-        <button class="chip chip-success" data-a="commit-finish" title="Directly finish and save today's session">🏆 Quick Finish</button>
-        <button class="chip chip-danger" data-a="removecursessionex" data-i="${curIdx}" title="Remove from today's workout without changing routine">✕ Remove from Today's Session</button>
+        <button class="chip" data-a="exmore" data-i="${curIdx}">••• More</button>
       </div>
     </div>
   `;
 }
 
 function renderWorkNavStepper(a, curIdx) {
+  const isLast = curIdx >= a.ex.length - 1;
   return `
     <div class="work-nav-stepper">
       <button class="btn s work-nav-btn" data-a="workprev" ${curIdx === 0 ? 'disabled style="opacity:0.3"' : ''}>
-        ‹ Prev Exercise
+        ‹ Previous
       </button>
-      <button class="btn s work-nav-btn" data-a="worklist">
-        ☰ Overview (${curIdx + 1}/${a.ex.length})
+      <button class="btn s work-nav-btn work-nav-counter" data-a="worklist">
+        ${curIdx + 1} of ${a.ex.length}
       </button>
-      ${curIdx === a.ex.length - 1
-        ? `<button class="btn work-nav-btn fin-step" data-a="promptfin">Finish Workout 🎉</button>`
-        : `<button class="btn work-nav-btn" data-a="worknext">Next Exercise ›</button>`
+      ${isLast
+        ? `<button class="btn work-nav-btn fin-step" data-a="promptfin">Finish Workout 🏆</button>`
+        : `<button class="btn work-nav-btn" data-a="worknext">Next ›</button>`
       }
     </div>
   `;
@@ -4746,13 +4806,13 @@ function vWork() {
 
   if (!a.ex || !a.ex.length) {
     return `<div class="work-top-bar">
-      <div class="work-title-group">
-        <div class="work-routine-name">${esc(a.name)}</div>
-        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
+      <div class="work-title-group" style="min-width:0;flex:1;">
+        <div class="work-routine-name" style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(a.name)}</div>
+        <div class="work-timer-badge" id="work-live-timer" style="font-size:11px;color:var(--t2);">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
       </div>
-      <div class="work-top-actions">
-        <button class="btn sm-btn chip-success" data-a="directsave" title="Emergency Direct Save: bypass confirmation and save immediately">⚡ Direct Save</button>
-        <button class="btn s sm-btn red" data-a="cancel">Discard</button>
+      <div class="work-top-actions" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        <button class="btn sm-btn frosted" data-a="openaicoach" aria-label="AI Coach" title="AI Coach">🤖 Coach</button>
+        <button class="btn sm-btn frosted" data-a="workmore" aria-label="Workout options" title="Workout options">•••</button>
       </div>
     </div>
     <div class="card" style="text-align:center;padding:32px 16px">
@@ -4775,16 +4835,13 @@ function vWork() {
 
   return `
     <div class="work-top-bar">
-      <div class="work-title-group">
-        <div class="work-routine-name">${esc(a.name)}</div>
-        <div class="work-timer-badge" id="work-live-timer">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
+      <div class="work-title-group" style="min-width:0;flex:1;">
+        <div class="work-routine-name" style="font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(a.name)}</div>
+        <div class="work-timer-badge" id="work-live-timer" style="font-size:11px;color:var(--t2);">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
       </div>
-      <div class="work-top-actions">
-        <button class="btn sm-btn frosted" data-a="openaicoach" title="Ask AI Coach for cues, warm-up sets, or substitutions">🤖 Coach</button>
-        <button class="gear-btn frosted sm" data-a="opensettings" aria-label="Settings" title="Settings">${ic('gear', 18)}</button>
-        <button class="btn sm-btn chip-success" data-a="directsave" title="Emergency Direct Save: bypass confirmation and save immediately">⚡ Direct Save</button>
-        <button class="btn sm-btn" data-a="promptfin">Finish</button>
-        <button class="btn s sm-btn red" data-a="promptcancel">✕</button>
+      <div class="work-top-actions" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
+        <button class="btn sm-btn frosted" data-a="openaicoach" aria-label="AI Coach" title="Ask AI Coach for cues, warm-up sets, or substitutions">🤖 Coach</button>
+        <button class="btn sm-btn frosted" data-a="workmore" aria-label="Workout options" title="Workout options">•••</button>
       </div>
     </div>
 
@@ -4821,7 +4878,7 @@ function vWork() {
 
     <div class="row g" style="margin-top:14px">
       <button class="btn s" data-a="addex">${ic('plus', 16)} Add Exercise</button>
-      <button class="btn s red" data-a="promptcancel">Discard Workout</button>
+      <button class="btn s btn-destructive" data-a="promptcancel">Discard Workout</button>
     </div>
   `;
 }
@@ -4911,8 +4968,13 @@ function vCal() {
   const prevMonthTotalDays = new Date(calYear, calMonth, 0).getDate();
   const monthName = new Date(calYear, calMonth, 1).toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  // Map of completed workout dates
-  const workoutDates = new Set(S.logs.map(l => new Date(l.date).toISOString().slice(0, 10)));
+  // Map of completed workout dates: only count sessions with >= 1 completed working set
+  const workoutDates = new Set(
+    (S.logs || []).filter(l => {
+      if (!l || !Array.isArray(l.ex)) return false;
+      return l.ex.some(x => Array.isArray(x.sets) && x.sets.some(s => s && (s.done || Number(s.r) > 0)));
+    }).map(l => new Date(l.date).toISOString().slice(0, 10))
+  );
   const todayStr = new Date().toISOString().slice(0, 10);
 
   // Calendar cells
@@ -4931,8 +4993,12 @@ function vCal() {
     cells.push(`<button class="cal-day ${isToday ? 'today' : ''} ${hasW ? 'has-w' : ''} ${isSel ? 'sel' : ''}" data-a="calsel" data-date="${esc(dateStr)}">${d}</button>`);
   }
 
-  // Workouts for selected date
-  const selLogs = S.logs.filter(l => new Date(l.date).toISOString().slice(0, 10) === calSelectedDate);
+  // Workouts for selected date (excluding 0-set empty logs)
+  const selLogs = S.logs.filter(l => {
+    if (new Date(l.date).toISOString().slice(0, 10) !== calSelectedDate) return false;
+    if (!l || !Array.isArray(l.ex)) return false;
+    return l.ex.some(x => Array.isArray(x.sets) && x.sets.some(s => s && (s.done || Number(s.r) > 0)));
+  });
   const selDateObj = new Date(calSelectedDate + 'T12:00:00');
   const selDateDay = selDateObj.getDay();
   const selDateDisplay = selDateObj.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
@@ -4955,36 +5021,17 @@ function vCal() {
         cells.join('') +
       `</div>` +
     `</div>` +
-    `<h2>Weekly Split Schedule (Mon - Sun)</h2>` +
-    `<div class="card" style="padding:4px 14px">` +
-      SPLIT_DAYS.map(dayIdx => {
-        const dayName = DAYS[dayIdx];
-        const assignedRid = S.sched ? (S.sched[dayIdx] || '') : '';
-        const isToday = todayDay === dayIdx;
-        const assignedRoutine = S.routines.find(r => r.id === assignedRid);
-        return `<div class="sched-day-row ${isToday ? 'today' : ''}">
-          <div class="sched-day-header">
-            <span class="sched-day-name">${dayName}</span>
-            ${isToday ? '<span class="today-chip">Today</span>' : ''}
-          </div>
-          <div class="sched-day-picker">
-            <select data-f="sched" data-day="${dayIdx}">
-              <option value="">🌿 Rest Day</option>
-              ${S.routines.map(r => `<option value="${esc(r.id)}" ${assignedRid === r.id ? 'selected' : ''}>${esc(r.name)} (${r.ex.length} ex)</option>`).join('')}
-            </select>
-          </div>
-          ${assignedRoutine && isToday && !S.act ? `<button class="btn s sched-start-btn" data-a="start" data-id="${esc(assignedRoutine.id)}">Start</button>` : ''}
-        </div>`;
-      }).join('') +
+
+    // Selected Date Workout Drilldown immediately beneath calendar grid
     `<div class="row" style="margin:16px 0 8px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">` +
       `<h2 style="margin:0">${esc(selDateDisplay)}</h2>` +
       `<button class="btn s sm-btn" data-a="openpastworkout" data-date="${esc(calSelectedDate)}">+ Log Past / Missed Workout</button>` +
     `</div>` +
     (selLogs.length ? selLogs.map(l => `
-      <div class="card" style="margin-bottom:10px">
+      <div class="card cal-drilldown-card" style="margin-bottom:10px">
         <div class="row" style="align-items:center;justify-content:space-between">
           <div>
-            <b>${esc(l.name)}</b>
+            <b style="font-size:15px">${esc(l.name)}</b>
             <div class="t2 sm">${Math.round(l.dur / 60000)} min · ${vol(l)} kg volume</div>
           </div>
           <div class="row g">
@@ -4992,8 +5039,19 @@ function vCal() {
             <button class="btn s sm-btn red" data-a="delpastlog" data-id="${esc(l.id || l.date)}" title="Delete workout">🗑️</button>
           </div>
         </div>
-        <div class="routine-summary-list" style="margin-top:6px">
-          ${l.ex.map(x => renderRoutineSummaryRow(x)).join('')}
+        <div class="routine-summary-list" style="margin-top:8px">
+          ${(l.ex || []).map(x => {
+            const info = X(x.id);
+            const doneSets = (x.sets || []).filter(s => s && (s.done || Number(s.r) > 0));
+            return `
+              <div class="routine-summary-row" style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+                <div style="font-weight:600;font-size:13px">${esc(info.name)}</div>
+                <div class="t2 sm" style="margin-top:2px">
+                  ${doneSets.length ? doneSets.map((s, idx) => `Set ${idx + 1}: ${s.w}kg × ${s.r}${s.rir != null ? ` @ RIR ${s.rir}` : ''}`).join(' · ') : 'No completed sets'}
+                </div>
+              </div>
+            `;
+          }).join('')}
         </div>
       </div>
     `).join('') : (scheduledRoutineForDate ? `
@@ -5016,7 +5074,42 @@ function vCal() {
         <p class="t2 sm">No workouts scheduled or logged for ${DAYS[selDateDay]}.</p>
         ${!S.act ? `<button class="btn s sm-btn" data-a="tab" data-k="train" style="margin-top:10px">Browse Routines</button>` : ''}
       </div>
-    `));
+    `)) +
+
+    // Weekly Split Schedule (Mon - Sun)
+    `<h2 style="margin-top:20px">Weekly Split Schedule (Mon - Sun)</h2>` +
+    `<div class="card" style="padding:4px 14px">` +
+      SPLIT_DAYS.map(dayIdx => {
+        const dayName = DAYS[dayIdx];
+        const assignedRid = S.sched ? (S.sched[dayIdx] || '') : '';
+        const isToday = todayDay === dayIdx;
+        const assignedRoutine = S.routines.find(r => r.id === assignedRid);
+        const routineName = assignedRoutine ? assignedRoutine.name : 'Rest Day';
+
+        let targetSummary = 'Scheduled rest & recovery';
+        if (assignedRoutine && Array.isArray(assignedRoutine.ex)) {
+          const muscles = [...new Set(assignedRoutine.ex.map(x => X(x.id)?.g).filter(Boolean))];
+          targetSummary = muscles.length ? muscles.join(' · ') : `${assignedRoutine.ex.length} exercises`;
+        }
+
+        return `<div class="sched-day-row ${isToday ? 'today' : ''}" style="padding:10px 0;border-bottom:1px solid var(--bd)">
+          <div class="sched-day-line-1">
+            <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+              <b style="font-size:14px">${dayName}</b>
+              ${targetSummary && targetSummary !== 'Scheduled rest & recovery' ? `<span class="t2 sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">(${esc(targetSummary)})</span>` : ''}
+            </div>
+            ${isToday ? '<span class="today-chip" style="font-weight:700;padding:2px 8px;border-radius:6px;background:var(--ac);color:#fff;flex-shrink:0;">TODAY</span>' : ''}
+          </div>
+          <div class="sched-day-line-2" style="margin-top:6px;">
+            <select data-f="sched" data-day="${dayIdx}" style="flex:1;width:100%;min-width:0;font-size:13px;padding:6px 10px;border-radius:8px;background:var(--c2);color:var(--tx);border:1px solid var(--bd);">
+              <option value="">🌿 Rest Day</option>
+              ${S.routines.map(r => `<option value="${esc(r.id)}" ${assignedRid === r.id ? 'selected' : ''}>${esc(r.name)}</option>`).join('')}
+            </select>
+            ${assignedRoutine && isToday && !S.act ? `<button class="btn s sched-start-btn" data-a="start" data-id="${esc(assignedRoutine.id)}" style="flex-shrink:0;">Start</button>` : ''}
+          </div>
+        </div>`;
+      }).join('') +
+    `</div>`;
 }
 
 // =============================================================================
@@ -6414,10 +6507,15 @@ function applyMacroPreset(type) {
 
 function vBody() {
   const p = getPhysiqueState();
+  const subtabs = [
+    { id: 'physique', label: '⚡ Physique' },
+    { id: 'nutrition', label: '🥗 Nutrition' }
+  ];
   const subtabHeader = `
-    <div class="segmented-control" style="margin:6px 0 14px">
-      <button class="seg-btn ${bodySubTab === 'physique' ? 'active' : ''}" data-a="body-subtab" data-tab="physique">⚡ Physique & Roadmap</button>
-      <button class="seg-btn ${bodySubTab === 'nutrition' ? 'active' : ''}" data-a="body-subtab" data-tab="nutrition">🥗 Daily Nutrition</button>
+    <div class="segmented-control" style="margin:6px 0 14px;display:flex;width:100%;">
+      ${subtabs.map(st => `
+        <button class="seg-btn ${bodySubTab === st.id ? 'active' : ''}" data-a="body-subtab" data-tab="${st.id}">${st.label}</button>
+      `).join('')}
     </div>
   `;
 
@@ -6425,8 +6523,6 @@ function vBody() {
     return viewHeader('Body & Nutrition') + subtabHeader + renderNutritionDashboard();
   }
 
-  const nutritionPreviewHtml = renderNutritionPreviewCard();
-  const roadmapHtml = renderTransformationRoadmapCard();
   const sorted = [...S.weights].sort((a, b) => a.t - b.t);
   const weightsArr = sorted.filter(x => x.w != null && x.w > 0).map(x => x.w);
   const waistsArr = sorted.filter(x => x.waist != null && x.waist > 0).map(x => x.waist);
@@ -6451,7 +6547,7 @@ function vBody() {
 
   // Build SVG Chart
   let chartSvg = '';
-  const W = 340, H = 180, pad = 28;
+  const W = 340, H = 190, pad = 30;
 
   if (bodyMetricView === 'weight') {
     const wEntries = sorted.filter(x => x.w != null && x.w > 0);
@@ -6459,10 +6555,21 @@ function vBody() {
       const rangeW = (maxW - minW) || 1;
       const getX = (i, total) => pad + (i / (total - 1)) * (W - 2 * pad);
       const getY = val => H - pad - ((val - minW) / rangeW) * (H - 2 * pad);
+      const midW = (minW + maxW) / 2;
 
       const points = wEntries.map((d, i) => `${getX(i, wEntries.length)},${getY(d.w)}`);
       const pathD = `M ` + points.join(' L ');
       const areaD = `${pathD} L ${getX(wEntries.length - 1, wEntries.length)},${H - pad} L ${pad},${H - pad} Z`;
+
+      let rollingPathD = '';
+      if (bodyShowRollingAvg && typeof Calc !== 'undefined' && Calc.calcRollingAverage) {
+        const rollVals = Calc.calcRollingAverage(wEntries, 7, 'w');
+        const rollPoints = rollVals.map((v, i) => `${getX(i, rollVals.length)},${getY(v)}`);
+        rollingPathD = `M ` + rollPoints.join(' L ');
+      }
+
+      const firstDate = formatStandardDate(wEntries[0].date).slice(0, 6);
+      const lastDate = formatStandardDate(wEntries.at(-1).date).slice(0, 6);
 
       chartSvg = `
         <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
@@ -6472,12 +6579,17 @@ function vBody() {
               <stop offset="100%" stop-color="#0A84FF" stop-opacity="0.0"/>
             </linearGradient>
           </defs>
-          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
           <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
           <text x="${pad}" y="${pad - 8}" fill="var(--t2)" font-size="10">${maxW.toFixed(1)} kg</text>
+          <line x1="${pad}" y1="${(H - 2 * pad) / 2 + pad}" x2="${W - pad}" y2="${(H - 2 * pad) / 2 + pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="2 4"/>
+          <text x="${pad}" y="${(H - 2 * pad) / 2 + pad - 4}" fill="var(--t3)" font-size="9">${midW.toFixed(1)} kg</text>
+          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
           <text x="${pad}" y="${H - pad + 16}" fill="var(--t2)" font-size="10">${minW.toFixed(1)} kg</text>
+          <text x="${pad}" y="${H - 4}" fill="var(--t3)" font-size="9">${firstDate}</text>
+          <text x="${W - pad}" y="${H - 4}" fill="var(--t3)" font-size="9" text-anchor="end">${lastDate}</text>
           <path d="${areaD}" fill="url(#wg)"/>
           <path d="${pathD}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round"/>
+          ${rollingPathD ? `<path d="${rollingPathD}" fill="none" stroke="#FF9F0A" stroke-width="2" stroke-dasharray="4 4"/>` : ''}
           ${wEntries.map((d, i) => `<circle cx="${getX(i, wEntries.length)}" cy="${getY(d.w)}" r="3.5" fill="#FFFFFF" stroke="var(--ac)" stroke-width="2"/>`).join('')}
         </svg>
       `;
@@ -6488,10 +6600,14 @@ function vBody() {
       const rangeWaist = (maxWaist - minWaist) || 1;
       const getX = (i, total) => pad + (i / (total - 1)) * (W - 2 * pad);
       const getY = val => H - pad - ((val - minWaist) / rangeWaist) * (H - 2 * pad);
+      const midWaist = (minWaist + maxWaist) / 2;
 
       const points = waistEntries.map((d, i) => `${getX(i, waistEntries.length)},${getY(d.waist)}`);
       const pathD = `M ` + points.join(' L ');
       const areaD = `${pathD} L ${getX(waistEntries.length - 1, waistEntries.length)},${H - pad} L ${pad},${H - pad} Z`;
+
+      const firstDate = formatStandardDate(waistEntries[0].date).slice(0, 6);
+      const lastDate = formatStandardDate(waistEntries.at(-1).date).slice(0, 6);
 
       chartSvg = `
         <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
@@ -6501,10 +6617,14 @@ function vBody() {
               <stop offset="100%" stop-color="#30D158" stop-opacity="0.0"/>
             </linearGradient>
           </defs>
-          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
           <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
           <text x="${pad}" y="${pad - 8}" fill="var(--t2)" font-size="10">${maxWaist.toFixed(1)} cm</text>
+          <line x1="${pad}" y1="${(H - 2 * pad) / 2 + pad}" x2="${W - pad}" y2="${(H - 2 * pad) / 2 + pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="2 4"/>
+          <text x="${pad}" y="${(H - 2 * pad) / 2 + pad - 4}" fill="var(--t3)" font-size="9">${midWaist.toFixed(1)} cm</text>
+          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
           <text x="${pad}" y="${H - pad + 16}" fill="var(--t2)" font-size="10">${minWaist.toFixed(1)} cm</text>
+          <text x="${pad}" y="${H - 4}" fill="var(--t3)" font-size="9">${firstDate}</text>
+          <text x="${W - pad}" y="${H - 4}" fill="var(--t3)" font-size="9" text-anchor="end">${lastDate}</text>
           <path d="${areaD}" fill="url(#waistg)"/>
           <path d="${pathD}" fill="none" stroke="var(--gn)" stroke-width="2.5" stroke-linecap="round"/>
           ${waistEntries.map((d, i) => `<circle cx="${getX(i, waistEntries.length)}" cy="${getY(d.waist)}" r="3.5" fill="#FFFFFF" stroke="var(--gn)" stroke-width="2"/>`).join('')}
@@ -6536,14 +6656,33 @@ function vBody() {
       const wPath = wPoints.length >= 2 ? `M ` + wPoints.map(p => `${p.x},${p.y}`).join(' L ') : '';
       const waistPath = waistPoints.length >= 2 ? `M ` + waistPoints.map(p => `${p.x},${p.y}`).join(' L ') : '';
 
+      let rollingPathD = '';
+      if (bodyShowRollingAvg && typeof Calc !== 'undefined' && Calc.calcRollingAverage) {
+        const wEntries = sorted.filter(x => x.w != null && x.w > 0);
+        const rollVals = Calc.calcRollingAverage(wEntries, 7, 'w');
+        const rollPoints = rollVals.map((v, i) => {
+          const x = getX(i, rollVals.length);
+          const y = H - pad - ((v - minW) / rangeW) * (H - 2 * pad);
+          return `${x},${y}`;
+        });
+        rollingPathD = `M ` + rollPoints.join(' L ');
+      }
+
+      const firstDate = formatStandardDate(sorted[0].date).slice(0, 6);
+      const lastDate = formatStandardDate(sorted.at(-1).date).slice(0, 6);
+
       chartSvg = `
         <svg class="svg-chart" viewBox="0 0 ${W} ${H}">
-          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
           <line x1="${pad}" y1="${pad}" x2="${W - pad}" y2="${pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="4"/>
           <text x="${pad}" y="${pad - 8}" fill="var(--ac)" font-size="10">Weight: ${maxW ? maxW.toFixed(1) + 'kg' : ''}</text>
           <text x="${W - pad}" y="${pad - 8}" fill="var(--gn)" font-size="10" text-anchor="end">Waist: ${maxWaist ? maxWaist.toFixed(1) + 'cm' : ''}</text>
+          <line x1="${pad}" y1="${(H - 2 * pad) / 2 + pad}" x2="${W - pad}" y2="${(H - 2 * pad) / 2 + pad}" stroke="var(--bd)" stroke-width="0.5" stroke-dasharray="2 4"/>
+          <line x1="${pad}" y1="${H - pad}" x2="${W - pad}" y2="${H - pad}" stroke="var(--bd)" stroke-width="1"/>
+          <text x="${pad}" y="${H - 4}" fill="var(--t3)" font-size="9">${firstDate}</text>
+          <text x="${W - pad}" y="${H - 4}" fill="var(--t3)" font-size="9" text-anchor="end">${lastDate}</text>
           ${wPath ? `<path d="${wPath}" fill="none" stroke="var(--ac)" stroke-width="2.5" stroke-linecap="round"/>` : ''}
           ${waistPath ? `<path d="${waistPath}" fill="none" stroke="var(--gn)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="3 3"/>` : ''}
+          ${rollingPathD ? `<path d="${rollingPathD}" fill="none" stroke="#FF9F0A" stroke-width="2" stroke-dasharray="4 4"/>` : ''}
           ${wPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="#FFFFFF" stroke="var(--ac)" stroke-width="2"/>`).join('')}
           ${waistPoints.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3.5" fill="#FFFFFF" stroke="var(--gn)" stroke-width="2"/>`).join('')}
         </svg>
@@ -6553,17 +6692,10 @@ function vBody() {
 
   const netWeightClass = diffW != null ? (isBulk ? (diffW > 0 ? 'text-green' : (diffW < 0 ? 'text-orange' : '')) : (diffW < 0 ? 'text-green' : (diffW > 0 ? 'text-orange' : ''))) : '';
 
-  const weeklyFreqs = (typeof Calc !== 'undefined' && Calc.calcWeeklyMuscleFrequency)
-    ? Calc.calcWeeklyMuscleFrequency(S.logs, Date.now(), S.cfg?.weekStartDay || 'mon', {}, X)
-    : calcWeeklyMuscleFrequency(S.logs);
-
   return viewHeader('Body & Nutrition') +
     subtabHeader +
-    nutritionPreviewHtml +
-    roadmapHtml +
+    renderTransformationRoadmapCard() +
     renderAchievementsCard(S.logs) +
-    renderWeeklyMuscleFrequencyCard(S.logs) +
-    renderVolumeRadarChart(weeklyFreqs) +
     `<h2>Measurement Trends</h2>` +
     `<div class="stat-grid">` +
       `<div class="stat-box"><div class="stat-val">${latestW != null ? latestW.toFixed(1) + ' kg' : '--'}</div><div class="stat-lbl">Weight</div></div>` +
@@ -6573,16 +6705,23 @@ function vBody() {
     `</div>` +
     `<div class="card">` +
       `<div class="row"><b>Trend Chart</b></div>` +
-      `<div class="chips chart-toggle-chips">` +
-        `<button class="chip ${bodyMetricView === 'both' ? 'on' : ''}" data-a="setwv" data-v="both">Both (Overlay)</button>` +
-        `<button class="chip ${bodyMetricView === 'weight' ? 'on' : ''}" data-a="setwv" data-v="weight">Weight (kg)</button>` +
-        `<button class="chip ${bodyMetricView === 'waist' ? 'on' : ''}" data-a="setwv" data-v="waist">Waist (cm)</button>` +
+      `<div class="chips chart-toggle-chips" style="margin-bottom:8px">` +
+        `<button class="chip ${bodyMetricView === 'both' ? 'on' : ''}" data-a="setwv" data-v="both">Both</button>` +
+        `<button class="chip ${bodyMetricView === 'weight' ? 'on' : ''}" data-a="setwv" data-v="weight">Weight</button>` +
+        `<button class="chip ${bodyMetricView === 'waist' ? 'on' : ''}" data-a="setwv" data-v="waist">Waist</button>` +
+        `<button class="chip ${bodyShowRollingAvg ? 'on' : ''}" data-a="toggle-rolling-avg">7-day Avg</button>` +
       `</div>` +
       `<div class="dual-chart-legend">` +
         `<span class="legend-item"><span class="legend-dot w"></span> Weight (${latestW != null ? latestW.toFixed(1) + ' kg' : '--'})</span>` +
         `<span class="legend-item"><span class="legend-dot waist"></span> Waist (${latestWaist != null ? latestWaist.toFixed(1) + ' cm' : '--'})</span>` +
+        `${bodyShowRollingAvg ? '<span class="legend-item"><span class="legend-dot" style="background:#FF9F0A"></span> 7-day Avg</span>' : ''}` +
       `</div>` +
       (chartSvg || '<p class="t2 sm" style="margin:20px 0;text-align:center">Log at least 2 entries to display trend chart.</p>') +
+    `</div>` +
+    `<div class="card" style="padding:14px;margin-top:12px;text-align:center;">` +
+      `<h3 style="margin:0 0 6px">3D Anatomical Avatar 🧍</h3>` +
+      `<p class="t2 sm" style="margin-bottom:12px">Interactive procedural 3D anatomy model rendering muscle volume and physique progression.</p>` +
+      `<button class="btn s sm-btn" data-a="open-3d-anatomy" data-p="chest,quads,back" data-s="delts,biceps,triceps">Launch 3D Anatomy 📐</button>` +
     `</div>` +
     `<h2>Log Measurements</h2>` +
     `<div class="card">` +
@@ -6638,19 +6777,19 @@ function vBody() {
         }
 
         return `
-          <div class="weight-row">
+          <div class="weight-row" style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--bd);">
             <div>
-              <div class="weight-val">
+              <div class="weight-val" style="font-weight:700;font-size:15px">
                 ${item.w != null ? `${Number(item.w).toFixed(1)} kg` : ''}
                 ${item.w != null && item.waist != null ? ' · ' : ''}
                 ${item.waist != null ? `<span style="color:var(--gn)">${Number(item.waist).toFixed(1)} cm</span>` : ''}
               </div>
-              <div class="t2 sm">${esc(item.date)}</div>
+              <div class="t2 sm">${esc(formatStandardDate(item.date))}</div>
             </div>
-            <div class="row" style="gap:6px">
+            <div class="row" style="gap:8px;align-items:center">
               ${diffWHtml}
               ${diffWaistHtml}
-              <button class="x" data-a="delweight" data-id="${esc(item.id)}">${ic('trash', 18)}</button>
+              <button class="set-del-btn" data-a="delweight" data-id="${esc(item.id)}" title="Delete entry" aria-label="Delete entry">✕</button>
             </div>
           </div>
         `;
@@ -6773,13 +6912,20 @@ function render() {
     }
   }
 
-  $('#tabs').innerHTML = [
-    ['train', 'act', 'Train'],
-    ['lib', 'list', 'Library'],
-    ['cal', 'cal', 'Calendar'],
-    ['weight', 'weight', 'Body'],
-    ['hist', 'clock', 'History']
-  ].map(([k, i, t]) => `<button data-a="tab" data-k="${k}" class="${view === k || (view === 'work' && k === 'train') ? 'on' : ''}">${ic(i)}<span>${t}</span></button>`).join('');
+  const tabs = $('#tabs');
+  if (tabs) {
+    tabs.style.display = view === 'work' ? 'none' : 'flex';
+    tabs.innerHTML = [
+      ['train', 'act', 'Train'],
+      ['lib', 'list', 'Library'],
+      ['cal', 'cal', 'Calendar'],
+      ['weight', 'weight', 'Body'],
+      ['hist', 'clock', 'History']
+    ].map(([k, i, t]) => `<button data-a="tab" data-k="${k}" class="${view === k || (view === 'work' && k === 'train') ? 'on' : ''}">${ic(i)}<span>${t}</span></button>`).join('');
+  }
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.toggle('workout-active', view === 'work');
+  }
 }
 
 // ---- Science Jargon Micro-Sheets ----
@@ -7738,202 +7884,233 @@ function showSettingsModal() {
   modal(`
     <h2>Settings ⚙️</h2>
     <div class="settings-modal-content">
-      <div class="settings-section">
-        <div class="settings-section-title">App Preferences</div>
-        <div class="card settings-card">
-          <label class="settings-row">
-            <span class="settings-label">Rest Timer Chime & Sound</span>
-            <input type="checkbox" data-c="sound" ${S.cfg.sound !== false ? 'checked' : ''}>
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Haptic Vibration</span>
-            <input type="checkbox" data-c="vibrate" ${S.cfg.vibrate !== false ? 'checked' : ''}>
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Default Rest Interval</span>
-            <select class="settings-select" data-c="rest">
-              <option value="30" ${S.cfg.rest === 30 ? 'selected' : ''}>30 sec</option>
-              <option value="45" ${S.cfg.rest === 45 ? 'selected' : ''}>45 sec</option>
-              <option value="60" ${S.cfg.rest === 60 ? 'selected' : ''}>60 sec</option>
-              <option value="90" ${S.cfg.rest === 90 ? 'selected' : ''}>90 sec (Default)</option>
-              <option value="120" ${S.cfg.rest === 120 ? 'selected' : ''}>2 min</option>
-              <option value="180" ${S.cfg.rest === 180 ? 'selected' : ''}>3 min</option>
-              <option value="240" ${S.cfg.rest === 240 ? 'selected' : ''}>4 min</option>
-              <option value="300" ${S.cfg.rest === 300 ? 'selected' : ''}>5 min</option>
-            </select>
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Flash Screen on Rest End</span>
-            <input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}>
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Default Weight Increment (kg)</span>
-            <input type="number" inputmode="decimal" step="0.5" class="settings-input-num" data-c="inc" value="${S.cfg.inc || 2.5}">
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Anatomical Model</span>
-            <select class="settings-select" data-c="bodyModel">
-              <option value="male" ${S.cfg.bodyModel !== 'female' ? 'selected' : ''}>Male Silhouette</option>
-              <option value="female" ${S.cfg.bodyModel === 'female' ? 'selected' : ''}>Female Silhouette</option>
-            </select>
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Dumbbell Volume Mode</span>
-            <select class="settings-select" data-c="dumbbellWeightMode">
-              <option value="per_hand" ${S.cfg.dumbbellWeightMode !== 'as_logged' ? 'selected' : ''}>Per Hand (×2 volume) [Recommended]</option>
-              <option value="as_logged" ${S.cfg.dumbbellWeightMode === 'as_logged' ? 'selected' : ''}>As Logged (Total Weight)</option>
-            </select>
-          </label>
-          <div class="settings-divider"></div>
-          <label class="settings-row">
-            <span class="settings-label">Week Start Day</span>
-            <select class="settings-select" data-c="weekStartDay">
-              <option value="mon" ${S.cfg.weekStartDay !== 'sun' ? 'selected' : ''}>Monday (00:00)</option>
-              <option value="sun" ${S.cfg.weekStartDay === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
-            </select>
-          </label>
-        </div>
+      <div class="settings-nav">
+        <button class="settings-nav-btn ${settingsSubTab === 'training' ? 'active' : ''}" data-a="settings-subtab" data-tab="training">Training</button>
+        <button class="settings-nav-btn ${settingsSubTab === 'body' ? 'active' : ''}" data-a="settings-subtab" data-tab="body">Body &amp; Units</button>
+        <button class="settings-nav-btn ${settingsSubTab === 'ai' ? 'active' : ''}" data-a="settings-subtab" data-tab="ai">AI</button>
+        <button class="settings-nav-btn ${settingsSubTab === 'data' ? 'active' : ''}" data-a="settings-subtab" data-tab="data">Data</button>
+        <button class="settings-nav-btn ${settingsSubTab === 'about' ? 'active' : ''}" data-a="settings-subtab" data-tab="about">About</button>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-title">AI Engine Setup (BYOK) 🤖</div>
-        <div class="card settings-card">
-          <div style="padding:10px 0 6px">
-            <div class="t2 sm" style="margin-bottom:12px;line-height:1.4">
-              Bring Your Own Key (BYOK) for smart workout importing and real-time AI coaching. Keys are stored <b>strictly in ${aiSettings.rememberKey !== false ? 'localStorage' : 'sessionStorage'} on this device</b> and connect directly to the provider. Zero backend proxies.
-            </div>
-
-            <label class="settings-row" style="margin-bottom:8px">
-              <span class="settings-label">AI Provider</span>
-              <select class="settings-select" id="ai-provider-select" data-f="ai-provider">
-                <option value="auto" ${savedProv === 'auto' ? 'selected' : ''}>Auto-Detect from Key</option>
-                <option value="groq" ${savedProv === 'groq' ? 'selected' : ''}>Groq (Free &amp; Ultra-Fast)</option>
-                <option value="openai" ${savedProv === 'openai' ? 'selected' : ''}>OpenAI (ChatGPT)</option>
-                <option value="openrouter" ${savedProv === 'openrouter' ? 'selected' : ''}>OpenRouter (Free Tier)</option>
-                <option value="gemini" ${savedProv === 'gemini' ? 'selected' : ''}>Google Gemini</option>
-                <option value="custom" ${savedProv === 'custom' ? 'selected' : ''}>Custom / OpenAI-Compatible</option>
+      <!-- Panel: Training -->
+      <div class="settings-panel" id="settings-panel-training" style="${settingsSubTab === 'training' ? '' : 'display:none;'}">
+        <div class="settings-section">
+          <div class="settings-section-title">Training Preferences</div>
+          <div class="card settings-card">
+            <label class="settings-row">
+              <span class="settings-label">Rest timer chime &amp; sound</span>
+              <input type="checkbox" data-c="sound" ${S.cfg.sound !== false ? 'checked' : ''}>
+            </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Haptic vibration</span>
+              <input type="checkbox" data-c="vibrate" ${S.cfg.vibrate !== false ? 'checked' : ''}>
+            </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Default rest interval</span>
+              <select class="settings-select" data-c="rest">
+                <option value="30" ${S.cfg.rest === 30 ? 'selected' : ''}>30 sec</option>
+                <option value="45" ${S.cfg.rest === 45 ? 'selected' : ''}>45 sec</option>
+                <option value="60" ${S.cfg.rest === 60 ? 'selected' : ''}>60 sec</option>
+                <option value="90" ${S.cfg.rest === 90 ? 'selected' : ''}>90 sec (Default)</option>
+                <option value="120" ${S.cfg.rest === 120 ? 'selected' : ''}>2 min</option>
+                <option value="180" ${S.cfg.rest === 180 ? 'selected' : ''}>3 min</option>
+                <option value="240" ${S.cfg.rest === 240 ? 'selected' : ''}>4 min</option>
+                <option value="300" ${S.cfg.rest === 300 ? 'selected' : ''}>5 min</option>
               </select>
             </label>
-
-            <div id="ai-standard-model-row" class="settings-row" style="margin-bottom:8px;${savedProv === 'custom' ? 'display:none' : 'display:flex'};align-items:center;gap:8px">
-              <span class="settings-label" style="flex:0 0 auto">Model</span>
-              <select class="settings-select" id="ai-model-select" data-f="ai-model" style="flex:1">
-                ${renderAIModelOptions(savedProv, savedModel)}
-              </select>
-              <button class="chip" id="ai-refresh-models-btn" data-a="refresh-ai-models" style="flex:0 0 auto;font-size:11px;padding:4px 8px">🔄 Refresh</button>
-            </div>
-
-            <div id="ai-custom-fields" style="${savedProv === 'custom' ? 'display:block' : 'display:none'};margin-top:4px">
-              <div class="settings-divider"></div>
-              <label class="settings-row" style="margin-bottom:8px">
-                <span class="settings-label">Base URL</span>
-                <input type="text" id="ai-baseurl-input" data-id="ai-base-url-input" class="txt ai-base-url-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="https://api.deepseek.com/v1" value="${esc(savedBaseUrl)}">
-              </label>
-              <label class="settings-row" style="margin-bottom:8px">
-                <span class="settings-label">Model Name</span>
-                <input type="text" id="ai-custom-model-input" data-id="ai-custom-model-input" class="txt ai-custom-model-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc((aiSettings.models && aiSettings.models.custom) || '')}">
-              </label>
-            </div>
-
             <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Flash screen on rest end</span>
+              <input type="checkbox" data-c="flash" ${S.cfg.flash ? 'checked' : ''}>
+            </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Default weight increment (kg)</span>
+              <input type="number" inputmode="decimal" step="0.5" class="settings-input-num" data-c="inc" value="${S.cfg.inc || 2.5}">
+            </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Dumbbell volume mode</span>
+              <select class="settings-select" data-c="dumbbellWeightMode">
+                <option value="per_hand" ${S.cfg.dumbbellWeightMode !== 'as_logged' ? 'selected' : ''}>Per hand (×2 volume) [Recommended]</option>
+                <option value="as_logged" ${S.cfg.dumbbellWeightMode === 'as_logged' ? 'selected' : ''}>As logged (total load)</option>
+              </select>
+            </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Week start day</span>
+              <select class="settings-select" data-c="weekStartDay">
+                <option value="mon" ${S.cfg.weekStartDay !== 'sun' ? 'selected' : ''}>Monday (00:00)</option>
+                <option value="sun" ${S.cfg.weekStartDay === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
 
-            <div style="margin:10px 0">
-              <div class="row" style="justify-content:space-between;margin-bottom:6px">
-                <span class="settings-label">API Key</span>
-                <div class="row" style="gap:6px;align-items:center">
-                  <span id="ai-detected-pill" class="chip" style="font-size:10px;padding:2px 8px;display:${detectedKeyInfo ? 'inline-block' : 'none'};color:var(--gn);background:rgba(48,209,88,0.15)">${detectedKeyInfo ? '⚡ ' + esc(detectedKeyInfo.name) : ''}</span>
-                  <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle View</button>
-                </div>
+      <!-- Panel: Body & Units -->
+      <div class="settings-panel" id="settings-panel-body" style="${settingsSubTab === 'body' ? '' : 'display:none;'}">
+        <div class="settings-section">
+          <div class="settings-section-title">Body &amp; Anatomical Preferences</div>
+          <div class="card settings-card">
+            <label class="settings-row">
+              <span class="settings-label">Anatomical model</span>
+              <select class="settings-select" data-c="bodyModel">
+                <option value="male" ${S.cfg.bodyModel !== 'female' ? 'selected' : ''}>Male Silhouette</option>
+                <option value="female" ${S.cfg.bodyModel === 'female' ? 'selected' : ''}>Female Silhouette</option>
+              </select>
+            </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Measurement unit</span>
+              <select class="settings-select" data-c="units">
+                <option value="kg" ${S.cfg.units !== 'lbs' ? 'selected' : ''}>Metric (kg, cm)</option>
+                <option value="lbs" ${S.cfg.units === 'lbs' ? 'selected' : ''}>Imperial (lbs, in)</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel: AI -->
+      <div class="settings-panel" id="settings-panel-ai" style="${settingsSubTab === 'ai' ? '' : 'display:none;'}">
+        <div class="settings-section">
+          <div class="settings-section-title">AI Engine Setup (BYOK) 🤖</div>
+          <div class="card settings-card">
+            <div style="padding:10px 0 6px">
+              <div class="t2 sm" style="margin-bottom:12px;line-height:1.4">
+                Bring Your Own Key (BYOK) for smart workout importing and real-time AI coaching. Keys are stored <b>strictly in ${aiSettings.rememberKey !== false ? 'localStorage' : 'sessionStorage'} on this device</b> and connect directly to the provider. Zero backend proxies.
               </div>
-              <input type="password" id="ai-key-input" data-id="ai-api-key-input" class="txt ai-api-key-input" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
-              <label class="row" style="margin-top:8px;gap:8px;align-items:center;cursor:pointer">
-                <input type="checkbox" id="ai-remember-key-toggle" ${aiSettings.rememberKey !== false ? 'checked' : ''}>
-                <span class="t2 sm" style="font-size:12px">Remember key on this device (stores in localStorage)</span>
+
+              <label class="settings-row" style="margin-bottom:8px">
+                <span class="settings-label">AI provider</span>
+                <select class="settings-select" id="ai-provider-select" data-f="ai-provider">
+                  <option value="auto" ${savedProv === 'auto' ? 'selected' : ''}>Auto-Detect from Key</option>
+                  <option value="groq" ${savedProv === 'groq' ? 'selected' : ''}>Groq (Free &amp; Ultra-Fast)</option>
+                  <option value="openai" ${savedProv === 'openai' ? 'selected' : ''}>OpenAI (ChatGPT)</option>
+                  <option value="openrouter" ${savedProv === 'openrouter' ? 'selected' : ''}>OpenRouter (Free Tier)</option>
+                  <option value="gemini" ${savedProv === 'gemini' ? 'selected' : ''}>Google Gemini</option>
+                  <option value="custom" ${savedProv === 'custom' ? 'selected' : ''}>Custom / OpenAI-Compatible</option>
+                </select>
               </label>
-            </div>
 
-            <div class="row g" style="margin-top:10px">
-              <button class="btn s sm-btn" id="ai-test-key-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
-              <button class="btn s sm-btn" id="ai-save-key-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
-              <button class="btn s sm-btn red" id="ai-clear-key-btn" data-a="clear-ai-key" style="flex:1">🗑️ Clear Key</button>
+              <div id="ai-standard-model-row" class="settings-row" style="margin-bottom:8px;${savedProv === 'custom' ? 'display:none' : 'display:flex'};align-items:center;gap:8px">
+                <span class="settings-label" style="flex:0 0 auto">Model</span>
+                <select class="settings-select" id="ai-model-select" data-f="ai-model" style="flex:1">
+                  ${renderAIModelOptions(savedProv, savedModel)}
+                </select>
+                <button class="chip" id="ai-refresh-models-btn" data-a="refresh-ai-models" style="flex:0 0 auto;font-size:11px;padding:4px 8px">🔄 Refresh</button>
+              </div>
+
+              <div id="ai-custom-fields" style="${savedProv === 'custom' ? 'display:block' : 'display:none'};margin-top:4px">
+                <div class="settings-divider"></div>
+                <label class="settings-row" style="margin-bottom:8px">
+                  <span class="settings-label">Base URL</span>
+                  <input type="text" id="ai-baseurl-input" data-id="ai-base-url-input" class="txt ai-base-url-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="https://api.deepseek.com/v1" value="${esc(savedBaseUrl)}">
+                </label>
+                <label class="settings-row" style="margin-bottom:8px">
+                  <span class="settings-label">Model name</span>
+                  <input type="text" id="ai-custom-model-input" data-id="ai-custom-model-input" class="txt ai-custom-model-input" style="width:100%;padding:8px;font-family:monospace;font-size:12px;border-radius:6px" placeholder="deepseek-chat" value="${esc((aiSettings.models && aiSettings.models.custom) || '')}">
+                </label>
+              </div>
+
+              <div class="settings-divider"></div>
+
+              <div style="margin:10px 0">
+                <div class="row" style="justify-content:space-between;margin-bottom:6px">
+                  <span class="settings-label">API key</span>
+                  <div class="row" style="gap:6px;align-items:center">
+                    <span id="ai-detected-pill" class="chip" style="font-size:10px;padding:2px 8px;display:${detectedKeyInfo ? 'inline-block' : 'none'};color:var(--gn);background:rgba(48,209,88,0.15)">${detectedKeyInfo ? '⚡ ' + esc(detectedKeyInfo.name) : ''}</span>
+                    <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle view</button>
+                  </div>
+                </div>
+                <input type="password" id="ai-key-input" data-id="ai-api-key-input" class="txt ai-api-key-input" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
+                <label class="row" style="margin-top:8px;gap:8px;align-items:center;cursor:pointer">
+                  <input type="checkbox" id="ai-remember-key-toggle" ${aiSettings.rememberKey !== false ? 'checked' : ''}>
+                  <span class="t2 sm" style="font-size:12px">Remember key on this device (stores in localStorage)</span>
+                </label>
+              </div>
+
+              <div class="row g" style="margin-top:10px">
+                <button class="btn s sm-btn" id="ai-test-key-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
+                <button class="btn s sm-btn" id="ai-save-key-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
+                <button class="btn s sm-btn red" id="ai-clear-key-btn" data-a="clear-ai-key" style="flex:1">🗑️ Clear Key</button>
+              </div>
+              <div id="ai-conn-status" style="margin-top:8px"></div>
             </div>
-            <div id="ai-conn-status" style="margin-top:8px"></div>
           </div>
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-title">Storage & Offline Cache</div>
-        <div class="card settings-card">
-          <div class="settings-row">
-            <span class="settings-label">App Shell Version</span>
-            <span class="chip on" style="font-family:monospace;font-size:11px">${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})</span>
+      <!-- Panel: Data -->
+      <div class="settings-panel" id="settings-panel-data" style="${settingsSubTab === 'data' ? '' : 'display:none;'}">
+        <div class="settings-section">
+          <div class="settings-section-title">Data Management</div>
+          <div class="card settings-card">
+            <div style="padding:12px 0 6px">
+              <div class="row g" style="margin-bottom:8px">
+                <button class="btn s" data-a="exp" style="flex:1">Export Backup (JSON)</button>
+                <button class="btn s" data-a="expcsv" style="flex:1">Export to CSV</button>
+              </div>
+              <div class="row g" style="margin-bottom:4px">
+                <label class="btn s" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0">
+                  Restore Backup (JSON)
+                  <input type="file" id="f" accept=".json" style="display:none">
+                </label>
+                <button class="btn s sm-btn outline" data-a="opencsvimport" style="flex:1">📥 Import CSV</button>
+              </div>
+            </div>
           </div>
-          <div class="settings-divider"></div>
-          <div class="settings-row">
-            <span class="settings-label">Air-Gapped PWA Status</span>
-            <span class="chip" style="font-size:11px;color:var(--gn)">100% Offline</span>
-          </div>
-          <div class="settings-divider"></div>
-          <div class="settings-row">
-            <span class="settings-label">Device Storage Quota</span>
-            <span id="storage-meter-chip" class="chip">Estimating...</span>
-          </div>
-          <div class="settings-divider"></div>
-          <div class="settings-row">
-            <span class="settings-label">Last Backup</span>
-            <span class="chip ${S.lastBackupDate ? 'on' : ''}">${S.lastBackupDate ? `${Math.max(0, Math.round((Date.now() - S.lastBackupDate) / (1000 * 60 * 60 * 24)))} days ago` : 'Never backed up'}</span>
-          </div>
-          <div class="settings-divider"></div>
-          <div style="padding:10px 0">
-            <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} ♻️ Force Cache Reload</button>
+
+          <div class="destructive-card" style="margin-top:14px;">
+            <div class="destructive-title">⚠️ Danger Zone</div>
+            <p class="t2 sm" style="margin:6px 0 10px;color:rgba(255,255,255,0.75)">Permanently wipe all routines, logs, and measurements from this device.</p>
+            <button class="btn s btn-destructive" data-a="wipe-step1" style="width:100%">Erase All Data...</button>
           </div>
         </div>
       </div>
 
-      <div class="settings-section">
-        <div class="settings-section-title">About & Diagnostics ℹ️</div>
-        <div class="card settings-card">
-          <div class="settings-row">
-            <span class="settings-label">MyGyM Architecture</span>
-            <span class="chip on" style="font-size:11px">PWA v${esc(APP_VERSION)}</span>
-          </div>
-          <div class="settings-divider"></div>
-          <div class="settings-row">
-            <span class="settings-label">Diagnostics & Error Logs</span>
-            <button class="chip" data-a="view-diagnostics" style="font-size:11px;padding:4px 8px">📋 View Logs (${(typeof window !== 'undefined' && window._diagnosticsLogs ? window._diagnosticsLogs.length : 0)})</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="settings-section">
-        <div class="settings-section-title">Data Management</div>
-        <div class="card settings-card">
-          <div style="padding:12px 0 6px">
-            <div class="row g" style="margin-bottom:8px">
-              <button class="btn s" data-a="exp" style="flex:1">Export Backup (JSON)</button>
-              <button class="btn s" data-a="expcsv" style="flex:1">Export to CSV</button>
+      <!-- Panel: About -->
+      <div class="settings-panel" id="settings-panel-about" style="${settingsSubTab === 'about' ? '' : 'display:none;'}">
+        <div class="settings-section">
+          <div class="settings-section-title">About &amp; Status</div>
+          <div class="card settings-card">
+            <div class="settings-row">
+              <span class="settings-label">App shell version</span>
+              <span class="chip on" style="font-family:monospace;font-size:11px">${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})</span>
             </div>
-            <div class="row g" style="margin-bottom:4px">
-              <label class="btn s" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0">
-                Restore Backup (JSON)
-                <input type="file" id="f" accept=".json" style="display:none">
-              </label>
-              <button class="btn s sm-btn outline" data-a="opencsvimport" style="flex:1">📥 Import CSV</button>
+            <div class="settings-divider"></div>
+            <div class="settings-row">
+              <span class="settings-label">App shell</span>
+              <span class="chip on" style="font-size:11px;color:var(--gn)">Ready offline</span>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-row">
+              <span class="settings-label">AI Coach</span>
+              <span class="chip" style="font-size:11px;color:var(--am)">Requires internet</span>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-row">
+              <span class="settings-label">Storage used</span>
+              <span id="storage-meter-chip" class="chip">Storage used: Estimating...</span>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-row">
+              <span class="settings-label">Last backup</span>
+              <span class="chip ${S.lastBackupDate ? 'on' : ''}">${S.lastBackupDate ? `${Math.max(0, Math.round((Date.now() - S.lastBackupDate) / (1000 * 60 * 60 * 24)))} days ago` : 'Never backed up'}</span>
+            </div>
+            <div class="settings-divider"></div>
+            <div class="settings-row">
+              <span class="settings-label">Diagnostics &amp; error logs</span>
+              <button class="chip" data-a="view-diagnostics" style="font-size:11px;padding:4px 8px">📋 View logs (${(typeof window !== 'undefined' && window._diagnosticsLogs ? window._diagnosticsLogs.length : 0)})</button>
+            </div>
+            <div class="settings-divider"></div>
+            <div style="padding:10px 0">
+              <button class="btn s" data-a="forceupdate" style="width:100%">${ic('sync', 16)} Force cache reload</button>
             </div>
           </div>
-        </div>
-
-        <div class="destructive-card">
-          <div class="destructive-title">⚠️ Danger Zone</div>
-          <p class="t2 sm" style="margin:6px 0 10px;color:rgba(255,255,255,0.75)">Permanently wipe all routines, logs, and measurements from this device.</p>
-          <button class="btn s red" data-a="wipe-step1" style="width:100%">Erase All Data...</button>
         </div>
       </div>
     </div>
@@ -7964,10 +8141,9 @@ function showSettingsModal() {
   if (typeof navigator !== 'undefined' && navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then(est => {
       const chip = document.getElementById('storage-meter-chip');
-      if (chip && est && est.quota) {
+      if (chip && est) {
         const usedMB = ((est.usage || 0) / (1024 * 1024)).toFixed(1);
-        const quotaMB = ((est.quota || 0) / (1024 * 1024)).toFixed(0);
-        chip.textContent = `${usedMB} MB / ${quotaMB} MB`;
+        chip.textContent = `Storage used: ${usedMB} MB`;
       }
     }).catch(() => {});
   }
@@ -9143,19 +9319,13 @@ function openAICoachDrawer(initialPrompt = null) {
   }
 
   modal(`
-    <div class="ai-coach-sheet">
-      <div class="ai-coach-header">
-        <div class="ai-coach-title-group">
-          <div class="ai-coach-avatar">${icon('message', { size: 18 })}</div>
-          <div>
-            <div style="font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px">
-              <span>Workout Coach</span>
-              <span class="chip on" style="font-size:10px;padding:1px 6px">${esc(providerName)} · ${esc(model)}</span>
-            </div>
-            <div class="t2 sm">${S.act ? `Active Session: ${esc(S.act.name)}` : 'On-Demand Training Assistant'}</div>
-          </div>
+    <div class="ai-coach-sheet" style="max-width:100%;box-sizing:border-box;">
+      <div class="ai-coach-header" style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:10px;border-bottom:1px solid var(--bd);">
+        <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;">
+          <b style="font-size:15px;white-space:nowrap;">Workout Coach</b>
+          <span class="chip on" style="font-size:11px;padding:2px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(providerName)} · ${esc(model)}">${esc(model)}</span>
         </div>
-        <button class="btn s sm-btn outline" data-a="closemodal" style="padding:4px 10px" aria-label="Close coach drawer">✕</button>
+        <button class="btn-icon" data-a="closemodal" aria-label="Close coach sheet" style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;font-size:16px;">✕</button>
       </div>
 
       <div style="font-size:11px;color:var(--t3);margin:8px 0 2px;line-height:1.4;display:flex;align-items:center;gap:6px">
@@ -9179,12 +9349,12 @@ function openAICoachDrawer(initialPrompt = null) {
         `).join('')}
       </div>
 
-      <!-- Quick Context Chips -->
-      <div class="ai-quick-chips">
-        <button class="ai-chip" data-a="ai-quick-prompt" data-p="Give me 3 critical form cues and execution tips for ${esc(curExName)}">💡 Form Cues</button>
-        <button class="ai-chip" data-a="ai-quick-prompt" data-p="Calculate optimal warm-up sets building up to ${curExWeight}kg on ${esc(curExName)}">⚡ Warm-up Sets</button>
-        <button class="ai-chip" data-a="ai-quick-prompt" data-p="Suggest 2 alternative exercises targeting the same muscles if the equipment for ${esc(curExName)} is taken">🔄 Equipment Busy?</button>
-        <button class="ai-chip" data-a="ai-quick-prompt" data-p="How should I break through a plateau if I missed my rep target on ${esc(curExName)}?">📈 Rep Plateau Advice</button>
+      <!-- Quick Context Chips in single horizontally scrollable row -->
+      <div class="ai-quick-chips" style="display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none;-webkit-overflow-scrolling:touch;">
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Give me 3 critical form cues and execution tips for ${esc(curExName)}">💡 Form cues</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Calculate optimal warm-up sets building up to ${curExWeight}kg on ${esc(curExName)}">⚡ Warm-up</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Suggest 2 alternative exercises targeting the same muscles if the equipment for ${esc(curExName)} is taken">🔄 Substitutes</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="How should I break through a plateau if I missed my rep target on ${esc(curExName)}?">📈 Plateau</button>
       </div>
 
       <div class="ai-input-bar">
@@ -9964,6 +10134,132 @@ document.addEventListener('click', async e => {
       toast('Workout discarded');
       return;
     }
+    case 'settings-subtab': {
+      settingsSubTab = t.dataset.tab || 'training';
+      document.querySelectorAll('.settings-nav-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === settingsSubTab);
+      });
+      document.querySelectorAll('.settings-panel').forEach(p => {
+        p.style.display = p.id === `settings-panel-${settingsSubTab}` ? 'block' : 'none';
+      });
+      return;
+    }
+    case 'toggle-rolling-avg': {
+      bodyShowRollingAvg = !bodyShowRollingAvg;
+      render();
+      return;
+    }
+    case 'workmore': {
+      modal(`
+        <div class="sheet-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h3 style="margin:0">Workout Options</h3>
+          <button class="btn-icon" data-a="closemodal" aria-label="Close">✕</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn s" data-a="worksettings" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
+            ⚙️ Settings
+          </button>
+          <button class="btn s btn-destructive" data-a="promptcancel" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
+            ✕ Discard Workout
+          </button>
+        </div>
+      `);
+      return;
+    }
+    case 'worksettings': {
+      close();
+      showSettingsModal();
+      return;
+    }
+    case 'exmore': {
+      const curIdx = +t.dataset.i;
+      const currentEx = S.act?.ex[curIdx];
+      if (!currentEx) return;
+      const exInfo = X(currentEx.id);
+      modal(`
+        <div class="sheet-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+          <h3 style="margin:0">${esc(exInfo.name)} · Options</h3>
+          <button class="btn-icon" data-a="closemodal" aria-label="Close">✕</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn s" data-a="zoomexgif" data-id="${esc(exInfo.id)}" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
+            🔍 Form Cues &amp; Execution Guide
+          </button>
+          <button class="btn s" data-a="toggleuni" data-i="${curIdx}" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
+            ⚖️ ${currentEx.uni ? 'Disable Unilateral (L/R)' : 'Enable Unilateral (Each Side L/R)'}
+          </button>
+          <button class="btn s btn-destructive" data-a="rmworkex" data-i="${curIdx}" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
+            ✕ Remove from Today's Session
+          </button>
+        </div>
+      `);
+      return;
+    }
+    case 'delsetidx': {
+      const x = S.act?.ex[i];
+      if (x && x.sets.length > 1 && j != null && j >= 0 && j < x.sets.length) {
+        x.sets.splice(j, 1);
+        ls.set('act', S.act);
+        save('act');
+        switchWorkExercise(i, false);
+      } else if (x && x.sets.length <= 1) {
+        toast('Exercise must have at least 1 set');
+      }
+      return;
+    }
+    case 'musclebreakdown': {
+      const muscle = t.dataset.muscle;
+      if (!muscle) return;
+      const weekStart = getStartOfWeek(new Date());
+      const weekLogs = S.logs.filter(l => new Date(l.date).getTime() >= weekStart);
+      const exMap = new Map();
+      let totalSets = 0;
+
+      weekLogs.forEach(l => {
+        (l.ex || []).forEach(x => {
+          const info = X(x.id);
+          const g = (info.g || '').toLowerCase();
+          const tg = (info.tg || '').toLowerCase();
+          const mLower = muscle.toLowerCase();
+          if (g === mLower || tg === mLower || g.includes(mLower) || tg.includes(mLower)) {
+            const doneSets = (x.sets || []).filter(s => s && (s.done || Number(s.r) > 0)).length;
+            if (doneSets > 0) {
+              totalSets += doneSets;
+              const cur = exMap.get(info.name) || 0;
+              exMap.set(info.name, cur + doneSets);
+            }
+          }
+        });
+      });
+
+      modal(`
+        <div class="modal-header">
+          <h3 class="modal-title">${esc(muscle)} · Weekly Breakdown</h3>
+          <button class="modal-close-btn" data-a="closemodal">✕</button>
+        </div>
+        <div style="margin:12px 0;">
+          <div class="row" style="justify-content:space-between;margin-bottom:12px;">
+            <span class="t2 sm">Total Completed Sets This Week:</span>
+            <b>${totalSets} sets</b>
+          </div>
+          ${exMap.size === 0 ? `
+            <div class="card" style="padding:16px;text-align:center;">
+              <p class="t2 sm">No completed sets logged for ${esc(muscle)} yet this week.</p>
+            </div>
+          ` : `
+            <div class="card" style="padding:4px 12px;">
+              ${Array.from(exMap.entries()).map(([name, count]) => `
+                <div class="row" style="padding:8px 0;border-bottom:1px solid var(--bd);justify-content:space-between;">
+                  <span style="font-weight:600;font-size:13px">${esc(name)}</span>
+                  <span class="chip on" style="font-size:11px">${count} sets</span>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `);
+      return;
+    }
     case 'autobalance-macros': {
       const calsEl = $('#target-cals-input');
       const protEl = $('#target-protein-input');
@@ -10315,9 +10611,17 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'delweight': {
+      const deletedWeight = S.weights.find(x => x.id === id);
       S.weights = S.weights.filter(x => x.id !== id);
       save('weights');
-      toast('Entry deleted');
+      toast('Measurement deleted', () => {
+        if (deletedWeight) {
+          S.weights.push(deletedWeight);
+          S.weights.sort((a, b) => a.t - b.t);
+          save('weights');
+          render();
+        }
+      });
       render();
       break;
     }
@@ -11049,24 +11353,32 @@ document.addEventListener('click', async e => {
     }
     case 'promptfin': {
       modal(`
-        <div class="confirm-sheet">
+        <div class="confirm-sheet" style="max-width:100%;box-sizing:border-box;">
           <div class="confirm-icon">🏁</div>
           <h2>Finish and Save Workout?</h2>
-          <p class="t2" style="margin-bottom:16px">All completed sets, reps, and PRs will be logged to your history.</p>
-          <button class="btn finish-save-btn" data-a="commit-finish" data-test="confirmfin" style="margin-bottom:8px">Finish & Log Workout 🏆</button>
-          <button class="btn s" data-a="closemodal">Continue Logging</button>
+          <p class="t2" style="margin-bottom:12px">All completed sets, reps, and PRs will be logged to your history.</p>
+          <div class="form-group" style="margin:0 0 16px;text-align:left;">
+            <label class="t2 sm" style="display:block;margin-bottom:4px;font-weight:600">Session notes</label>
+            <textarea id="finish-session-notes" class="note" placeholder="How did this workout feel? Any soreness, energy levels, notes..." rows="2">${esc(S.act?.note || '')}</textarea>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
+            <button class="btn finish-save-btn" data-a="commit-finish" data-test="confirmfin">Finish &amp; Log Workout 🏆</button>
+            <button class="btn s" data-a="closemodal">Continue Logging</button>
+          </div>
         </div>
       `);
       return;
     }
     case 'promptcancel': {
       modal(`
-        <div class="confirm-sheet">
-          <div class="confirm-icon" style="color:var(--rd)">⚠️</div>
-          <h2 style="color:var(--rd)">Discard Workout?</h2>
+        <div class="confirm-sheet" style="max-width:100%;box-sizing:border-box;">
+          <div class="confirm-icon" style="color:var(--accent-destructive, #FF453A)">⚠️</div>
+          <h2 style="color:var(--accent-destructive, #FF453A);margin:8px 0;">Discard Workout?</h2>
           <p class="t2" style="margin-bottom:16px">Discard this workout? All progress today will be lost.</p>
-          <button class="btn red" data-a="confirmdiscard" style="margin-bottom:8px">Discard Workout ✕</button>
-          <button class="btn s" data-a="closemodal">Keep Workout</button>
+          <div style="display:flex;flex-direction:column;gap:8px;width:100%;">
+            <button class="btn btn-destructive" data-a="confirmdiscard">Discard Workout ✕</button>
+            <button class="btn s" data-a="closemodal">Keep Workout</button>
+          </div>
         </div>
       `);
       return;
@@ -11123,6 +11435,8 @@ document.addEventListener('click', async e => {
     case 'confirmfin':
     case 'savefin':
     case 'fin': {
+      const sn = document.getElementById('finish-session-notes');
+      if (sn && S.act) S.act.note = sn.value;
       closeModal();
       finishWorkout();
       return;
@@ -12100,7 +12414,7 @@ async function init() {
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.0.5').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.1.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

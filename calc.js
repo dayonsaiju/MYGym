@@ -964,6 +964,28 @@
     return Array.from(sessionMap.values());
   };
 
+  const calcRollingAverage = (data, windowSize = 7, valKey = 'w') => {
+    if (!Array.isArray(data) || !data.length) return [];
+    const n = Math.max(1, parseInt(windowSize, 10) || 7);
+    const nums = data.map(item => {
+      if (typeof item === 'number') return item;
+      if (item && typeof item === 'object') {
+        const val = item[valKey];
+        return typeof val === 'number' ? val : (Number(val) || 0);
+      }
+      return 0;
+    });
+
+    const result = [];
+    for (let i = 0; i < nums.length; i++) {
+      const start = Math.max(0, i - n + 1);
+      const slice = nums.slice(start, i + 1);
+      const sum = slice.reduce((acc, curr) => acc + curr, 0);
+      result.push(Math.round((sum / slice.length) * 100) / 100);
+    }
+    return result;
+  };
+
   return {
     roundWeight,
     rd,
@@ -1004,6 +1026,7 @@
     calcPlates,
     calcMuscleVolumeStatus,
     calcTrainingInsights,
+    calcRollingAverage,
     parseThirdPartyCSV
   };
 });

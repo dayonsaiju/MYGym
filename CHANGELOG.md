@@ -2,7 +2,68 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
-## [7.0.5] - Phase 0-1 Layout Gates, CSS Audits, Empty-Workout Guard, 3D Renderer & Unified Profile - 2026-11-12
+## [7.1.0] - Phase 2 Layout & Screen Redesign, Workout Declutter, Segmented Settings & Viewport Band Fix - 2026-11-13
+
+### Active Workout Header & Single Finish Path
+- Header simplified to: routine title + live elapsed timer on the left; compact right cluster with **Coach** (`openaicoach`) + **More** (`workmore`) menu only.
+- **Single finish path**: removed "Direct Save" header button and "Quick Finish" toolbar chip; `promptfin` on the nav stepper is the sole finish trigger, leading to a clean confirmation sheet.
+- `#tabs` global navigation hidden during active workout (`view === 'work'`) so the sticky Prev / Overview / Next bar is the sole bottom control, reclaiming ~25% of vertical screen height.
+
+### Active Workout Set Rows & Media Decluttering
+- **Two-line set cards**: Line 1 — set type/number toggle, Prev session reference, per-set delete (`delsetidx`), Done check button. Line 2 — weight stepper box (-2.5 / value / +2.5 / plate calc), × separator, reps input, RIR pill (`RIR 2`, `RIR —`).
+- Removed "Delete set" full-width row under "Add set"; replaced with per-set `✕` delete button (`delsetidx`).
+- Exercise note field explicitly labelled **Exercise note** directly above the textarea; **Session notes** moved exclusively onto the Finish Workout confirmation sheet.
+- Exercise GIFs collapsed by default with a **Show demo** toggle (`togglegif`). Enforced `aspect-ratio: 1 / 1; max-height: 22vh; object-fit: cover` with no black letterbox bars.
+- Toolbar primary actions: History, AI Coach, Swap, Link Superset, ••• More. Secondary actions (Form Cues, Unilateral, Remove from Today's Session) moved inside the **exmore** More sheet.
+
+### Coach Sheet & Destructive Modals
+- AI Coach sheet: single header row (title + truncated model pill + close button); quick-prompt chips in a horizontally scrollable row (`flex: none; gap: 8px`) with short Phase 2 labels: `Form cues`, `Warm-up`, `Substitutes`, `Plateau`.
+- Discard & destructive sheets: solid crimson fill via `.btn-destructive` (`background: var(--accent-destructive); color: #FFFFFF`), paired with secondary Keep button and single close control.
+- Replaced modal backdrop blur with solid scrim: `background: rgba(0, 0, 0, 0.6); backdrop-filter: none;`. Frosted glass (`backdrop-filter: blur(20px)`) retained exclusively on `#tabs`.
+
+### Unified Weekly Muscle Card ("This Week")
+- Merged Smart Insights, Weekly Muscle Frequency, and Weekly Muscle Volume into a single **This week** card rendered only on the Train tab.
+- Full-width rows: Muscle Name (flex: 1), visual progress bar, `n sets`, plain state badge (`Low`, `Good`, `High`). Tapping opens detailed breakdown sheet.
+- Removed duplicate muscle cards from the Body tab.
+
+### Train Home Priority Order
+- 1. Today's workout hero card → 2. Start free workout card → 3. This week muscle summary card.
+- Moved `Log past workout` to a compact header button (accessible from Train and Calendar). Moved the AI Assistant banner to Settings → AI.
+
+### Calendar Layout Fixes
+- Weekly Split Schedule rows: Line 1 — day name + non-truncated `TODAY` badge; Line 2 — routine `<select>` at `width: 100%` + Start button.
+- Selected-day workout details rendered directly beneath the monthly calendar grid for immediate visibility.
+- Filtered out 0-set empty sessions from appearing as completed workout day markers.
+
+### Body & Nutrition Tab Polish
+- Sub-tab toggle (`Physique` / `Nutrition`) restyled as a 44px segmented control (`display: flex; width: 100%`) with equal-width segments and clear active state. Removed duplicate nutrition preview card.
+- Trend Chart enhancements: Y-axis scale ticks (min, mid, max), X-axis date ticks, separate `Weight` / `Waist` / `Both` toggle buttons, optional 7-day rolling average line.
+- All dates standardized to `D MMM YYYY` (e.g. `10 Nov 2026`) across Measurement History and Nutrition.
+- Hidden `0 kg` / `0 cm` delta chips when no prior measurement exists.
+- Measurement delete replaced with `.set-del-btn` and undo toast (`delweight`).
+
+### iOS PWA Viewport Band Fix
+- Fixed ~100px black band below `#tabs` on standalone iOS PWAs:
+  - `html { height: 100%; }`
+  - `body { position: fixed; inset: 0; height: 100%; overflow: hidden; }`
+  - `#tabs { padding-bottom: max(env(safe-area-inset-bottom), 8px); }`
+- Logs `window.visualViewport.height` vs `window.screen.height` in `window._diagnosticsLogs` at startup for diagnostics.
+
+### Settings Multi-Page Navigation & Accurate Status
+- Settings restructured into 5 clean sub-views: **Training**, **Body & Units**, **AI**, **Data**, **About** (including Diagnostics Log viewer).
+- Replaced misleading `100% Offline` with accurate states: `App shell: Ready offline`, `AI Coach: Requires internet`, `Storage used: X.X MB` (via `navigator.storage.estimate()`).
+- Fixed truncated labels and duplicate icons; rewrote marketing copy into plain sentence-case labels.
+
+### Bug Fixes
+- Fixed `ReferenceError: roadmapHtml is not defined` in `vBody()` — dangling variable reference after Phase 2 refactor; replaced with `renderTransformationRoadmapCard()` call.
+- Added missing `.sheet-header` CSS class definition to `style.css`.
+
+### Verification & Test Suite
+- Updated `tests/test_production_issues.js` to reflect Phase 2 UI changes (exmore, single finish path, Phase 2 GIF dimensions, AI chip short labels, workmore header).
+- Added **Suite 27: Phase 2 Layout & Screen Redesign** (11 new assertions covering single-finish path, two-line set cards, 1:1 GIF media, This week card, segmented Body control, solid scrim, viewport fix, Settings 5-tabs, destructive styles, calendar filtering).
+- All 183/183 test assertions pass at 100%.
+
+
 - **Phase 0: Layout and CSS Class Gates (`scripts/check-css-classes.js`, `scripts/layout-audit.js`, `style.css`)**:
   - Implemented automated gate `scripts/check-css-classes.js` validating that every CSS class referenced across `app.js` and `index.html` is defined in `style.css`.
   - Added definitions for all missing classes in `style.css` including `.seg-btn`, `.btn-step`, `.b2`, `.b-danger`, `.t3`, and card/row helper styles.
