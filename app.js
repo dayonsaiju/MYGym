@@ -307,8 +307,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.1.0';
-const SHELL_VERSION = 'mygym-core-v7.1.0';
+const APP_VERSION = '7.2.0';
+const SHELL_VERSION = 'mygym-core-v7.2.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -769,6 +769,7 @@ const IC = {
   gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   disc: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/>',
   close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+  x: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
   flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 3z"/>',
   zap: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>',
   target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
@@ -779,6 +780,8 @@ const IC = {
   search: '<circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
   info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
   alert: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+  alertTriangle: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+  alertCircle: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
   lock: '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
   shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   chevronRight: '<polyline points="9 18 15 12 9 6"/>',
@@ -788,12 +791,14 @@ const IC = {
   arrowRight: '<line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/>',
   arrowLeft: '<line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/>',
   undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>',
+  rotateCcw: '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>',
   refresh: '<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   upload: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>',
   folder: '<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>',
   fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>',
+  fileInput: '<path d="M4 22h14a2 2 0 0 0 2-2V7.5L14.5 2H6a2 2 0 0 0-2 2v4"/><polyline points="14 2 14 8 20 8"/><path d="M2 15h10M9 12l3 3-3 3"/>',
   message: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
   play: '<polygon points="5 3 19 12 5 21 5 3"/>',
   pause: '<rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>',
@@ -801,6 +806,12 @@ const IC = {
   swap: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
   layers: '<polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>',
   sparkles: '<path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>',
+  bot: '<rect x="3" y="11" width="18" height="10" rx="2"/><path d="M12 11V7M8 11V9M16 11V9M3 15h18"/><circle cx="9" cy="16" r="1" fill="currentColor"/><circle cx="15" cy="16" r="1" fill="currentColor"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>',
+  moreHorizontal: '<circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="19" cy="12" r="1" fill="currentColor"/><circle cx="5" cy="12" r="1" fill="currentColor"/>',
+  sliders: '<line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>',
+  database: '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/>',
+  helpCircle: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   apple: '<path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
   eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
@@ -818,7 +829,7 @@ const icon = (name, opts = {}) => {
   return html.raw(`<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"${cls}${a11y}>${path}</svg>`);
 };
 
-const ic = (n, s = 22) => icon(n, { size: s, strokeWidth: 2 }).toString();
+const ic = (n, s = 18, opts = {}) => icon(n, typeof s === 'object' ? s : { size: s, strokeWidth: 1.75, ...opts }).toString();
 
 // ---- Anatomical Muscle Map Heatmap (Front & Back Dual View + Interactive Discovery) ----
 const ANATOMY_MUSCLES = {
@@ -3258,7 +3269,10 @@ function renderThisWeekMuscleCard(logs = S.logs) {
   return `
     <div class="card this-week-card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <b style="font-size:15px">📊 This Week</b>
+        <div style="display:flex;align-items:center;gap:6px">
+          <b style="font-size:15px">${ic('activity', 16)} This Week</b>
+          <button class="btn-ghost" data-a="showjargon" data-j="volume" title="Volume Landmarks Info" style="padding:0;display:inline-flex;color:var(--t2);cursor:pointer">${ic('helpCircle', 14)}</button>
+        </div>
         <span class="t2 sm">Target: 2x / 10–20 sets</span>
       </div>
 
@@ -3266,7 +3280,7 @@ function renderThisWeekMuscleCard(logs = S.logs) {
         <div class="insights-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px">
           ${insights.slice(0, 2).map(item => `
             <div class="insight-item insight-${item.level || 'info'}" style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-radius:8px;background:var(--c2);border:1px solid var(--bd)">
-              <span class="insight-icon" style="font-size:16px">${item.level === 'warning' ? '⚠️' : (item.level === 'tip' ? '💡' : 'ℹ️')}</span>
+              <span class="insight-icon" style="display:inline-flex;margin-top:2px">${item.level === 'warning' ? ic('alertTriangle', 16) : (item.level === 'tip' ? ic('sparkles', 16) : ic('info', 16))}</span>
               <div class="insight-content" style="flex:1">
                 ${item.title ? `<div class="insight-item-title" style="font-weight:700;font-size:12px;color:var(--tx)">${esc(item.title)}</div>` : ''}
                 <div class="insight-text" style="font-size:11px;color:var(--t2);line-height:1.4">${esc(item.message)}</div>
@@ -3470,6 +3484,13 @@ function startFreeWorkout(selectedIds) {
   render();
 }
 
+function shouldShowBackupReminder() {
+  if (!S.logs || S.logs.length === 0) return false;
+  const daysSinceBackup = S.lastBackupDate ? (Date.now() - S.lastBackupDate) / (1000 * 60 * 60 * 24) : 999;
+  const logsSinceBackup = S.logs.length - (S.lastBackupLogCount || 0);
+  return daysSinceBackup > 14 || logsSinceBackup >= 10;
+}
+
 // ---- Views ----
 
 const vTrain = () => {
@@ -3494,9 +3515,9 @@ const vTrain = () => {
   const doneActiveSets = allActiveSets.filter(s => s && (s.done || s.sideL || s.sideR)).length;
   const resumeBannerHtml = S.act ? `
     <div class="active-session-resume-banner" data-a="tab" data-k="work">
-      <div class="asrb-icon">⚡</div>
+      <div class="asrb-icon">${ic('zap', 18)}</div>
       <div class="asrb-text">
-        <div class="asrb-title">⚡ Resume Active Workout</div>
+        <div class="asrb-title">Resume Active Workout</div>
         <div class="asrb-sub">${esc(S.act.name || 'Active Session')} · ${doneActiveSets}/${allActiveSets.length} sets logged</div>
       </div>
       <button class="btn asrb-btn" data-a="tab" data-k="work">Resume →</button>
@@ -3507,7 +3528,7 @@ const vTrain = () => {
     <div class="card free-workout-banner" style="margin-bottom:12px;padding:12px 14px">
       <div class="row">
         <div>
-          <b style="font-size:14px">⚡ On-The-Fly Workout</b>
+          <b style="font-size:14px">${ic('zap', 14)} On-The-Fly Workout</b>
           <div class="t2 sm" style="margin-top:2px">Target specific muscles today without saving a template</div>
         </div>
         <button class="btn btn-free-workout sm-btn" data-a="openfreeworkout" style="min-height:36px;padding:0 14px">+ Start Free Workout</button>
@@ -3518,8 +3539,17 @@ const vTrain = () => {
   const trainHeaderHtml = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin:4px 0 12px;gap:8px;flex-wrap:wrap">
       <h1 style="margin:0">Train</h1>
-      <button class="btn s sm-btn" data-a="openpastworkout" style="white-space:nowrap">+ Log Past / Missed Workout</button>
+      <button class="btn s sm-btn" data-a="openpastworkout" style="white-space:nowrap">${ic('plus', 14)} + Log Past / Missed Workout</button>
     </div>
+    ${shouldShowBackupReminder() ? `
+      <div class="card backup-reminder-card flex-between" style="padding:10px 14px;margin-bottom:12px;background:rgba(255,159,10,0.1);border:1px solid rgba(255,159,10,0.3);border-radius:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          ${ic('shield', 18)}
+          <span class="t2 sm" style="color:var(--t1)">Backup recommended (${S.logs.length - (S.lastBackupLogCount || 0)} new workouts)</span>
+        </div>
+        <button class="btn s sm-btn" data-a="exp" style="font-size:11px;padding:4px 10px">${ic('download', 12)} Backup</button>
+      </div>
+    ` : ''}
   `;
 
   return trainHeaderHtml +
@@ -3531,7 +3561,7 @@ const vTrain = () => {
       <div class="card deload-active-banner">
         <div class="row">
           <div>
-            <div class="deload-badge">⚡ Deload Protocol Active</div>
+            <div class="deload-badge">${ic('zap', 14)} Deload Protocol Active</div>
             <div class="deload-title" style="font-size:15px">Target sets halved (-50%) · Target load -20%</div>
             <div class="t2 sm" style="margin-top:2px">Restoring CNS recovery while preserving adaptations.</div>
           </div>
@@ -3545,14 +3575,14 @@ const vTrain = () => {
       <div class="card today-split-hero">
         <div class="row">
           <div>
-            <div class="today-split-badge">⭐ Today's Split (${DAYS[todayDay]})</div>
+            <div class="today-split-badge">${ic('calendar', 14)} Today's Split (${DAYS[todayDay]})</div>
             <div class="today-split-title">${esc(todayRoutine.name)}</div>
           </div>
           ${completedToday
-            ? `<span class="today-chip" style="background:var(--gn);color:#000000;font-size:12px;padding:6px 14px;font-weight:700">✓ Done Today</span>`
+            ? `<span class="today-chip" style="background:var(--gn);color:#000000;font-size:12px;padding:6px 14px;font-weight:700">${ic('chk', 14)} Done Today</span>`
             : (S.act
-              ? `<button class="btn sched-start-btn" data-a="tab" data-k="work">⚡ Resume</button>`
-              : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">⚡ Start Workout</button>`
+              ? `<button class="btn sched-start-btn" data-a="tab" data-k="work">${ic('zap', 14)} Resume</button>`
+              : `<button class="btn sched-start-btn" data-a="start" data-id="${esc(todayRoutine.id)}">${ic('zap', 14)} Start Workout</button>`
             )
           }
         </div>
@@ -3562,7 +3592,7 @@ const vTrain = () => {
       </div>
     ` : (!todayRoutine && !S.act ? `
       <div class="card row" style="margin-bottom:12px;padding:12px 14px">
-        <span class="t2 sm">🌿 <b>${DAYS[todayDay]}:</b> Scheduled Rest Day</span>
+        <span class="t2 sm">${ic('clock', 14)} <b>${DAYS[todayDay]}:</b> Scheduled Rest Day</span>
         <button class="btn s" data-a="tab" data-k="cal" style="min-height:32px;font-size:12px">Edit Split</button>
       </div>
     ` : '')) +
@@ -3577,10 +3607,13 @@ const vTrain = () => {
     `<details class="card recovery-accordion" ${deloadInfo.recommended ? 'open' : ''}>
       <summary class="recovery-accordion-summary">
         <div class="recovery-summary-left">
-          <span class="recovery-icon">📊</span>
+          <span class="recovery-icon">${ic('activity', 18)}</span>
           <div>
-            <div class="recovery-title">Recovery & Muscle Fatigue Insights</div>
-            <div class="t2 sm">ACWR: ${workload.isCalibrating ? (workload.acwrDisplay || 'Calibrating') : workload.acwr.toFixed(2)} · ${esc(workload.status)}</div>
+            <div class="recovery-title" style="display:flex;align-items:center;gap:6px">
+              Training load vs 4-week average
+              <button class="btn-ghost" data-a="showjargon" data-j="acwr" title="Explain training load" style="padding:0;display:inline-flex;cursor:pointer;color:var(--t2)">${ic('helpCircle', 14)}</button>
+            </div>
+            <div class="t2 sm">${workload.isCalibrating ? (workload.acwrDisplay || 'Calibrating') : `Ratio: ${workload.acwr.toFixed(2)}`} · ${esc(workload.status)}</div>
           </div>
         </div>
         <span class="recovery-chevron">⌄</span>
@@ -3591,13 +3624,13 @@ const vTrain = () => {
           <div class="card deload-recommend-card" style="margin:12px 0 10px">
             <div class="row">
               <div>
-                <div class="deload-badge warn">⚡ Deload Recommended</div>
+                <div class="deload-badge warn">${ic('alertTriangle', 14)} Deload Recommended</div>
                 <div class="deload-title" style="font-size:15px">${esc(deloadInfo.reason)}</div>
                 <div class="t2 sm" style="margin-top:2px">${esc(deloadInfo.detail)}</div>
               </div>
             </div>
             <div class="row g" style="margin-top:10px">
-              <button class="btn" data-a="startdeload">⚡ Start Deload Week (-50% Sets, -20% Wt)</button>
+              <button class="btn" data-a="startdeload">${ic('zap', 14)} Start Deload Week (-50% Sets, -20% Wt)</button>
             </div>
           </div>
         ` : ''}
@@ -3612,18 +3645,18 @@ const vTrain = () => {
                 </span>
               </div>
               <div class="acwr-title" style="margin-top:6px">
-                <b>ACWR: ${workload.isCalibrating ? (workload.acwrDisplay || 'Calibrating') : workload.acwr.toFixed(2)}</b>
+                <b>Training load: ${workload.isCalibrating ? (workload.acwrDisplay || 'Calibrating') : workload.acwr.toFixed(2)}</b>
                 <span class="t2 sm" title="${esc(workload.tooltip || workload.desc)}"> · ${esc(workload.desc)}</span>
               </div>
             </div>
             ${!S.deload?.active && !deloadInfo.recommended ? `
-              <button class="chip" data-a="startdeload" title="Manually initiate deload protocol" style="font-size:12px;padding:4px 8px;min-height:30px">⚡ Deload</button>
+              <button class="chip" data-a="startdeload" title="Manually initiate deload protocol" style="font-size:12px;padding:4px 8px;min-height:30px">${ic('zap', 12)} Deload</button>
             ` : ''}
           </div>
 
           ${workload.isCalibrating ? `
             <div class="acwr-calib-hint" title="Log workouts over 2-3 weeks to build your chronic fatigue baseline.">
-              ℹ️ <b>Baseline Calibration Active:</b> Log workouts over 2-3 weeks to build your chronic fatigue baseline. (${workload.distinctWorkoutDays}/7 workout days, ${workload.totalHistoryDays}/14 days)
+              ${ic('info', 14)} <b>Baseline Calibration Active:</b> Log workouts over 2-3 weeks to build your chronic fatigue baseline. (${workload.distinctWorkoutDays}/7 workout days, ${workload.totalHistoryDays}/14 days)
             </div>
           ` : ''}
 
@@ -3908,8 +3941,8 @@ function renderSupersetBanner(ssInfo) {
       <div class="superset-block-header">
         <div class="superset-badge-row">
           <div style="display:flex;align-items:center;gap:6px">
-            <span class="ss-block-tag">⚡ ${ssInfo.tag}</span>
-            <button class="chip" data-a="opensspicker" data-i="${curIdx}" style="font-size:11px;padding:2px 8px;min-height:24px">⚙️ Manage</button>
+            <span class="ss-block-tag">${ic('zap', 12)} ${ssInfo.tag}</span>
+            <button class="chip" data-a="opensspicker" data-i="${curIdx}" style="font-size:11px;padding:2px 8px;min-height:24px">${ic('gear', 12)} Manage</button>
           </div>
           <span class="ss-round-tag">Round ${ssInfo.round} of ${ssInfo.totalRounds}</span>
         </div>
@@ -4256,8 +4289,8 @@ function renderWorkHeroCard(a, curIdx) {
       <!-- Header Info & Tags directly at top -->
       <div class="work-hero-info">
         <div class="row" style="margin-bottom:4px">
-          <div class="work-hero-title clickable-title" data-a="showexhistory" data-id="${esc(exInfo.id)}" style="cursor:pointer" title="View exercise history & analytics">${esc(exInfo.name)} <span class="history-icon" style="font-size:13px;opacity:0.8">📈</span></div>
-          <button class="chip gif-toggle-chip" data-a="togglegif" data-i="${curIdx}" style="font-size:11px;padding:2px 8px">${workGifCollapsed ? '👁️ Show demo' : 'Hide demo'}</button>
+          <div class="work-hero-title clickable-title" data-a="showexhistory" data-id="${esc(exInfo.id)}" style="cursor:pointer" title="View exercise history & analytics">${esc(exInfo.name)} <span class="history-icon" style="font-size:13px;opacity:0.8">${ic('activity', 13)}</span></div>
+          <button class="chip gif-toggle-chip" data-a="togglegif" data-i="${curIdx}" style="font-size:11px;padding:2px 8px">${workGifCollapsed ? ic('eye', 13) + ' Show demo' : ic('eyeOff', 13) + ' Hide demo'}</button>
         </div>
         <div class="work-hero-tags">
           <span class="ex-badge ac">${esc(exInfo.g)}</span>
@@ -4267,11 +4300,11 @@ function renderWorkHeroCard(a, curIdx) {
           ${exInfo.type === 'timed_cardio' || exInfo.t === 't' ? '<span class="ex-badge">Timed Cardio</span>' : ''}
           ${exInfo.type === 'bodyweight' || exInfo.t === 'b' ? '<span class="ex-badge">Bodyweight</span>' : ''}
           ${currentEx.uni ? '<span class="ex-badge" style="background:rgba(100,210,255,0.2);color:var(--bl);border:1px solid var(--bl)">⚖️ Each Side (L/R)</span>' : ''}
-          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">⚡ ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
-          ${isDoubleProgReady ? `<button class="chip chip-suggestion" data-a="applysuggestion" data-i="${curIdx}" data-inc="2.5" title="Double Progression rep ceiling met! Tap to bump +2.5kg">⚡ +2.5kg suggested</button>` : ''}
+          ${ssInfo.isSuperset && ssInfo.isPaired ? `<span class="ex-badge ss-badge" style="background:rgba(255,159,10,0.2);color:var(--am);border:1px solid var(--am)">${ic('zap', 12)} ${ssInfo.typeLabel} [${ssInfo.label}] · Round ${ssInfo.round}/${ssInfo.totalRounds}</span>` : ''}
+          ${isDoubleProgReady ? `<button class="chip chip-suggestion" data-a="applysuggestion" data-i="${curIdx}" data-inc="2.5" title="Double Progression rep ceiling met! Tap to bump +2.5kg">${ic('zap', 13)} +2.5kg suggested</button>` : ''}
           ${currentEx.sets.some(s => s.rir === 0 || s.rpe >= 10) ? '<span class="ex-badge fail-badge">💥 High Fatigue (RIR 0)</span>' : ''}
-          <button class="chip" data-a="genwarmups" data-i="${curIdx}" title="Generate warm-up set progression">🔥 Warm-up</button>
-          <button class="chip" data-a="setexrest" data-id="${esc(exInfo.id)}" title="Set custom rest timer for this exercise">⏱️ ${getExRest(exInfo.id)}s rest</button>
+          <button class="chip" data-a="genwarmups" data-i="${curIdx}" title="Generate warm-up set progression">${ic('flame', 13)} Warm-up</button>
+          <button class="chip" data-a="setexrest" data-id="${esc(exInfo.id)}" title="Set custom rest timer for this exercise">${ic('timer', 13)} ${getExRest(exInfo.id)}s rest</button>
         </div>
       </div>
 
@@ -4368,19 +4401,19 @@ function renderWorkHeroCard(a, curIdx) {
       <!-- Compact / Collapsible Exercise Demonstration GIF -->
       <div class="work-hero-media" data-a="zoomexgif" data-id="${esc(exInfo.id)}" ${workGifCollapsed ? 'style="display:none"' : ''} title="Tap to expand fullscreen demonstration">
         <img class="work-hero-gif" src="./media/${esc(exInfo.gif || exInfo.img)}" alt="${esc(exInfo.name)}" loading="eager" onerror="this.onerror=null;this.src='./media/${esc(exInfo.img || exInfo.gif)}';">
-        <div class="work-gif-tap-hint">🔍 Tap to expand</div>
+        <div class="work-gif-tap-hint">${ic('search', 13)} Tap to expand</div>
       </div>
 
       <!-- Neat Decluttered Horizontal Toolbar directly below the media frame -->
       <div class="work-hero-toolbar">
-        <button class="chip" data-a="showexhistory" data-id="${esc(exInfo.id)}">📈 History</button>
-        <button class="chip" data-a="openaicoach" data-p="Give me 3 critical form cues and execution tips for ${esc(exInfo.name)}">🤖 AI Coach</button>
-        <button class="chip" data-a="swapex" data-i="${curIdx}">⇄ Swap</button>
+        <button class="chip" data-a="showexhistory" data-id="${esc(exInfo.id)}">${ic('activity', 14)} History</button>
+        <button class="chip" data-a="openaicoach" data-p="Give me 3 critical form cues and execution tips for ${esc(exInfo.name)}">${ic('bot', 14)} AI Coach</button>
+        <button class="chip" data-a="swapex" data-i="${curIdx}">${ic('swap', 14)} Swap</button>
         ${ssInfo.isSuperset && ssInfo.isPaired
-          ? `<button class="chip on ss-chip" data-a="opensspicker" data-i="${curIdx}">⚡ ${ssInfo.typeLabel} [${ssInfo.label}]</button>`
-          : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">🔗 Link Superset</button>`
+          ? `<button class="chip on ss-chip" data-a="opensspicker" data-i="${curIdx}">${ic('zap', 14)} ${ssInfo.typeLabel} [${ssInfo.label}]</button>`
+          : `<button class="chip ss-chip" data-a="opensspicker" data-i="${curIdx}">${ic('layers', 14)} Link Superset</button>`
         }
-        <button class="chip" data-a="exmore" data-i="${curIdx}">••• More</button>
+        <button class="chip" data-a="exmore" data-i="${curIdx}">${ic('moreHorizontal', 14)} More</button>
       </div>
     </div>
   `;
@@ -4811,8 +4844,8 @@ function vWork() {
         <div class="work-timer-badge" id="work-live-timer" style="font-size:11px;color:var(--t2);">⏱️ ${fmtDur(Date.now() - a.t0)}</div>
       </div>
       <div class="work-top-actions" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-        <button class="btn sm-btn frosted" data-a="openaicoach" aria-label="AI Coach" title="AI Coach">🤖 Coach</button>
-        <button class="btn sm-btn frosted" data-a="workmore" aria-label="Workout options" title="Workout options">•••</button>
+        <button class="btn sm-btn frosted" data-a="openaicoach" aria-label="AI Coach" title="AI Coach">${ic('bot', 16)} Coach</button>
+        <button class="btn sm-btn frosted" data-a="workmore" aria-label="Workout options" title="Workout options">${ic('moreHorizontal', 16)}</button>
       </div>
     </div>
     <div class="card" style="text-align:center;padding:32px 16px">
@@ -4840,8 +4873,8 @@ function vWork() {
         <div class="work-timer-badge" id="work-live-timer" style="font-size:11px;color:var(--t2);">⏱️ ${fmtDur(Date.now() - a.t0)} · ${pct}% completed (${doneSets}/${totalSets} sets)</div>
       </div>
       <div class="work-top-actions" style="display:flex;align-items:center;gap:6px;flex-shrink:0;">
-        <button class="btn sm-btn frosted" data-a="openaicoach" aria-label="AI Coach" title="Ask AI Coach for cues, warm-up sets, or substitutions">🤖 Coach</button>
-        <button class="btn sm-btn frosted" data-a="workmore" aria-label="Workout options" title="Workout options">•••</button>
+        <button class="btn sm-btn frosted" data-a="openaicoach" aria-label="AI Coach" title="Ask AI Coach for cues, warm-up sets, or substitutions">${ic('bot', 16)} Coach</button>
+        <button class="btn sm-btn frosted" data-a="workmore" aria-label="Workout options" title="Workout options">${ic('moreHorizontal', 16)}</button>
       </div>
     </div>
 
@@ -5871,17 +5904,23 @@ function getAchievementsData(logs = S.logs) {
 function renderAchievementsCard(logs = S.logs) {
   const items = getAchievementsData(logs);
   const unlockedCount = items.filter(x => x.unlocked).length;
+  const iconMap = {
+    first_workout: 'award',
+    consistency_streak: 'flame',
+    tonnage_titan: 'weight',
+    pr_crusher: 'trophy'
+  };
 
   return `
     <div class="card achievements-card">
       <div class="row">
-        <b>🏆 Achievements & Badges</b>
+        <b>${ic('award', 18)} Achievements &amp; Badges</b>
         <span class="today-chip" style="font-size:11px">${unlockedCount}/${items.length} Unlocked</span>
       </div>
       <div class="achievements-grid">
         ${items.map(a => `
           <div class="achievement-badge ${a.unlocked ? 'unlocked' : ''}">
-            <div class="achievement-icon">${a.icon}</div>
+            <div class="achievement-icon">${ic(iconMap[a.id] || 'award', 20)}</div>
             <div>
               <div class="achievement-title">${esc(a.title)}</div>
               <div class="achievement-desc">${esc(a.progress)} · ${a.unlocked ? 'Unlocked ✓' : 'Locked'}</div>
@@ -6952,17 +6991,17 @@ function showJargonSheet(term) {
       ]
     },
     volume: {
-      title: 'MEV / MAV / MRV Volume Landmarks',
+      title: 'Weekly Volume Landmarks (Low / Good / High)',
       badge: 'Hypertrophy Landmarks',
-      desc: 'Scientific landmarks for weekly working set volume per muscle group (Renaissance Periodization):',
+      desc: 'Weekly working sets per muscle group determine whether you are maintaining or building muscle:',
       bullets: [
-        '<b>MEV (Minimum Effective Volume):</b> ~6–10 weekly sets. Minimum workload required to stimulate noticeable muscular adaptations.',
-        '<b>MAV (Maximum Adaptive Volume):</b> ~12–18 weekly sets. The optimal zone where you achieve the highest rate of muscle hypertrophy.',
-        '<b>MRV (Maximum Recoverable Volume):</b> ~20–25+ weekly sets. Volume ceiling beyond which fatigue accumulates faster than recovery, causing negative returns.'
+        '<b>Low (&lt;10 sets):</b> Minimum volume to maintain current muscle mass, but sub-optimal for new muscle growth.',
+        '<b>Good (10–20 sets):</b> The optimal hypertrophy sweet spot. Maximizes muscle adaptations and protein synthesis with manageable fatigue.',
+        '<b>High (&gt;20 sets):</b> High fatigue ceiling (MRV). Fatigue accumulates faster than muscle recovery, risking joint overuse and diminished returns.'
       ]
     },
     acwr: {
-      title: 'ACWR (Acute:Chronic Workload Ratio)',
+      title: 'Training Load vs 4-Week Average (ACWR)',
       badge: 'Fatigue & Recovery Engine',
       desc: 'Compares your acute fatigue (past 7 days volume) against your chronic capacity baseline (rolling 28 days volume).',
       bullets: [
@@ -6982,7 +7021,7 @@ function showJargonSheet(term) {
       <div class="jargon-bullets">
         ${item.bullets.map(b => `<div class="jargon-bullet-item">${b}</div>`).join('')}
       </div>
-      <button class="btn s" data-a="closemodal" style="margin-top:16px;width:100%">Got It 👍</button>
+      <button class="btn s" data-a="closemodal" style="margin-top:16px;width:100%">${ic('check', 16)} Got It</button>
     </div>
   `);
 }
@@ -7177,7 +7216,7 @@ const renderSwapResults = () => {
           </div>
           <div class="ex-meta">${esc(e.tg || e.g)} · ${esc(e.eq)}</div>
         </div>
-        <button class="chip on" style="pointer-events:none">Swap ⇄</button>
+        <button class="chip on" style="pointer-events:none">${ic('swap', 12)} Swap</button>
       </div>
     `;
   }).join('');
@@ -7359,7 +7398,9 @@ function exp() {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 9e3);
   S.lastBackupDate = Date.now();
+  S.lastBackupLogCount = S.logs ? S.logs.length : 0;
   save('lastBackupDate');
+  save('lastBackupLogCount');
 }
 
 async function imp(f) {
@@ -7865,6 +7906,144 @@ function showOnboardingModal(force = false) {
 }
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
+let mediaDownloadAbortController = null;
+let isMediaDownloading = false;
+
+async function updateOfflineMediaStatus() {
+  const statusEl = document.getElementById('offline-media-status');
+  if (!statusEl) return;
+  if (typeof caches === 'undefined') {
+    statusEl.textContent = 'Offline storage unavailable';
+    return;
+  }
+  try {
+    const cache = await caches.open('mygym-media-v1');
+    const keys = await cache.keys();
+    const totalExercises = Array.isArray(EXDB) && EXDB.length > 0 ? EXDB.length : 0;
+    const cachedCount = keys.length;
+    if (totalExercises > 0) {
+      const pct = Math.min(100, Math.round((cachedCount / totalExercises) * 100));
+      statusEl.textContent = `Cached media: ${cachedCount} / ${totalExercises} exercises (${pct}%)`;
+    } else {
+      statusEl.textContent = `Cached media: ${cachedCount} items`;
+    }
+  } catch (e) {
+    statusEl.textContent = 'Ready to download';
+  }
+}
+
+async function startOfflineMediaDownload() {
+  const btn = document.getElementById('btn-download-media');
+  const progressCont = document.getElementById('media-download-progress-container');
+  const progressFill = document.getElementById('media-download-progress-fill');
+  const progressText = document.getElementById('media-download-progress-text');
+  const statusEl = document.getElementById('offline-media-status');
+
+  if (isMediaDownloading) {
+    if (mediaDownloadAbortController) {
+      mediaDownloadAbortController.abort();
+      mediaDownloadAbortController = null;
+    }
+    isMediaDownloading = false;
+    if (btn) btn.innerHTML = `${ic('download', 14)} Resume media download`;
+    toast('Media download paused');
+    return;
+  }
+
+  if (typeof caches === 'undefined' || typeof fetch === 'undefined') {
+    toast('Offline cache not supported in this browser');
+    return;
+  }
+
+  const list = Array.isArray(EXDB) && EXDB.length > 0 ? EXDB : [];
+  if (list.length === 0) {
+    toast('Exercise database loading... try again in a moment');
+    return;
+  }
+
+  const mediaFiles = [];
+  const seen = new Set();
+  for (const ex of list) {
+    const file = ex && (ex.gif || ex.img);
+    if (file && !seen.has(file)) {
+      seen.add(file);
+      mediaFiles.push(file);
+    }
+  }
+
+  if (mediaFiles.length === 0) {
+    toast('No exercise media found to cache');
+    return;
+  }
+
+  isMediaDownloading = true;
+  mediaDownloadAbortController = new AbortController();
+  const signal = mediaDownloadAbortController.signal;
+
+  if (btn) btn.innerHTML = `${ic('close', 14)} Pause download`;
+  if (progressCont) progressCont.style.display = 'block';
+
+  let downloaded = 0;
+  const total = mediaFiles.length;
+
+  try {
+    const cache = await caches.open('mygym-media-v1');
+    const existingKeys = await cache.keys();
+    const existingFileNames = new Set(existingKeys.map(r => {
+      try {
+        const u = new URL(r.url, (typeof window !== 'undefined' ? window.location.href : 'http://localhost/'));
+        return u.pathname.split('/').pop();
+      } catch (e) {
+        return '';
+      }
+    }));
+
+    for (let i = 0; i < mediaFiles.length; i++) {
+      if (signal.aborted) break;
+      const file = mediaFiles[i];
+      if (existingFileNames.has(file)) {
+        downloaded++;
+      } else {
+        const mediaUrl = `./media/${file}`;
+        try {
+          const resp = await fetch(mediaUrl, { signal });
+          if (resp && (resp.ok || resp.type === 'opaque')) {
+            await cache.put(mediaUrl, resp);
+          }
+        } catch (fetchErr) {
+          if (signal.aborted) break;
+        }
+        downloaded++;
+      }
+
+      if (progressFill) {
+        const pct = Math.min(100, Math.round((downloaded / total) * 100));
+        progressFill.style.width = pct + '%';
+      }
+      if (progressText) {
+        progressText.textContent = `${downloaded} / ${total} exercises`;
+      }
+      if (statusEl) {
+        const pct = Math.min(100, Math.round((downloaded / total) * 100));
+        statusEl.textContent = `Cached media: ${downloaded} / ${total} exercises (${pct}%)`;
+      }
+    }
+
+    if (!signal.aborted) {
+      toast('All exercise media cached for offline!');
+      if (btn) btn.innerHTML = `${ic('check', 14)} Media fully downloaded`;
+      isMediaDownloading = false;
+      mediaDownloadAbortController = null;
+    }
+  } catch (err) {
+    if (!signal.aborted) {
+      toast('Media download interrupted');
+    }
+    isMediaDownloading = false;
+  }
+  updateOfflineMediaStatus();
+}
+
 function showSettingsModal() {
   const aiSettings = (typeof AIConfig !== 'undefined' && AIConfig.getAISettings) ? AIConfig.getAISettings() : { provider: 'auto', models: {}, baseUrl: '', rememberKey: true };
   const savedKey = (typeof AIConfig !== 'undefined' && AIConfig.getAIKey) ? AIConfig.getAIKey() : ((typeof localStorage !== 'undefined' ? (localStorage.getItem('mygym_ai_key') || localStorage.getItem('ai_api_key')) : '') || '');
@@ -7882,7 +8061,7 @@ function showSettingsModal() {
   }
 
   modal(`
-    <h2>Settings ⚙️</h2>
+    <h2>Settings</h2>
     <div class="settings-modal-content">
       <div class="settings-nav">
         <button class="settings-nav-btn ${settingsSubTab === 'training' ? 'active' : ''}" data-a="settings-subtab" data-tab="training">Training</button>
@@ -7977,7 +8156,7 @@ function showSettingsModal() {
       <!-- Panel: AI -->
       <div class="settings-panel" id="settings-panel-ai" style="${settingsSubTab === 'ai' ? '' : 'display:none;'}">
         <div class="settings-section">
-          <div class="settings-section-title">AI Engine Setup (BYOK) 🤖</div>
+          <div class="settings-section-title">AI Engine Setup (Your API key)</div>
           <div class="card settings-card">
             <div style="padding:10px 0 6px">
               <div class="t2 sm" style="margin-bottom:12px;line-height:1.4">
@@ -8001,7 +8180,7 @@ function showSettingsModal() {
                 <select class="settings-select" id="ai-model-select" data-f="ai-model" style="flex:1">
                   ${renderAIModelOptions(savedProv, savedModel)}
                 </select>
-                <button class="chip" id="ai-refresh-models-btn" data-a="refresh-ai-models" style="flex:0 0 auto;font-size:11px;padding:4px 8px">🔄 Refresh</button>
+                <button class="chip" id="ai-refresh-models-btn" data-a="refresh-ai-models" style="flex:0 0 auto;font-size:11px;padding:4px 8px">${ic('rotateCcw', 12)} Refresh</button>
               </div>
 
               <div id="ai-custom-fields" style="${savedProv === 'custom' ? 'display:block' : 'display:none'};margin-top:4px">
@@ -8022,8 +8201,8 @@ function showSettingsModal() {
                 <div class="row" style="justify-content:space-between;margin-bottom:6px">
                   <span class="settings-label">API key</span>
                   <div class="row" style="gap:6px;align-items:center">
-                    <span id="ai-detected-pill" class="chip" style="font-size:10px;padding:2px 8px;display:${detectedKeyInfo ? 'inline-block' : 'none'};color:var(--gn);background:rgba(48,209,88,0.15)">${detectedKeyInfo ? '⚡ ' + esc(detectedKeyInfo.name) : ''}</span>
-                    <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">👁️ Toggle view</button>
+                    <span id="ai-detected-pill" class="chip" style="font-size:10px;padding:2px 8px;display:${detectedKeyInfo ? 'inline-block' : 'none'};color:var(--gn);background:rgba(48,209,88,0.15)">${detectedKeyInfo ? `${ic('zap', 10)} ` + esc(detectedKeyInfo.name) : ''}</span>
+                    <button class="chip" data-a="toggle-key-vis" style="font-size:11px;padding:2px 8px">${ic('eye', 12)} Toggle view</button>
                   </div>
                 </div>
                 <input type="password" id="ai-key-input" data-id="ai-api-key-input" class="txt ai-api-key-input" style="width:100%;padding:10px;font-family:monospace;font-size:13px;border-radius:8px" placeholder="${esc(keyPlaceholder)}" value="${esc(savedKey)}">
@@ -8034,9 +8213,9 @@ function showSettingsModal() {
               </div>
 
               <div class="row g" style="margin-top:10px">
-                <button class="btn s sm-btn" id="ai-test-key-btn" data-a="test-ai-key" style="flex:1">⚡ Test Connection</button>
-                <button class="btn s sm-btn" id="ai-save-key-btn" data-a="save-ai-key" style="flex:1">💾 Save Key</button>
-                <button class="btn s sm-btn red" id="ai-clear-key-btn" data-a="clear-ai-key" style="flex:1">🗑️ Clear Key</button>
+                <button class="btn s sm-btn" id="ai-test-key-btn" data-a="test-ai-key" style="flex:1">${ic('zap', 14)} Test Connection</button>
+                <button class="btn s sm-btn" id="ai-save-key-btn" data-a="save-ai-key" style="flex:1">${ic('save', 14)} Save Key</button>
+                <button class="btn s sm-btn red" id="ai-clear-key-btn" data-a="clear-ai-key" style="flex:1">${ic('trash', 14)} Clear Key</button>
               </div>
               <div id="ai-conn-status" style="margin-top:8px"></div>
             </div>
@@ -8047,25 +8226,57 @@ function showSettingsModal() {
       <!-- Panel: Data -->
       <div class="settings-panel" id="settings-panel-data" style="${settingsSubTab === 'data' ? '' : 'display:none;'}">
         <div class="settings-section">
+          ${shouldShowBackupReminder() ? `
+            <div class="card backup-reminder-card" style="margin-bottom:12px;border-left:3px solid var(--am);display:flex;align-items:center;justify-content:space-between;padding:10px 12px">
+              <div style="flex:1;padding-right:10px">
+                <div style="font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">
+                  ${ic('alertTriangle', 14)} Backup Recommended
+                </div>
+                <div class="t2 sm" style="font-size:12px;margin-top:2px">
+                  ${S.lastBackupDate ? `Last backup was ${Math.round((Date.now() - S.lastBackupDate) / (1000 * 60 * 60 * 24))} days ago.` : `You have ${S.logs.length} workouts without a backup.`}
+                </div>
+              </div>
+              <button class="btn s sm-btn" data-a="exp" style="flex:0 0 auto">${ic('download', 14)} Back Up</button>
+            </div>
+          ` : ''}
           <div class="settings-section-title">Data Management</div>
           <div class="card settings-card">
             <div style="padding:12px 0 6px">
               <div class="row g" style="margin-bottom:8px">
-                <button class="btn s" data-a="exp" style="flex:1">Export Backup (JSON)</button>
-                <button class="btn s" data-a="expcsv" style="flex:1">Export to CSV</button>
+                <button class="btn s" data-a="exp" style="flex:1">${ic('download', 14)} Export Backup (JSON)</button>
+                <button class="btn s" data-a="expcsv" style="flex:1">${ic('download', 14)} Export to CSV</button>
               </div>
               <div class="row g" style="margin-bottom:4px">
-                <label class="btn s" style="flex:1;display:flex;align-items:center;justify-content:center;cursor:pointer;margin:0">
-                  Restore Backup (JSON)
+                <label class="btn s" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;margin:0">
+                  ${ic('fileInput', 14)} Restore Backup (JSON)
                   <input type="file" id="f" accept=".json" style="display:none">
                 </label>
-                <button class="btn s sm-btn outline" data-a="opencsvimport" style="flex:1">📥 Import CSV</button>
+                <button class="btn s sm-btn outline" data-a="opencsvimport" style="flex:1">${ic('fileInput', 14)} Import CSV</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section-title" style="margin-top:14px">Offline Exercise Media</div>
+          <div class="card settings-card">
+            <div style="padding:10px 0 6px">
+              <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+                <span class="settings-label">Cached media</span>
+                <span id="offline-media-status" class="chip on" style="font-size:11px">Estimating...</span>
+              </div>
+              <div id="media-download-progress-container" style="display:none;margin-bottom:10px">
+                <div style="height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden">
+                  <div id="media-download-progress-fill" style="width:0%;height:100%;background:var(--accent);transition:width 0.2s"></div>
+                </div>
+                <div id="media-download-progress-text" class="t2 sm" style="font-size:11px;margin-top:4px;text-align:right">0 / 0</div>
+              </div>
+              <div class="row g">
+                <button class="btn s sm-btn w-full" id="btn-download-media" data-a="download-offline-media">${ic('download', 14)} Download exercise media for offline</button>
               </div>
             </div>
           </div>
 
           <div class="destructive-card" style="margin-top:14px;">
-            <div class="destructive-title">⚠️ Danger Zone</div>
+            <div class="destructive-title">${ic('alertTriangle', 14)} Danger Zone</div>
             <p class="t2 sm" style="margin:6px 0 10px;color:rgba(255,255,255,0.75)">Permanently wipe all routines, logs, and measurements from this device.</p>
             <button class="btn s btn-destructive" data-a="wipe-step1" style="width:100%">Erase All Data...</button>
           </div>
@@ -8147,13 +8358,14 @@ function showSettingsModal() {
       }
     }).catch(() => {});
   }
+  updateOfflineMediaStatus();
 }
 
 // 2-Step Confirmation Modal for Erase All Data
 function showWipeConfirmModal() {
   modal(`
     <div class="destructive-confirm-modal">
-      <div style="font-size:40px;margin-bottom:8px">⚠️</div>
+      <div style="margin-bottom:8px">${ic('alertTriangle', 36)}</div>
       <h2 style="color:var(--accent-destructive);margin-bottom:8px">Erase All Data?</h2>
       <p class="t2 sm" style="margin-bottom:16px;line-height:1.5">
         This action is permanent and IRREVERSIBLE. All workouts (${S.logs.length}), custom routines (${S.routines.length}), and body weight records (${S.weights.length}) will be permanently erased.
@@ -9721,21 +9933,21 @@ function finishWorkout() {
     // 4. Trigger summary celebration and render()
     view = 'train';
     try {
-      modal(`<h2>Workout Complete! 🏆</h2>
+      modal(`<h2>Workout Complete! ${ic('trophy', 22)}</h2>
         <div class="transformation-celebration-banner">
-          <span class="tcb-fire">🔥</span>
+          <span class="tcb-fire">${ic('flame', 24)}</span>
           <div class="tcb-body">
             <div class="tcb-title">Transformation Progress: +${microInc}% today!</div>
-            <div class="tcb-sub">1 workout closer to your goal physique 🔥</div>
+            <div class="tcb-sub">1 workout closer to your goal physique</div>
           </div>
         </div>
         ${mmLog(completedWorkout)}
         <div class="card" style="margin:12px 0;padding:12px;background:rgba(255,159,10,0.08);border:1px solid rgba(255,159,10,0.25);border-radius:14px">
           <div style="display:flex;align-items:center;gap:12px">
-            <span style="font-size:24px">🔥</span>
+            <span style="display:inline-flex">${ic('flame', 24)}</span>
             <div>
-              <div style="font-weight:700;font-size:15px;color:var(--am)">Calories Burned: ${burn.totalBurn} kcal</div>
-              <div class="t2 sm" style="margin-top:2px">${burn.activeCals} kcal (Active) + ${burn.epocCals} kcal (EPOC Afterburn) = Total ${burn.totalBurn} kcal</div>
+              <div style="font-weight:700;font-size:15px;color:var(--am)">Calories Burned: ${burn.totalBurn} kcal (Est. active + recovery burn)</div>
+              <div class="t2 sm" style="margin-top:2px">${burn.activeCals} kcal active + ${burn.epocCals} kcal EPOC Afterburn (recovery) = ${burn.totalBurn} kcal total</div>
             </div>
           </div>
         </div>
@@ -10142,6 +10354,18 @@ document.addEventListener('click', async e => {
       document.querySelectorAll('.settings-panel').forEach(p => {
         p.style.display = p.id === `settings-panel-${settingsSubTab}` ? 'block' : 'none';
       });
+      if (settingsSubTab === 'data') {
+        updateOfflineMediaStatus();
+      }
+      return;
+    }
+    case 'download-offline-media': {
+      startOfflineMediaDownload();
+      return;
+    }
+    case 'showjargon': {
+      const term = t.dataset.j || 'volume';
+      showJargonSheet(term);
       return;
     }
     case 'toggle-rolling-avg': {
@@ -10153,14 +10377,14 @@ document.addEventListener('click', async e => {
       modal(`
         <div class="sheet-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <h3 style="margin:0">Workout Options</h3>
-          <button class="btn-icon" data-a="closemodal" aria-label="Close">✕</button>
+          <button class="btn-icon" data-a="closemodal" aria-label="Close">${ic('close', 16)}</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;">
           <button class="btn s" data-a="worksettings" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
-            ⚙️ Settings
+            ${ic('gear', 16)} Settings
           </button>
           <button class="btn s btn-destructive" data-a="promptcancel" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
-            ✕ Discard Workout
+            ${ic('close', 16)} Discard Workout
           </button>
         </div>
       `);
@@ -10179,17 +10403,17 @@ document.addEventListener('click', async e => {
       modal(`
         <div class="sheet-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
           <h3 style="margin:0">${esc(exInfo.name)} · Options</h3>
-          <button class="btn-icon" data-a="closemodal" aria-label="Close">✕</button>
+          <button class="btn-icon" data-a="closemodal" aria-label="Close">${ic('close', 16)}</button>
         </div>
         <div style="display:flex;flex-direction:column;gap:8px;">
           <button class="btn s" data-a="zoomexgif" data-id="${esc(exInfo.id)}" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
-            🔍 Form Cues &amp; Execution Guide
+            ${ic('search', 16)} Form Cues &amp; Execution Guide
           </button>
           <button class="btn s" data-a="toggleuni" data-i="${curIdx}" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
-            ⚖️ ${currentEx.uni ? 'Disable Unilateral (L/R)' : 'Enable Unilateral (Each Side L/R)'}
+            ${ic('weight', 16)} ${currentEx.uni ? 'Disable Unilateral (L/R)' : 'Enable Unilateral (Each Side L/R)'}
           </button>
           <button class="btn s btn-destructive" data-a="rmworkex" data-i="${curIdx}" style="display:flex;align-items:center;gap:8px;justify-content:flex-start;">
-            ✕ Remove from Today's Session
+            ${ic('close', 16)} Remove from Today's Session
           </button>
         </div>
       `);
@@ -10732,7 +10956,7 @@ document.addEventListener('click', async e => {
     case 'forceupdate': {
       modal(`
         <div class="confirm-modal">
-          <div style="font-size:36px;margin-bottom:8px">🔄</div>
+          <div style="margin-bottom:8px">${ic('rotateCcw', 36)}</div>
           <h2 style="margin-bottom:8px">Force App Update?</h2>
           <p class="t2 sm" style="margin-bottom:16px;line-height:1.5">
             This will clear the offline app cache and reload the latest version of MyGyM. Your workouts, routines, and settings will remain safe.
@@ -10755,7 +10979,9 @@ document.addEventListener('click', async e => {
           }
           if ('caches' in window) {
             const keys = await caches.keys();
-            for (const k of keys) { await caches.delete(k); }
+            for (const k of keys) {
+              if (k !== 'mygym-media-v1') await caches.delete(k);
+            }
           }
           localStorage.setItem('mygym_shell_version', SHELL_VERSION);
         } catch (err) {
@@ -12414,7 +12640,7 @@ async function init() {
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.1.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.2.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -12637,7 +12863,11 @@ if (typeof globalThis !== 'undefined') {
     show3DPhysiqueModal,
     animateCounter,
     renderVolumeRadarChart,
+    renderThisWeekMuscleCard,
     triggerPRCelebration,
+    shouldShowBackupReminder,
+    updateOfflineMediaStatus,
+    startOfflineMediaDownload,
     get active3DViewer() { return active3DViewer; },
     set active3DViewer(v) { active3DViewer = v; }
   };

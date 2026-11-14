@@ -68,7 +68,8 @@ console.log('✓ Updated sw.js');
 // 4. manifest.json
 const manifestPath = path.join(rootDir, 'manifest.json');
 let manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-manifest.version = targetVersion;
+manifest.id = './';
+delete manifest.version;
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
 console.log('✓ Updated manifest.json');
 

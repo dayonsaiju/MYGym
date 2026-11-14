@@ -2,6 +2,36 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.2.0] - Phase 3-4 Complete Vector Icon Overhaul, Design System Tokens, Persistent Media Cache & Fast SW Boot - 2026-11-14
+
+### Complete Vector Icon System & UI Emoji Replacement (Phase 3)
+- Expanded vector icon library (`IC` dictionary and `ic(name, size)` helper) with 24px grid, 1.75px stroke, and `currentColor` styling.
+- Added vector icons: `zap`, `award`, `trophy`, `flame`, `sparkles`, `bot`, `fileInput`, `alertTriangle`, `alertCircle`, `box`, `eye`, `eyeOff`, `moreHorizontal`, `calendar`, `check`, `x`, `close`, `rotateCcw`, `sliders`, `database`, `shield`, `helpCircle`.
+- Replaced all raw UI emoji icons across buttons, chips, headers, badges, rest timer, and settings with accessible vector SVGs (`aria-hidden="true"` or `aria-label`).
+- Overhauled Achievements grid to render high-contrast inline vector badges instead of emoji medals.
+- Created `scripts/check-no-ui-emoji.js` to enforce zero raw UI emoji in button/chip/header templates across the codebase.
+
+### Plain Language Copy & Jargon Info Sheets (Phase 3)
+- Hypertrophy volume landmarks: replaced `MEV / MAV / MRV` on primary cards with plain `Low / Good / High` badges and tap-to-open `?` info sheets.
+- Training load: replaced `ACWR` acronym on primary cards with `Training load vs 4-week average`, preserving technical metrics in the detailed breakdown sheet.
+- Energy expenditure: replaced opaque `EPOC Afterburn` with transparent `Est. active + recovery burn` showing explicit active + recovery component formula.
+- Settings titles: renamed `AI Engine Setup (BYOK)` to plain `AI Engine Setup (Your API key)`.
+
+### Design System & CSS Utility Foundation (Phase 3)
+- Added foundational utility classes to `style.css`: `.flex-between`, `.flex-center`, `.gap-4`, `.gap-8`, `.mt-8`, `.mt-12`, `.mb-8`, `.mb-12`, `.text-center`, `.w-full`, `.btn-secondary`, `.btn-ghost`, `.empty-state`, `.skeleton`, and shimmer keyframes.
+- Added `form-action 'none';` to `index.html` Content Security Policy.
+
+### Service Worker & Fast Boot (Phase 4)
+- Deduped precache list and decoupled into atomic core shell precaching (`CORE_SHELL`) and resilient non-blocking precaching (`OPTIONAL_DATA` via `Promise.allSettled`).
+- Implemented 2.5-second network timeout on navigation requests falling back gracefully to cached `./index.html`.
+- Dedicated persistent media cache (`mygym-media-v1`): never evicted on version bumps or shell upgrades; includes `trimCache` helper capped at ~250 items.
+
+### Offline Media Downloader & Backup Alerts (Phase 4)
+- Settings → Data now includes an **Offline Exercise Media** status card (`Cached media: X / Y exercises (Z%)`) with one-click download, live progress bar, and pause/resume support.
+- Added automated backup age / workout count tracking (`shouldShowBackupReminder`) that prompts user with an unobtrusive banner on Train home and in Settings → Data when backup is >14 days old or 10+ workouts have been logged.
+- Manifest hardening: added canonical `"id": "./"`, removed non-standard `"version"`, and added home screen shortcuts for "Start Workout" and "Log Past Workout".
+- Cleaned up `shell.js` auto-reload logic to eliminate cache-clearing loops and notify via update toast.
+
 ## [7.1.0] - Phase 2 Layout & Screen Redesign, Workout Declutter, Segmented Settings & Viewport Band Fix - 2026-11-13
 
 ### Active Workout Header & Single Finish Path

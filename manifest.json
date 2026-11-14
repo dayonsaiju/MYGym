@@ -1,4 +1,5 @@
 {
+  "id": "./",
   "name": "MyGyM",
   "short_name": "MyGyM",
   "start_url": "./",
@@ -21,5 +22,30 @@
       "purpose": "maskable"
     }
   ],
-  "version": "7.1.0"
+  "shortcuts": [
+    {
+      "name": "Start Workout",
+      "short_name": "Start",
+      "description": "Start today's scheduled or free workout",
+      "url": "./?action=start",
+      "icons": [
+        {
+          "src": "./icon.png",
+          "sizes": "512x512"
+        }
+      ]
+    },
+    {
+      "name": "Log Past Workout",
+      "short_name": "Log Past",
+      "description": "Log a past or missed workout",
+      "url": "./?action=logpast",
+      "icons": [
+        {
+          "src": "./icon.png",
+          "sizes": "512x512"
+        }
+      ]
+    }
+  ]
 }

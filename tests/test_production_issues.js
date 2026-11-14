@@ -655,7 +655,7 @@ it('renderSupersetBanner renders unified SUPERSET [A1 + A2] badge and round indi
   const infoA = api.getSupersetInfo(act, 0);
   const banner = api.renderSupersetBanner(infoA);
 
-  assert(banner.includes('⚡ SUPERSET [A1 + A2]'), 'Banner must include unified SUPERSET tag');
+  assert(banner.includes('SUPERSET [A1 + A2]') && (banner.includes('⚡') || banner.includes('<svg')), 'Banner must include unified SUPERSET tag');
   assert(banner.includes('Round 1 of 3'), 'Banner must indicate Round 1 of 3');
   assert(banner.includes('Step 1: Finish A1 → Transitions to A2 instantly (No rest timer)'), 'Flow instructions for A1');
 });
@@ -882,7 +882,7 @@ it('renderSupersetBanner displays dynamic relative position indicator and tabs f
   const info = api.getSupersetInfo(act, 1);
   const banner = api.renderSupersetBanner(info);
 
-  assert(banner.includes('⚡ TRI-SET [A1 + A2 + A3]'), 'Banner must display TRI-SET tag');
+  assert(banner.includes('TRI-SET [A1 + A2 + A3]') && (banner.includes('⚡') || banner.includes('<svg')), 'Banner must display TRI-SET tag');
   assert(banner.includes('Round 1 of 2 · Exercise 2 of 3 (A2)'), 'Banner must show relative position indicator');
   assert(banner.includes('ss-pill-role">A1</span>'), 'Banner must have tab for A1');
   assert(banner.includes('ss-pill-role">A2</span>'), 'Banner must have tab for A2');
@@ -995,27 +995,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.1.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.1.0';"), 'sw.js must use mygym-core-v7.1.0 cache name');
-  assert(swCode.includes("'./style.css?v=7.1.0'"), 'sw.js must precache style.css?v=7.1.0');
-  assert(swCode.includes("'./app.js?v=7.1.0'"), 'sw.js must precache app.js?v=7.1.0');
-  assert(swCode.includes("'./calc.js?v=7.1.0'"), 'sw.js must precache calc.js?v=7.1.0');
+it('sw.js cache key is bumped to mygym-core-v7.2.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.2.0';"), 'sw.js must use mygym-core-v7.2.0 cache name');
+  assert(swCode.includes("'./style.css?v=7.2.0'"), 'sw.js must precache style.css?v=7.2.0');
+  assert(swCode.includes("'./app.js?v=7.2.0'"), 'sw.js must precache app.js?v=7.2.0');
+  assert(swCode.includes("'./calc.js?v=7.2.0'"), 'sw.js must precache calc.js?v=7.2.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.1.0'), 'index.html must link style.css?v=7.1.0');
-  assert(htmlCode.includes('shell.js?v=7.1.0'), 'index.html must load shell.js?v=7.1.0');
-  assert(htmlCode.includes('app.js?v=7.1.0'), 'index.html must load app.js?v=7.1.0');
-  assert(htmlCode.includes('calc.js?v=7.1.0'), 'index.html must load calc.js?v=7.1.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.1.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.2.0'), 'index.html must link style.css?v=7.2.0');
+  assert(htmlCode.includes('shell.js?v=7.2.0'), 'index.html must load shell.js?v=7.2.0');
+  assert(htmlCode.includes('app.js?v=7.2.0'), 'index.html must load app.js?v=7.2.0');
+  assert(htmlCode.includes('calc.js?v=7.2.0'), 'index.html must load calc.js?v=7.2.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.2.0'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.1.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.1.0');
+  assert.equal(api.APP_VERSION, '7.2.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.2.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -1628,7 +1628,7 @@ it('Continuous auto-save persists active workout state and Train tab displays "�
 
   // Train view must display Resume Active Workout floating banner
   const trainHtml = api.vTrain();
-  assert(trainHtml.includes('⚡ Resume Active Workout'), 'Train view must display "⚡ Resume Active Workout" banner');
+  assert(trainHtml.includes('Resume Active Workout') && (trainHtml.includes('⚡') || trainHtml.includes('<svg')), 'Train view must display "⚡ Resume Active Workout" banner');
   assert(trainHtml.includes('Push Hypertrophy'), 'Banner must display active workout name');
   assert(trainHtml.includes('1/2 sets logged'), 'Banner must reflect logged sets count');
 
@@ -2443,7 +2443,7 @@ console.log('\nSuite 20: BYOK AI Assistant, Routine Importer & Secure Client Sto
 it('Settings modal renders AI Engine Setup (BYOK) card with provider, model, and masked key input', () => {
   api.showSettingsModal();
   const mHtml = elementsMap['#m'].innerHTML;
-  assert(mHtml.includes('AI Engine Setup (BYOK)'), 'Settings must include AI Engine Setup');
+  assert(mHtml.includes('AI Engine Setup'), 'Settings must include AI Engine Setup');
   assert(mHtml.includes('ai-provider-select'), 'Settings must include AI provider select');
   assert(mHtml.includes('OpenAI (ChatGPT)'), 'Settings must offer OpenAI provider');
   assert(mHtml.includes('Google Gemini'), 'Settings must offer Gemini provider');
@@ -4567,6 +4567,94 @@ it('Phase 2: Calendar filters out 0-set empty sessions from workout date markers
   // vCal should not throw and renders calendar
   const calHtml = api.vCal();
   assert(calHtml.includes('cal') || calHtml.includes('calendar'), 'Calendar must render');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 28: PHASE 3-4 DESIGN SYSTEM, SVG ICONS, SERVICE WORKER & PERSISTENT MEDIA (v7.2.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 28: Phase 3-4 Design System, SVG Icons, Service Worker & Persistent Media (v7.2.0)');
+
+it('Phase 4: sw.js defines dedicated MEDIA_CACHE (mygym-media-v1) and preserves it on activation', () => {
+  assert(swCode.includes("const MEDIA_CACHE = 'mygym-media-v1'"), 'sw.js must define dedicated media cache name');
+  assert(swCode.includes('filter(k => k !== MEDIA_CACHE)'), 'sw.js activation must preserve media cache during cleanup');
+  assert(swCode.includes('trimCache'), 'sw.js must provide media cache trim helper');
+});
+
+it('Phase 4: sw.js handles navigation requests with 2.5s network timeout falling back to cached ./index.html', () => {
+  assert(swCode.includes("request.mode === 'navigate'"), 'sw.js must intercept navigation requests');
+  assert(swCode.includes('setTimeout') && (swCode.includes('2500') || swCode.includes('networkTimeout')), 'sw.js navigation must feature a timeout');
+  assert(swCode.includes("cache.match('./index.html')") || swCode.includes("caches.match('./index.html')"), 'sw.js navigation fallback must match cached index.html');
+});
+
+it('Phase 3: SVG icon helper (ic) renders vector SVGs for UI elements and has extensive path coverage', () => {
+  assert.equal(typeof api.ic, 'function', 'ic helper must be exported');
+  const zapSvg = api.ic('zap', 16);
+  assert(zapSvg.includes('<svg') && zapSvg.includes('viewBox="0 0 24 24"'), 'ic(zap) must return SVG vector icon');
+  const trophySvg = api.ic('trophy', 20);
+  assert(trophySvg.includes('<svg') && trophySvg.includes('path'), 'ic(trophy) must return valid SVG');
+  const helpSvg = api.ic('helpCircle', 14);
+  assert(helpSvg.includes('<svg'), 'ic(helpCircle) must return valid SVG');
+  const flameSvg = api.ic('flame', 18);
+  assert(flameSvg.includes('<svg'), 'ic(flame) must return valid SVG');
+  const slidersSvg = api.ic('sliders', 16);
+  assert(slidersSvg.includes('<svg'), 'ic(sliders) must return valid SVG');
+});
+
+it('Phase 3: Plain-language copy and transparent burn calculations replace technical jargon', () => {
+  const muscleCardHtml = api.renderThisWeekMuscleCard ? api.renderThisWeekMuscleCard() : '';
+  assert(muscleCardHtml.includes('Low') || muscleCardHtml.includes('Good') || muscleCardHtml.includes('High') || muscleCardHtml.includes('showjargon'),
+    'Muscle volume card must use plain language or offer jargon explainer');
+
+  api.showJargonSheet('acwr');
+  const acwrModal = elementsMap['#m'].innerHTML;
+  assert(acwrModal.includes('Training Load vs 4-Week Average') || acwrModal.includes('Training load vs 4-week average') || acwrModal.includes('Acute-to-Chronic Workload Ratio'),
+    'ACWR jargon sheet must explain training load vs 4-week average');
+
+  api.showJargonSheet('volume');
+  const volModal = elementsMap['#m'].innerHTML;
+  assert(volModal.includes('Volume Landmarks') && volModal.includes('Low') && volModal.includes('Good') && volModal.includes('High'),
+    'Volume jargon sheet must detail Low / Good / High hypertrophy volume landmarks');
+});
+
+it('Phase 4: shouldShowBackupReminder alerts user after 14 days or 10+ workouts without backup', () => {
+  assert.equal(typeof api.shouldShowBackupReminder, 'function', 'shouldShowBackupReminder must be exported');
+
+  // No workouts -> false
+  api.S.logs = [];
+  assert.equal(api.shouldShowBackupReminder(), false, 'Zero logs should not show backup reminder');
+
+  // 1 workout, backed up today -> false
+  api.S.logs = [{ id: 'log1', date: Date.now() }];
+  api.S.lastBackupDate = Date.now();
+  api.S.lastBackupLogCount = 1;
+  assert.equal(api.shouldShowBackupReminder(), false, 'Recent backup should not trigger reminder');
+
+  // 15 days ago -> true
+  api.S.lastBackupDate = Date.now() - (15 * 24 * 60 * 60 * 1000);
+  assert.equal(api.shouldShowBackupReminder(), true, 'Backup > 14 days old must trigger reminder');
+
+  // Backed up today, but 10 new workouts logged since -> true
+  api.S.lastBackupDate = Date.now();
+  api.S.lastBackupLogCount = 1;
+  api.S.logs = Array.from({ length: 11 }, (_, i) => ({ id: `log_${i}`, date: Date.now() }));
+  assert.equal(api.shouldShowBackupReminder(), true, '10+ workouts since last backup must trigger reminder');
+});
+
+it('Phase 4: Manifest hardening includes canonical id: "./", removes version, and defines shortcuts', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(rootDir, 'manifest.json'), 'utf8'));
+  assert.equal(manifest.id, './', 'manifest.json must declare canonical "id": "./"');
+  assert.strictEqual(manifest.version, undefined, 'manifest.json must not include non-standard "version" property');
+  assert(Array.isArray(manifest.shortcuts) && manifest.shortcuts.length >= 2, 'manifest.json must declare shortcuts');
+  const shortcutNames = manifest.shortcuts.map(s => s.name);
+  assert(shortcutNames.includes('Start Workout'), 'manifest shortcuts must include Start Workout');
+});
+
+it('Phase 3: style.css defines standard utility classes and index.html includes form-action "none" in CSP', () => {
+  assert(cssCode.includes('.flex-between'), 'style.css must define .flex-between');
+  assert(cssCode.includes('.flex-center'), 'style.css must define .flex-center');
+  assert(cssCode.includes('.gap-8'), 'style.css must define .gap-8');
+  assert(cssCode.includes('.skeleton'), 'style.css must define .skeleton utility');
+  assert(htmlCode.includes("form-action 'none'"), 'index.html CSP must include form-action none');
 });
 
 console.log(`\n======================================================`);
