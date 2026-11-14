@@ -995,27 +995,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.3.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.3.0';"), 'sw.js must use mygym-core-v7.3.0 cache name');
-  assert(swCode.includes("'./style.css?v=7.3.0'"), 'sw.js must precache style.css?v=7.3.0');
-  assert(swCode.includes("'./app.js?v=7.3.0'"), 'sw.js must precache app.js?v=7.3.0');
-  assert(swCode.includes("'./calc.js?v=7.3.0'"), 'sw.js must precache calc.js?v=7.3.0');
+it('sw.js cache key is bumped to mygym-core-v8.0.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v8.0.0';"), 'sw.js must use mygym-core-v8.0.0 cache name');
+  assert(swCode.includes("'./style.css?v=8.0.0'"), 'sw.js must precache style.css?v=8.0.0');
+  assert(swCode.includes("'./app.js?v=8.0.0'"), 'sw.js must precache app.js?v=8.0.0');
+  assert(swCode.includes("'./calc.js?v=8.0.0'"), 'sw.js must precache calc.js?v=8.0.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.3.0'), 'index.html must link style.css?v=7.3.0');
-  assert(htmlCode.includes('shell.js?v=7.3.0'), 'index.html must load shell.js?v=7.3.0');
-  assert(htmlCode.includes('app.js?v=7.3.0'), 'index.html must load app.js?v=7.3.0');
-  assert(htmlCode.includes('calc.js?v=7.3.0'), 'index.html must load calc.js?v=7.3.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.3.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=8.0.0'), 'index.html must link style.css?v=8.0.0');
+  assert(htmlCode.includes('shell.js?v=8.0.0'), 'index.html must load shell.js?v=8.0.0');
+  assert(htmlCode.includes('app.js?v=8.0.0'), 'index.html must load app.js?v=8.0.0');
+  assert(htmlCode.includes('calc.js?v=8.0.0'), 'index.html must load calc.js?v=8.0.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v8.0.0'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.3.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.3.0');
+  assert.equal(api.APP_VERSION, '8.0.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v8.0.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -4733,6 +4733,155 @@ it('Phase 6: Local rule-based insights are integrated into This week details she
   assert(appCode.includes('case \'musclebreakdown\':'), 'Action switch must handle musclebreakdown');
   assert(appCode.includes('calcTrainingInsights'), 'musclebreakdown must compute training insights');
   assert(appCode.includes('Training Insights'), 'musclebreakdown must render Training Insights card');
+});
+
+// -----------------------------------------------------------------------------
+console.log('\nSuite 30: Phase 7 & 8 3D Polish, Motion Compliance, Upgrade Audit & v8.0.0 Release');
+
+it('Upgrade migration from v7.0.x preserves routines, logs, weights, and nutrition overrides while scrubbing legacy API keys', async () => {
+  const legacyState = {
+    schemaVersion: 3,
+    routines: [
+      { id: 'r_legacy', name: 'Legacy Upper Power', ex: [{ id: 'bench_press', sets: 3, reps: 5, w: 100 }] }
+    ],
+    logs: [
+      { id: 'l_legacy', name: 'Legacy Upper Power', date: Date.now() - 86400000, dur: 3600, ex: [{ id: 'bench_press', sets: [{ w: 100, r: 5, type: 'normal' }] }] }
+    ],
+    weights: [
+      { id: 'w_legacy', date: '2026-11-14', w: 82.5, waist: 84 }
+    ],
+    nutrition: {
+      targetCals: 2600,
+      targetProtein: 180,
+      targetCarbs: 300,
+      targetFat: 70,
+      targetFiber: 38
+    },
+    apiKey: 'sk-plaintext-leak-root',
+    cfg: {
+      unit: 'kg',
+      rest: 90,
+      apiKey: 'sk-plaintext-leak-cfg',
+      ai_api_key: 'sk-plaintext-leak-ai-key',
+      ai: { apiKey: 'sk-nested-leak' }
+    }
+  };
+
+  await api.runMigrations(legacyState);
+
+  assert.equal(legacyState.schemaVersion, 4, 'Schema version must migrate to 4');
+  assert.equal(legacyState.routines.length, 1, 'Routines must be preserved');
+  assert.equal(legacyState.routines[0].name, 'Legacy Upper Power', 'Routine name must be preserved');
+  assert.equal(legacyState.logs.length, 1, 'Workout logs must be preserved');
+  assert.equal(legacyState.weights.length, 1, 'Body weights must be preserved');
+  assert.equal(legacyState.weights[0].w, 82.5, 'Body weight value must match');
+  assert.equal(legacyState.nutrition.targetCals, 2600, 'Custom nutrition target calories must be preserved');
+  assert.equal(legacyState.nutrition.targetProtein, 180, 'Custom nutrition target protein must be preserved');
+
+  // Verify scrubbing of sensitive keys
+  assert.strictEqual(legacyState.apiKey, undefined, 'Root apiKey must be scrubbed');
+  assert.strictEqual(legacyState.cfg.apiKey, undefined, 'cfg.apiKey must be scrubbed');
+  assert.strictEqual(legacyState.cfg.ai_api_key, undefined, 'cfg.ai_api_key must be scrubbed');
+  assert.strictEqual(legacyState.cfg.ai.apiKey, undefined, 'cfg.ai.apiKey must be scrubbed');
+  assert.strictEqual(legacyState.cfg.nutritionEnabled, true, 'nutritionEnabled must default to true');
+
+  // Test applySanitizedBackup with attempted key injection
+  const backupPayload = {
+    routines: [{ id: 'r_bak', name: 'Backup Routine', ex: [{ id: '0025', sets: 3, reps: 5, w: 140 }] }],
+    logs: [{ id: 'l_bak', name: 'Backup Log', date: Date.now(), dur: 45, ex: [{ id: '0025', sets: [{ w: 140, r: 5, type: 'normal' }] }] }],
+    weights: [{ id: 'w_bak', date: '2026-11-14', w: 80.0, waist: 82 }],
+    nutrition: { targetCals: 2450, targetProtein: 175, targetCarbs: 260, targetFat: 65, targetFiber: 35 },
+    cfg: {
+      unit: 'kg',
+      rest: 75,
+      apiKey: 'sk-injected-backup-key',
+      ai_api_key: 'sk-injected-ai-key'
+    }
+  };
+
+  await api.applySanitizedBackup(backupPayload);
+  assert.equal(api.S.routines.length, 1, 'Backup routines must be restored');
+  assert.equal(api.S.routines[0].name, 'Backup Routine', 'Restored routine name matches');
+  assert.equal(api.S.nutrition.targetCals, 2450, 'Restored nutrition target calories match');
+  assert.strictEqual(api.S.cfg.apiKey, undefined, 'Backup restore must never set cfg.apiKey');
+  assert.strictEqual(api.S.cfg.ai_api_key, undefined, 'Backup restore must never set cfg.ai_api_key');
+});
+
+it('Reduced-motion compliance across animateCounter, triggerPRCelebration, and 3D viewer fallback', () => {
+  const origMatchMedia = mockWindow.matchMedia;
+  mockWindow.matchMedia = (query) => ({
+    matches: query.includes('prefers-reduced-motion: reduce')
+  });
+
+  // 1. animateCounter immediately sets target value
+  const counterEl = new MockElement('div');
+  api.animateCounter(counterEl, 0, 150, 800, 'kg');
+  assert.equal(counterEl.textContent, '150kg', 'animateCounter must immediately set final value under reduced motion');
+
+  // 2. triggerPRCelebration creates static banner without confetti particles
+  api.triggerPRCelebration({ text: 'PR Bench 120kg' });
+  const overlays = elementsMap['body'].children.filter(c => c.id === 'pr-celebration-overlay' || (c.className && c.className.includes('pr-celebration-overlay')));
+  const overlay = overlays[overlays.length - 1];
+  assert(overlay, 'triggerPRCelebration must render celebration overlay');
+  assert.equal(overlay.children.length, 1, 'triggerPRCelebration must render only static banner without confetti particles');
+  assert(overlay.children[0].innerHTML.includes('PR Bench 120kg'), 'Celebration banner must display record text');
+  overlay.remove();
+
+  // 3. 3D Anatomy fallback
+  api.show3DAnatomyModal(['chest'], ['triceps']);
+  const anatomyModal = elementsMap['#m'].innerHTML;
+  assert(anatomyModal.includes('Reduced motion active'), 'Anatomy modal must inform user of reduced-motion mode');
+  assert(anatomyModal.includes('interactive 2D anatomical map'), 'Anatomy modal must render 2D map fallback');
+  api.closeModal();
+
+  // 4. 3D Physique fallback
+  api.show3DPhysiqueModal(0.65);
+  const physiqueModal = elementsMap['#m'].innerHTML;
+  assert(physiqueModal.includes('Reduced motion active'), 'Physique modal must inform user of reduced-motion mode');
+  assert(physiqueModal.includes('2D transformation roadmap'), 'Physique modal must render 2D morph fallback');
+  api.closeModal();
+
+  mockWindow.matchMedia = origMatchMedia;
+});
+
+it('requestAnimationFrame throttling on 3D physique morph slider and disposal on modal close', () => {
+  // Verify morph slider event listener uses requestAnimationFrame and cancelAnimationFrame
+  assert(appCode.includes('morphRaf'), 'Physique 3D slider must maintain morphRaf reference for throttling');
+  assert(appCode.includes('cancelAnimationFrame(morphRaf)'), 'Physique 3D slider must cancel pending animation frame on scrub');
+
+  // Verify close3DModal and full disposal
+  let disposed = false;
+  api.active3DViewer = {
+    destroy: () => { disposed = true; }
+  };
+  assert.equal(typeof api.close3DModal, 'function', 'close3DModal must be exported');
+  api.close3DModal();
+  assert.equal(disposed, true, 'close3DModal must invoke active3DViewer.destroy()');
+  assert.strictEqual(api.active3DViewer, null, 'active3DViewer must be reset to null after close');
+});
+
+it('Zero undefined CSS classes and zero UI emoji leaks in production release', () => {
+  // Ensure CSS audit passes without errors
+  const styleCss = fs.readFileSync(path.join(rootDir, 'style.css'), 'utf8');
+  assert(styleCss.includes('@media (prefers-reduced-motion: reduce)'), 'style.css must have prefers-reduced-motion media query');
+  assert(styleCss.includes('.spring-ripple'), 'style.css must define .spring-ripple');
+
+  // Verify no forbidden UI emoji in app.js button/chip UI chrome
+  const forbiddenEmojis = ['🤖', '⇄', '⚙️', '🔍 Tap', '•••', '👁️'];
+  const lines = appCode.split('\n');
+  const violations = [];
+  lines.forEach((line, idx) => {
+    const isUiChrome = /class="[^"]*(btn|chip|work-hero-toolbar|sheet-header)[^"]*"/.test(line) ||
+                       /data-a="[^"]+"/.test(line);
+    if (isUiChrome) {
+      for (const emoji of forbiddenEmojis) {
+        if (line.includes(emoji)) {
+          violations.push({ line: idx + 1, emoji, text: line.trim() });
+        }
+      }
+    }
+  });
+  assert.equal(violations.length, 0, `Zero UI emoji violations expected, but found: ${JSON.stringify(violations)}`);
 });
 
 console.log(`\n======================================================`);

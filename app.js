@@ -204,7 +204,7 @@ function isUserOnboarded() {
 }
 if (typeof window !== 'undefined') window.isUserOnboarded = isUserOnboarded;
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 let S = {
   schemaVersion: SCHEMA_VERSION,
@@ -279,6 +279,26 @@ const MIGRATIONS = [
         state.cfg.unit = 'kg';
       }
     }
+  },
+  {
+    version: 4,
+    name: 'Scrub legacy plaintext API keys and ensure nutrition defaults',
+    up(state) {
+      if (!state) return;
+      if (state.apiKey) delete state.apiKey;
+      if (state.cfg) {
+        if (state.cfg.apiKey) delete state.cfg.apiKey;
+        if (state.cfg.ai_api_key) delete state.cfg.ai_api_key;
+        if (state.cfg.ai && state.cfg.ai.apiKey) delete state.cfg.ai.apiKey;
+        if (state.cfg.nutritionEnabled === undefined) {
+          state.cfg.nutritionEnabled = true;
+        }
+      }
+      if (typeof localStorage !== 'undefined' && localStorage.removeItem) {
+        localStorage.removeItem('mygym_ai_key');
+        localStorage.removeItem('mygym_ai_api_key');
+      }
+    }
   }
 ];
 
@@ -307,8 +327,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.3.0';
-const SHELL_VERSION = 'mygym-core-v7.3.0';
+const APP_VERSION = '8.0.0';
+const SHELL_VERSION = 'mygym-core-v8.0.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -1570,7 +1590,8 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
   const sKeys = Array.isArray(secondaryMuscles) ? secondaryMuscles : (typeof secondaryMuscles === 'string' ? secondaryMuscles.split(',').filter(Boolean) : []);
   const currentGender = S.cfg?.bodyModel || 'male';
 
-  const hasWebGL = isWebGLAvailable();
+  const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hasWebGL = isWebGLAvailable() && !prefersReduced;
 
   if (!hasWebGL) {
     // Graceful 2D SVG fallback
@@ -1580,7 +1601,9 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
         <button class="modal-close-btn" data-a="close">✕</button>
       </div>
       <div style="background:var(--card-sub);padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--t2);">
-        ⚠️ WebGL 3D acceleration is not available or disabled on this device. Showing interactive 2D anatomical map.
+        ${prefersReduced
+          ? 'ℹ️ Reduced motion active. WebGL 3D acceleration is not available or disabled on this device. Showing interactive 2D anatomical map.'
+          : '⚠️ WebGL 3D acceleration is not available or disabled on this device. Showing interactive 2D anatomical map.'}
       </div>
       <div style="text-align:center;">
         ${mmap(pKeys, sKeys, { gender: currentGender, wrap: true })}
@@ -1653,7 +1676,8 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
 
   const pState = getPhysiqueState();
   const currentGender = S.cfg?.bodyModel || 'male';
-  const hasWebGL = isWebGLAvailable();
+  const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const hasWebGL = isWebGLAvailable() && !prefersReduced;
 
   const prog = Math.max(0, Math.min(1, initialProgress != null ? initialProgress : ((pState && pState.overallProgress != null) ? pState.overallProgress / 100 : 0.5)));
   const displayPct = Math.round(prog * 100);
@@ -1665,7 +1689,9 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
         <button class="modal-close-btn" data-a="close">✕</button>
       </div>
       <div style="background:var(--card-sub);padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--t2);">
-        ⚠️ WebGL 3D acceleration is not available. Showing 2D transformation roadmap.
+        ${prefersReduced
+          ? 'ℹ️ Reduced motion active. WebGL 3D acceleration is not available. Showing 2D transformation roadmap.'
+          : '⚠️ WebGL 3D acceleration is not available. Showing 2D transformation roadmap.'}
       </div>
       <div style="text-align:center;">
         ${generateMorphSvg(currentGender, prog)}
@@ -1715,11 +1741,16 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
 
         const slider = document.getElementById('physique-3d-slider');
         const label = document.getElementById('physique-3d-pct-label');
+        let morphRaf = null;
         if (slider) {
           slider.addEventListener('input', (e) => {
             const val = Number(e.target.value);
             if (label) label.textContent = `${val}% Progress`;
-            if (viewer) viewer.setPhysiqueProgress(val / 100);
+            if (morphRaf) cancelAnimationFrame(morphRaf);
+            morphRaf = requestAnimationFrame(() => {
+              if (viewer) viewer.setPhysiqueProgress(val / 100);
+              morphRaf = null;
+            });
           });
         }
       } catch (viewerErr) {
@@ -1864,10 +1895,7 @@ function triggerPRCelebration(options = {}) {
   const { text = '🎉 NEW PERSONAL RECORD!', container = (typeof document !== 'undefined' ? document.body : null) } = options;
   if (!container || typeof document === 'undefined' || typeof document.createElement !== 'function') return;
 
-  if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-    if (typeof toast === 'function') toast(text);
-    return;
-  }
+  const prefersReduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   const existing = document.getElementById ? document.getElementById('pr-celebration-overlay') : null;
   if (existing && typeof existing.remove === 'function') existing.remove();
@@ -1883,9 +1911,21 @@ function triggerPRCelebration(options = {}) {
 
   const banner = document.createElement('div');
   banner.className = 'pr-banner-card';
-  banner.style.cssText = 'background:rgba(10,10,12,0.92);backdrop-filter:blur(16px);border:2px solid #FF9F0A;padding:16px 24px;border-radius:16px;box-shadow:0 12px 36px rgba(255,159,10,0.35);text-align:center;color:#FFF;transform:scale(0.8);opacity:0;transition:all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);';
-  banner.innerHTML = `<div style="font-size:24px;margin-bottom:4px;">🏆</div><div style="font-size:16px;font-weight:800;color:#FF9F0A;">${esc(text)}</div>`;
+  banner.style.cssText = prefersReduced
+    ? 'background:rgba(10,10,12,0.92);border:2px solid #FF9F0A;padding:16px 24px;border-radius:16px;box-shadow:0 12px 36px rgba(255,159,10,0.35);text-align:center;color:#FFF;transform:scale(1);opacity:1;'
+    : 'background:rgba(10,10,12,0.92);backdrop-filter:blur(16px);border:2px solid #FF9F0A;padding:16px 24px;border-radius:16px;box-shadow:0 12px 36px rgba(255,159,10,0.35);text-align:center;color:#FFF;transform:scale(0.8);opacity:0;transition:all 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);';
+  banner.innerHTML = `<div style="font-size:24px;margin-bottom:4px;">${typeof ic === 'function' ? ic('trophy', 28) : '🏆'}</div><div style="font-size:16px;font-weight:800;color:#FF9F0A;">${esc(text)}</div>`;
   overlay.appendChild(banner);
+
+  container.appendChild(overlay);
+
+  if (prefersReduced) {
+    // Reduced motion compliance: display static banner, skip particle confetti animation
+    setTimeout(() => {
+      if (overlay && typeof overlay.remove === 'function') overlay.remove();
+    }, 2000);
+    return;
+  }
 
   const colors = ['#FF9F0A', '#0A84FF', '#30D158', '#FF453A', '#BF5AF2', '#FFD60A'];
   const confettiCount = 36;
@@ -2610,6 +2650,7 @@ const closeModal = () => {
   }
 };
 const close = closeModal;
+const close3DModal = closeModal;
 if (typeof window !== 'undefined') {
   window.closeModal = closeModal;
   window.close = closeModal;
@@ -12733,7 +12774,7 @@ async function init() {
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.3.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=8.0.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -12954,6 +12995,7 @@ if (typeof globalThis !== 'undefined') {
     init3DViewer,
     show3DAnatomyModal,
     show3DPhysiqueModal,
+    close3DModal,
     animateCounter,
     renderVolumeRadarChart,
     renderThisWeekMuscleCard,

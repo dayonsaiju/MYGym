@@ -5134,8 +5134,9 @@ html, body, #v, main {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .spring-ripple {
+  .spring-ripple, .modal, .modal-backdrop, .sheet, .pr-banner-card, .pr-celebration-overlay {
     animation: none !important;
+    transition: none !important;
   }
 }
 

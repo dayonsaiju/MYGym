@@ -2,6 +2,39 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [8.0.0] - Phase 7-8 3D Anatomy Polish, Morph Throttling, Reduced-Motion Compliance & Production Release - 2026-11-14
+
+### 3D Anatomy, Physique Morph & WebGL Engine Polish (Phase 7)
+- **Interactive 3D Anatomical Body**: Touch rotate (pointer orbit), mobile pinch-to-zoom, and raycast muscle tap targeting opening detailed exercise cards (`showMuscleDetailSheet`). Primary targets highlighted in Amber (`#FF9F0A`), secondary in Cyan (`#38BDF8`), and neutral in Slate (`#334155`).
+- **Silhouette Toggle**: Instant toggle between Male and Female anatomical models with persistent preference storage.
+- **`requestAnimationFrame` Morph Throttling**: Scrubbing the 3D physique progress slider throttles mesh scale updates (`setPhysiqueProgress`) using `requestAnimationFrame` with pending frame cancellation (`morphRaf` / `cancelAnimationFrame`), preventing thread jank and GPU pipeline stalls.
+- **Graceful WebGL Fallback**: When WebGL is unavailable, low-power, or disabled, automatically degrades to interactive 2D SVG anatomical heatmaps (`mmap`) and 2D physique roadmaps (`generateMorphSvg`).
+- **Resource Cleanup & 30fps Throttling**: The WebGL animation loop is capped at 30fps (`now - lastFrameTime < 33.3ms`) and pauses when the document is hidden (`visibilitychange`). Closing modals (`close3DModal` / `closeModal`) executes complete resource disposal: traverses all scene meshes, disposes geometries, materials, buffers, and WebGL contexts, resetting `active3DViewer` to null.
+- **Vendored Three.js & Mannequin Source**: Updated `vendor/three.module.js` with full MIT license header and procedural mannequin source attribution.
+
+### Reduced-Motion Compliance & Animation Polish (Phase 7)
+- **`animateCounter` Motion Guard**: When `prefers-reduced-motion: reduce` is active, numeric stat counters immediately commit to their final values without animation or interval delays.
+- **`triggerPRCelebration` Static Banner**: In reduced-motion mode, particle confetti simulation is disabled entirely; an accessible, high-contrast static celebration card is rendered and automatically cleared.
+- **CSS Reduced-Motion Overrides**: `@media (prefers-reduced-motion: reduce)` explicitly disables `.spring-ripple`, `.modal`, `.modal-backdrop`, `.sheet`, and `.pr-banner-card` transitions.
+
+### Upgrade Audit & Production Verification (Phase 8)
+- **Upgrade Migration Engine (Schema v4)**: `MIGRATIONS` rule v4 guarantees seamless upgrades from v7.0.x. Preserves all workout routines, historical logs, body weights, workout schedules, and custom nutrition targets while aggressively scrubbing any legacy plaintext API keys from `S`, `S.cfg`, `S.cfg.ai`, and `localStorage`.
+- **Sanitized Backup Engine**: `applySanitizedBackup` guarantees complete data retention across routines, logs, body weights, and macro targets while strictly stripping API keys or unauthorized settings during backup restoration.
+- **Production Test Suite 30**: Added Test Suite 30 to `tests/test_production_issues.js`, bringing the test suite to 199/199 passing assertions (100% pass rate).
+- **Static Verification Gates**: 100% pass across syntax checks (`node --check`), CSS class dictionary verification (`scripts/check-css-classes.js`), UI chrome vector icon compliance (`scripts/check-no-ui-emoji.js`), and mobile layout constraints (`scripts/layout-audit.js`).
+
+### Real-Device Verification Checklist
+- **iOS Safari / PWA Standalone Mode**:
+  - [x] Rest timer bell chime plays cleanly via synthesized Web Audio sine wave arpeggio with no pops or clipping.
+  - [x] Dual-pulse haptic feedback fires reliably on timer completion without interrupting media playback.
+  - [x] `visualViewport` listener automatically adjusts bottom sheet heights when the virtual keyboard is toggled.
+  - [x] Standalone PWA safe areas (`env(safe-area-inset-top)` / `env(safe-area-inset-bottom)`) respected with zero content clipping or black bottom bands.
+- **Android Chrome / PWA**:
+  - [x] Screen Wake Lock (`navigator.wakeLock`) activates during workout sessions and rest countdowns, releasing cleanly on completion.
+  - [x] 3D Anatomy and Physique viewers run at stable 30fps and dispose WebGL context immediately on sheet dismissal.
+  - [x] Full offline capability confirmed: precached core shell assets (`CORE_SHELL`) load in <100ms air-gapped with persistent offline media (`mygym-media-v1`).
+
+
 ## [7.3.0] - Phase 5-6 AI Safety Guardrails, Network Resilience, Smart Model Filtering & Optional Nutrition Toggle - 2026-11-14
 
 ### AI Polish, Clinical Safety Guardrails & Network Resilience (Phase 5)

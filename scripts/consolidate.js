@@ -6,13 +6,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
 
-const manifestPath = path.join(rootDir, 'manifest.json');
-let appVersion = '7.0.0';
-if (fs.existsSync(manifestPath)) {
-  try {
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    if (manifest.version) appVersion = manifest.version;
-  } catch (_) {}
+let appVersion = '8.0.0';
+const appJsPath = path.join(rootDir, 'app.js');
+if (fs.existsSync(appJsPath)) {
+  const m = fs.readFileSync(appJsPath, 'utf8').match(/const APP_VERSION = ['"]([^'"]+)['"]/);
+  if (m) appVersion = m[1];
 }
 
 const files = [
