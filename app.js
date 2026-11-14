@@ -307,8 +307,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '7.2.0';
-const SHELL_VERSION = 'mygym-core-v7.2.0';
+const APP_VERSION = '7.3.0';
+const SHELL_VERSION = 'mygym-core-v7.3.0';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -4640,7 +4640,7 @@ function showExerciseHistoryModal(targetId) {
       <div class="zoom-modal-header">
         <div>
           <h2 class="zoom-title" style="display:flex;align-items:center;gap:6px">
-            <span>📈</span> <span>${esc(ex.name)}</span>
+            <span>${ic('calendar', 18)}</span> <span>${esc(ex.name)}</span>
           </h2>
           <div class="t2 sm">${esc(ex.g)} · ${esc(ex.eq)} · ${sessions.length} logged sessions</div>
         </div>
@@ -4673,7 +4673,7 @@ function showExerciseHistoryModal(targetId) {
         </div>
         ${recentSessions.length === 0 ? `
           <div style="text-align:center;padding:28px 16px;color:var(--t2);background:var(--c2);border-radius:12px">
-            <div style="font-size:24px;margin-bottom:6px">📊</div>
+            <div style="margin-bottom:6px">${ic('calendar', 24)}</div>
             <div style="font-weight:600;font-size:14px;color:var(--tx)">No Workout History Yet</div>
             <div style="font-size:12px;margin-top:4px">Complete your first set for this exercise to start tracking strength gains and PR milestones.</div>
           </div>
@@ -6546,19 +6546,24 @@ function applyMacroPreset(type) {
 
 function vBody() {
   const p = getPhysiqueState();
+  const nutritionEnabled = S.cfg?.nutritionEnabled !== false;
+  if (!nutritionEnabled && bodySubTab === 'nutrition') {
+    bodySubTab = 'physique';
+  }
+
   const subtabs = [
-    { id: 'physique', label: '⚡ Physique' },
-    { id: 'nutrition', label: '🥗 Nutrition' }
+    { id: 'physique', label: 'Physique' },
+    ...(nutritionEnabled ? [{ id: 'nutrition', label: 'Nutrition' }] : [])
   ];
-  const subtabHeader = `
+  const subtabHeader = nutritionEnabled ? `
     <div class="segmented-control" style="margin:6px 0 14px;display:flex;width:100%;">
       ${subtabs.map(st => `
         <button class="seg-btn ${bodySubTab === st.id ? 'active' : ''}" data-a="body-subtab" data-tab="${st.id}">${st.label}</button>
       `).join('')}
     </div>
-  `;
+  ` : '';
 
-  if (bodySubTab === 'nutrition') {
+  if (nutritionEnabled && bodySubTab === 'nutrition') {
     return viewHeader('Body & Nutrition') + subtabHeader + renderNutritionDashboard();
   }
 
@@ -8149,6 +8154,11 @@ function showSettingsModal() {
                 <option value="lbs" ${S.cfg.units === 'lbs' ? 'selected' : ''}>Imperial (lbs, in)</option>
               </select>
             </label>
+            <div class="settings-divider"></div>
+            <label class="settings-row">
+              <span class="settings-label">Enable Daily Nutrition Tracking</span>
+              <input type="checkbox" data-c="nutritionEnabled" ${S.cfg.nutritionEnabled !== false ? 'checked' : ''}>
+            </label>
           </div>
         </div>
       </div>
@@ -8734,7 +8744,41 @@ async function refreshAIModels(provider) {
   } finally {
     if (refreshBtn) {
       refreshBtn.disabled = false;
-      refreshBtn.textContent = '🔄 Refresh';
+      refreshBtn.innerHTML = `${ic('rotateCcw', 12)} Refresh`;
+    }
+  }
+}
+
+async function fetchAIWithTimeoutAndRetry(url, fetchOptions, timeoutMs = 20000, maxRetries = 1) {
+  let attempt = 0;
+  while (true) {
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+    try {
+      const opts = { ...fetchOptions };
+      if (controller) opts.signal = controller.signal;
+      const res = await fetch(url, opts);
+      if (timer) clearTimeout(timer);
+
+      // Transient 429/502/503 errors retry once with backoff
+      if (!res.ok && (res.status === 429 || res.status === 502 || res.status === 503) && attempt < maxRetries) {
+        attempt++;
+        const backoffMs = Math.min(2500, 1000 * Math.pow(2, attempt));
+        await new Promise(r => setTimeout(r, backoffMs));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      if (timer) clearTimeout(timer);
+      if (err.name === 'AbortError' || (controller && controller.signal && controller.signal.aborted)) {
+        throw new Error('AI request timed out after 20 seconds. Please check your network connection.');
+      }
+      if (attempt < maxRetries && err.message && (err.message.includes('network') || err.message.includes('Failed to fetch') || err.message.includes('CORS'))) {
+        attempt++;
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      throw err;
     }
   }
 }
@@ -8744,6 +8788,7 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
     ? { systemPrompt: optionsOrSystemPrompt }
     : (optionsOrSystemPrompt || {});
 
+  const timeoutMs = Number(options.timeout) || 20000;
   const config = resolveAIConfig(options);
   const apiKey = (options.apiKey || config.apiKey || '').trim();
   if (!apiKey) {
@@ -8818,19 +8863,19 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
 
     let res;
     try {
-      res = await fetch(endpoint, {
+      res = await fetchAIWithTimeoutAndRetry(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': apiKey
         },
         body: JSON.stringify(reqBody)
-      });
+      }, timeoutMs);
     } catch (netErr) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         throw new Error('Network Offline. An active internet connection is required to contact AI.');
       }
-      if (netErr.message && netErr.message.includes('Content Security Policy')) {
+      if (netErr.message && (netErr.message.includes('Content Security Policy') || netErr.message.includes('timed out'))) {
         throw netErr;
       }
       throw new Error(`Network connection blocked or CORS issue contacting ${providerName}: ${netErr.message || 'Check connection'}`);
@@ -8848,7 +8893,10 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       if (res.status === 401 || res.status === 403 || (res.status === 400 && errMsg.includes('API_KEY_INVALID'))) {
         throw new Error(`Invalid API key for ${providerName} (${res.status}). Please verify your key in Settings.`);
       }
-      if (res.status === 404) {
+      if (res.status === 404 || errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('decommissioned')) {
+        if (typeof refreshAIModels === 'function') {
+          refreshAIModels(provider).catch(() => {});
+        }
         throw new Error(`Model "${model}" not found for ${providerName} (404). Please refresh models in Settings and select an active model.`);
       }
       if (res.status === 429) {
@@ -8921,16 +8969,16 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
 
     let res;
     try {
-      res = await fetch(endpointUrl, {
+      res = await fetchAIWithTimeoutAndRetry(endpointUrl, {
         method: 'POST',
         headers,
         body: JSON.stringify(bodyPayload)
-      });
+      }, timeoutMs);
     } catch (netErr) {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         throw new Error('Network Offline. An active internet connection is required to contact AI.');
       }
-      if (netErr.message && netErr.message.includes('Content Security Policy')) {
+      if (netErr.message && (netErr.message.includes('Content Security Policy') || netErr.message.includes('timed out'))) {
         throw netErr;
       }
       throw new Error(`Network connection blocked or CORS issue contacting ${providerName}: ${netErr.message || 'Check connection'}`);
@@ -8948,7 +8996,10 @@ async function callAI(promptOrMessages, optionsOrSystemPrompt = {}) {
       if (res.status === 401 || res.status === 403) {
         throw new Error(`Invalid API key for ${providerName} (${res.status}). Please verify your key in Settings.`);
       }
-      if (res.status === 404) {
+      if (res.status === 404 || errMsg.toLowerCase().includes('not found') || errMsg.toLowerCase().includes('decommissioned')) {
+        if (typeof refreshAIModels === 'function') {
+          refreshAIModels(provider).catch(() => {});
+        }
         throw new Error(`Model "${model}" not found for ${providerName} (404). Please refresh models in Settings and select an active model.`);
       }
       if (res.status === 429) {
@@ -9490,7 +9541,7 @@ function commitAIRoutine(startImmediately = false) {
   S.routines.push(newRoutine);
   save('routines');
   closeModal();
-  toast(`Routine "${routineName}" saved! 🏆`);
+  toast(`Routine "${routineName}" saved!`);
 
   if (startImmediately) {
     startWorkout(newRoutine.id);
@@ -9537,16 +9588,19 @@ function openAICoachDrawer(initialPrompt = null) {
           <b style="font-size:15px;white-space:nowrap;">Workout Coach</b>
           <span class="chip on" style="font-size:11px;padding:2px 8px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(providerName)} · ${esc(model)}">${esc(model)}</span>
         </div>
-        <button class="btn-icon" data-a="closemodal" aria-label="Close coach sheet" style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;font-size:16px;">✕</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          <button class="chip" data-a="clearaichat" title="Clear chat history" style="font-size:11px;padding:4px 8px">${ic('trash', 12)} Clear chat</button>
+          <button class="btn-icon" data-a="closemodal" aria-label="Close coach sheet" style="min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;font-size:16px;">${ic('close', 14)}</button>
+        </div>
       </div>
 
       <div style="font-size:11px;color:var(--t3);margin:8px 0 2px;line-height:1.4;display:flex;align-items:center;gap:6px">
-        ${icon('lock', { size: 12 })} <span>Privacy Note: Messages are sent directly to your configured AI provider using your API key.</span>
+        ${ic('shield', 12)} <span>Privacy Note: Messages are sent directly to your configured AI provider using your API key.</span>
       </div>
 
       ${!hasKey ? `
         <div class="card" style="margin:10px 0 0;padding:10px;background:rgba(255,159,10,0.12);border:1px solid rgba(255,159,10,0.3)">
-          <div style="font-weight:700;font-size:12px;color:var(--am)">⚠️ API Key Needed for Live Answers</div>
+          <div style="font-weight:700;font-size:12px;color:var(--am);display:flex;align-items:center;gap:6px">${ic('alertTriangle', 14)} API Key Needed for Live Answers</div>
           <div class="t2 sm" style="margin-top:2px">Configure your API key in Settings to chat with the coach.</div>
           <button class="btn s sm-btn" data-a="opensettings" style="margin-top:6px;font-size:11px">Open Settings</button>
         </div>
@@ -9555,7 +9609,7 @@ function openAICoachDrawer(initialPrompt = null) {
       <div class="ai-chat-messages" id="ai-chat-messages">
         ${aiCoachHistory.map(m => `
           <div class="ai-msg ${m.role === 'user' ? 'ai-msg-user' : 'ai-msg-assistant'}">
-            ${m.role === 'assistant' ? `<div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">${icon('message', { size: 12 })} <span>COACH</span></div>` : ''}
+            ${m.role === 'assistant' ? `<div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">${ic('bot', 12)} <span>COACH</span></div>` : ''}
             <div>${esc(m.content).replace(/\n/g, '<br>')}</div>
           </div>
         `).join('')}
@@ -9563,10 +9617,10 @@ function openAICoachDrawer(initialPrompt = null) {
 
       <!-- Quick Context Chips in single horizontally scrollable row -->
       <div class="ai-quick-chips" style="display:flex;gap:8px;overflow-x:auto;padding:8px 0;scrollbar-width:none;-webkit-overflow-scrolling:touch;">
-        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Give me 3 critical form cues and execution tips for ${esc(curExName)}">💡 Form cues</button>
-        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Calculate optimal warm-up sets building up to ${curExWeight}kg on ${esc(curExName)}">⚡ Warm-up</button>
-        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Suggest 2 alternative exercises targeting the same muscles if the equipment for ${esc(curExName)} is taken">🔄 Substitutes</button>
-        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="How should I break through a plateau if I missed my rep target on ${esc(curExName)}?">📈 Plateau</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Give me 3 critical form cues and execution tips for ${esc(curExName)}">${ic('sparkles', 12)} Form cues</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Calculate optimal warm-up sets building up to ${curExWeight}kg on ${esc(curExName)}">${ic('zap', 12)} Warm-up</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="Suggest 2 alternative exercises targeting the same muscles if the equipment for ${esc(curExName)} is taken">${ic('rotateCcw', 12)} Substitutes</button>
+        <button class="ai-chip" style="flex:none;white-space:nowrap;" data-a="ai-quick-prompt" data-p="How should I break through a plateau if I missed my rep target on ${esc(curExName)}?">${ic('zap', 12)} Plateau</button>
       </div>
 
       <div class="ai-input-bar">
@@ -9599,18 +9653,23 @@ async function sendAICoachMessage(userText) {
         <div>${esc(text).replace(/\n/g, '<br>')}</div>
       </div>
       <div class="ai-msg ai-msg-assistant" id="ai-coach-loading">
-        <div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px">🤖 COACH</div>
+        <div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">${ic('bot', 12)} <span>COACH</span></div>
         <div class="t2 sm">Thinking...</div>
       </div>
     `;
     msgContainer.scrollTop = msgContainer.scrollHeight;
   }
 
-  let systemContext = 'You are an elite strength & bodybuilding coach embedded in MyGyM PWA. Keep answers concise (2-4 sentences max), direct, and actionable for a lifter in the gym.';
+  let systemContext = 'You are an elite strength & bodybuilding coach embedded in MyGyM PWA. Keep answers concise (2-4 sentences max), direct, and actionable for a lifter in the gym.' +
+    '\nCLINICAL SAFETY DIRECTIVE: Never diagnose medical conditions. If the user mentions sharp pain, back/joint pain, injury, numbness, or dizziness, immediately advise stopping the exercise and consulting a qualified medical/physiotherapy professional before offering any general form information.';
+
+  const goal = S.cfg?.physique?.goal || 'hypertrophy';
+  systemContext += `\nLifter physique goal: ${goal}.`;
   if (S.act) {
     const curEx = S.act.ex[S.act.curEx || 0];
     const eObj = curEx ? X(curEx.id) : null;
-    systemContext += `\nLifter's active workout: "${S.act.name}". Current exercise: ${eObj ? eObj.name : 'Unknown'}. Equipment: ${eObj ? eObj.eq : 'N/A'}. Target: ${eObj ? (eObj.tg || eObj.g) : 'N/A'}.`;
+    const setsInfo = (curEx?.sets || []).map((s, idx) => `Set ${idx + 1}: ${s.w}kg × ${s.r}${s.done ? ' (done)' : ''}`).join(', ');
+    systemContext += `\nActive routine: "${S.act.name || 'Workout'}". Current exercise: ${eObj ? eObj.name : 'Unknown'}. Equipment: ${eObj ? eObj.eq : 'N/A'}. Target: ${eObj ? (eObj.tg || eObj.g) : 'N/A'}.${setsInfo ? ' Logged sets: ' + setsInfo : ''}`;
   }
 
   try {
@@ -9625,7 +9684,7 @@ async function sendAICoachMessage(userText) {
     if (loadingEl) {
       loadingEl.id = '';
       loadingEl.innerHTML = `
-        <div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px">🤖 COACH</div>
+        <div style="font-size:11px;font-weight:700;color:var(--ac);margin-bottom:3px;display:flex;align-items:center;gap:4px">${ic('bot', 12)} <span>COACH</span></div>
         <div>${esc(reply).replace(/\n/g, '<br>')}</div>
       `;
     }
@@ -9634,7 +9693,7 @@ async function sendAICoachMessage(userText) {
     if (loadingEl) {
       loadingEl.id = '';
       loadingEl.innerHTML = `
-        <div style="font-size:11px;font-weight:700;color:var(--rd);margin-bottom:3px">⚠️ ERROR</div>
+        <div style="font-size:11px;font-weight:700;color:var(--rd);margin-bottom:3px;display:flex;align-items:center;gap:4px">${ic('alertTriangle', 12)} <span>ERROR</span></div>
         <div>${esc(err.message)}</div>
       `;
     }
@@ -10456,10 +10515,26 @@ document.addEventListener('click', async e => {
         });
       });
 
+      const allInsights = (typeof Calc !== 'undefined' && Calc.calcTrainingInsights)
+        ? Calc.calcTrainingInsights(S.logs, S.routines, { getEx: X, weekStart: S.cfg?.weekStartDay || 'mon' })
+        : [];
+      const mLower = muscle.toLowerCase();
+      const matchingInsights = allInsights.filter(ins => {
+        if (ins.muscle && ins.muscle.toLowerCase() === mLower) return true;
+        if (ins.exId) {
+          const info = X(ins.exId);
+          const g = (info?.g || '').toLowerCase();
+          const tg = (info?.tg || '').toLowerCase();
+          return g.includes(mLower) || tg.includes(mLower);
+        }
+        if (ins.type === 'acwr_spike') return true;
+        return false;
+      });
+
       modal(`
         <div class="modal-header">
           <h3 class="modal-title">${esc(muscle)} · Weekly Breakdown</h3>
-          <button class="modal-close-btn" data-a="closemodal">✕</button>
+          <button class="modal-close-btn" data-a="closemodal">${ic('close', 14)}</button>
         </div>
         <div style="margin:12px 0;">
           <div class="row" style="justify-content:space-between;margin-bottom:12px;">
@@ -10480,6 +10555,18 @@ document.addEventListener('click', async e => {
               `).join('')}
             </div>
           `}
+          ${matchingInsights.length > 0 ? `
+            <div class="card" style="margin-top:12px;padding:10px 12px;background:rgba(255,159,10,0.08);border:1px solid rgba(255,159,10,0.25);border-radius:10px">
+              <div style="font-weight:700;font-size:12px;color:var(--am);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+                ${ic('sparkles', 13)} Training Insights
+              </div>
+              ${matchingInsights.map(ins => `
+                <div style="font-size:12px;line-height:1.4;margin-bottom:4px;color:var(--tx)">
+                  • <b>${esc(ins.title || ins.name || ins.muscle)}:</b> ${esc(ins.message)}
+                </div>
+              `).join('')}
+            </div>
+          ` : ''}
         </div>
       `);
       return;
@@ -11728,6 +11815,12 @@ document.addEventListener('click', async e => {
       openAICoachDrawer(t.dataset.p || null);
       return;
     }
+    case 'clearaichat': {
+      aiCoachHistory = [];
+      openAICoachDrawer();
+      toast('Chat history cleared');
+      return;
+    }
     case 'openaiimport': {
       openAIImportModal();
       return;
@@ -12640,7 +12733,7 @@ async function init() {
   }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=7.2.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=7.3.0').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 

@@ -995,27 +995,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v7.2.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v7.2.0';"), 'sw.js must use mygym-core-v7.2.0 cache name');
-  assert(swCode.includes("'./style.css?v=7.2.0'"), 'sw.js must precache style.css?v=7.2.0');
-  assert(swCode.includes("'./app.js?v=7.2.0'"), 'sw.js must precache app.js?v=7.2.0');
-  assert(swCode.includes("'./calc.js?v=7.2.0'"), 'sw.js must precache calc.js?v=7.2.0');
+it('sw.js cache key is bumped to mygym-core-v7.3.0, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v7.3.0';"), 'sw.js must use mygym-core-v7.3.0 cache name');
+  assert(swCode.includes("'./style.css?v=7.3.0'"), 'sw.js must precache style.css?v=7.3.0');
+  assert(swCode.includes("'./app.js?v=7.3.0'"), 'sw.js must precache app.js?v=7.3.0');
+  assert(swCode.includes("'./calc.js?v=7.3.0'"), 'sw.js must precache calc.js?v=7.3.0');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=7.2.0'), 'index.html must link style.css?v=7.2.0');
-  assert(htmlCode.includes('shell.js?v=7.2.0'), 'index.html must load shell.js?v=7.2.0');
-  assert(htmlCode.includes('app.js?v=7.2.0'), 'index.html must load app.js?v=7.2.0');
-  assert(htmlCode.includes('calc.js?v=7.2.0'), 'index.html must load calc.js?v=7.2.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.2.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=7.3.0'), 'index.html must link style.css?v=7.3.0');
+  assert(htmlCode.includes('shell.js?v=7.3.0'), 'index.html must load shell.js?v=7.3.0');
+  assert(htmlCode.includes('app.js?v=7.3.0'), 'index.html must load app.js?v=7.3.0');
+  assert(htmlCode.includes('calc.js?v=7.3.0'), 'index.html must load calc.js?v=7.3.0');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v7.3.0'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '7.2.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.2.0');
+  assert.equal(api.APP_VERSION, '7.3.0');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v7.3.0');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -4655,6 +4655,84 @@ it('Phase 3: style.css defines standard utility classes and index.html includes 
   assert(cssCode.includes('.gap-8'), 'style.css must define .gap-8');
   assert(cssCode.includes('.skeleton'), 'style.css must define .skeleton utility');
   assert(htmlCode.includes("form-action 'none'"), 'index.html CSP must include form-action none');
+});
+
+// -----------------------------------------------------------------------------
+// TEST SUITE 29: PHASE 5 & 6 AI SAFETY, TIMEOUT RESILIENCE & NUTRITION SWITCH (v7.3.0)
+// -----------------------------------------------------------------------------
+console.log('\nSuite 29: Phase 5 & 6 AI Safety, Timeout Resilience & Nutrition Switch (v7.3.0)');
+
+it('Phase 5: ai-config.js strictly filters out non-chat models (whisper, tts, embedding, guard)', () => {
+  const AIConfig = mockWindow.AIConfig || globalThis.AIConfig;
+  assert(AIConfig, 'AIConfig must be available');
+  assert.equal(typeof AIConfig.isChatModel, 'function', 'isChatModel must be exported');
+  assert.equal(AIConfig.isChatModel('whisper-large-v3'), false, 'whisper must be excluded');
+  assert.equal(AIConfig.isChatModel('text-embedding-3-small'), false, 'embedding must be excluded');
+  assert.equal(AIConfig.isChatModel('tts-1-hd'), false, 'tts must be excluded');
+  assert.equal(AIConfig.isChatModel('meta-llama/llama-guard-3-8b'), false, 'guard must be excluded');
+  assert.equal(AIConfig.isChatModel('gpt-4o-realtime-preview'), false, 'realtime must be excluded');
+  assert.equal(AIConfig.isChatModel('gpt-4o-mini'), true, 'gpt-4o-mini is a valid chat model');
+  assert.equal(AIConfig.isChatModel('llama-3.3-70b-versatile'), true, 'llama-3.3-70b is a valid chat model');
+});
+
+it('Phase 5: AI Coach system prompt embeds clinical safety guardrails (pain/injury advice) and clearaichat button', () => {
+  assert(appCode.includes('Never diagnose medical conditions'), 'Coach prompt must prohibit diagnosing conditions');
+  assert(appCode.includes('sharp pain'), 'Coach prompt must mandate advice to stop on sharp pain/injury');
+  assert(appCode.includes('consulting a qualified medical'), 'Coach prompt must mandate medical consultation advice');
+  assert(appCode.includes('data-a="clearaichat"'), 'Coach drawer must provide clear chat action');
+
+  // Verify Coach drawer renders clear chat button and privacy notice
+  api.openAICoachDrawer();
+  const coachHtml = elementsMap['#m'].innerHTML;
+  assert(coachHtml.includes('clearaichat'), 'Coach modal must render clearaichat trigger');
+  assert(coachHtml.includes('Messages are sent directly to your configured AI provider'), 'Coach modal must display privacy notice');
+});
+
+it('Phase 5: AI fetch calls feature AbortController timeout support and retry on network resilience', async () => {
+  assert(appCode.includes('fetchAIWithTimeoutAndRetry'), 'app.js must define fetchAIWithTimeoutAndRetry');
+  assert(appCode.includes('AbortController'), 'app.js must instantiate AbortController for timeouts');
+
+  const originalFetch = mockWindow.fetch;
+  mockWindow.fetch = async (url, opts = {}) => {
+    return new Promise((resolve, reject) => {
+      if (opts.signal) {
+        opts.signal.addEventListener('abort', () => {
+          const err = new Error('The operation was aborted');
+          err.name = 'AbortError';
+          reject(err);
+        });
+      }
+    });
+  };
+
+  await assert.rejects(
+    async () => {
+      await api.callAI('hang test', { timeout: 20, apiKey: 'sk-test-timeout-123' });
+    },
+    /timed out after/
+  );
+  mockWindow.fetch = originalFetch;
+});
+
+it('Phase 6: Optional Nutrition switch (S.cfg.nutritionEnabled) toggles Nutrition sub-tab in vBody', () => {
+  // 1. With nutritionEnabled = false, Nutrition tab is completely hidden
+  api.S.cfg.nutritionEnabled = false;
+  const bodyHtmlDisabled = api.vBody();
+  assert(!bodyHtmlDisabled.includes('data-tab="nutrition"'), 'Body view must hide Nutrition tab button when nutrition is disabled');
+  assert(!bodyHtmlDisabled.includes('segmented-control'), 'Body view must hide segmented control when nutrition is disabled');
+
+  // 2. With nutritionEnabled = true, Nutrition tab is present
+  api.S.cfg.nutritionEnabled = true;
+  const bodyHtmlEnabled = api.vBody();
+  assert(bodyHtmlEnabled.includes('data-tab="nutrition"'), 'Body view must show Nutrition tab button when nutrition is enabled');
+  assert(bodyHtmlEnabled.includes('data-tab="physique"'), 'Body view must show Physique tab button when nutrition is enabled');
+  assert(bodyHtmlEnabled.includes('segmented-control'), 'Body view must show segmented control when nutrition is enabled');
+});
+
+it('Phase 6: Local rule-based insights are integrated into This week details sheet (musclebreakdown)', () => {
+  assert(appCode.includes('case \'musclebreakdown\':'), 'Action switch must handle musclebreakdown');
+  assert(appCode.includes('calcTrainingInsights'), 'musclebreakdown must compute training insights');
+  assert(appCode.includes('Training Insights'), 'musclebreakdown must render Training Insights card');
 });
 
 console.log(`\n======================================================`);

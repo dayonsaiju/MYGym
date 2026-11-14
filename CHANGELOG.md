@@ -2,6 +2,22 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [7.3.0] - Phase 5-6 AI Safety Guardrails, Network Resilience, Smart Model Filtering & Optional Nutrition Toggle - 2026-11-14
+
+### AI Polish, Clinical Safety Guardrails & Network Resilience (Phase 5)
+- **Smart Model Filtering**: `AIConfig.fetchAvailableModels()` strictly filters out non-chat models across all providers (excluding `whisper`, `tts`, `embedding`, `moderation`, `audio`, `realtime`, `vision-preview`, `guard`, `specdec`). Curated/recommended models are prioritized at the top of the list.
+- **Decommissioned Model Auto-Recovery**: If a live chat or routine import call encounters HTTP 404 or a decommissioned model error, a background model refresh is automatically triggered (`refreshAIModels`), and a clear prompt directs the user to pick an active model.
+- **Read-Only Test Connection**: Ensured "Test Connection" strictly validates credentials and models without mutating workout state, routine records, or storage.
+- **Clinical Safety Guardrails**: AI Coach system prompt embeds strict clinical directives: never diagnose medical conditions, and immediately advise stopping exercise and consulting a medical professional if the user reports sharp pain, injury, numbness, or dizziness.
+- **Rich Context Injection**: Enhanced AI Coach system context to incorporate current routine name, user physique goal, active exercise name, equipment, target muscle, and logged set weights/reps.
+- **Network Resilience & Timeouts**: Fetch operations in `callAI` are wrapped with `AbortController` and an enforced 20-second timeout, coupled with a 1-retry exponential backoff for transient 429/502/503 network errors.
+- **Coach UI Polish**: Added a dedicated "Clear chat" button (`data-a="clearaichat"`) in the Coach header, refreshed privacy notice, and replaced all emojis with vector SVG icons.
+
+### Feature Verification & Optional Nutrition Switch (Phase 6)
+- **Optional Nutrition Switch**: Added an `Enable Daily Nutrition Tracking` toggle in Settings → Body & Units (`S.cfg.nutritionEnabled`, defaulting to `true`). When disabled, the Nutrition segmented sub-tab on the Body screen is completely hidden, presenting the Physique and Measurements interface with zero UI clutter.
+- **Local Rule-Based Insights Integration**: Connected `calcTrainingInsights` directly to the `This week` details sheet (`musclebreakdown`), surfacing stalled lifts, volume spikes, and under-trained muscles per targeted group.
+- **Exercise History & CSV Import Polish**: Verified SVG sparkline charts, PR records, and column mapping previews in Strong & Hevy CSV imports with clean vector SVG iconography.
+
 ## [7.2.0] - Phase 3-4 Complete Vector Icon Overhaul, Design System Tokens, Persistent Media Cache & Fast SW Boot - 2026-11-14
 
 ### Complete Vector Icon System & UI Emoji Replacement (Phase 3)

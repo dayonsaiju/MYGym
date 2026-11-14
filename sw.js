@@ -1,21 +1,21 @@
-const C = 'mygym-core-v7.2.0';
+const C = 'mygym-core-v7.3.0';
 const MEDIA_CACHE = 'mygym-media-v1';
 
 const CORE_SHELL = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=7.2.0',
+  './style.css?v=7.3.0',
   './shell.js',
-  './shell.js?v=7.2.0',
+  './shell.js?v=7.3.0',
   './calc.js',
-  './calc.js?v=7.2.0',
+  './calc.js?v=7.3.0',
   './ai-config.js',
-  './ai-config.js?v=7.2.0',
+  './ai-config.js?v=7.3.0',
   './app.js',
-  './app.js?v=7.2.0',
+  './app.js?v=7.3.0',
   './vendor/three.module.js',
-  './vendor/three.module.js?v=7.2.0',
+  './vendor/three.module.js?v=7.3.0',
   './manifest.json'
 ];
 

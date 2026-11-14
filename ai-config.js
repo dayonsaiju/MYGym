@@ -339,10 +339,30 @@
     }
   }
 
+  const NON_CHAT_EXCLUSIONS = [
+    'whisper',
+    'tts',
+    'embedding',
+    'moderation',
+    'audio',
+    'realtime',
+    'vision-preview',
+    'guard',
+    'specdec'
+  ];
+
+  function isChatModel(id) {
+    if (!id || typeof id !== 'string') return false;
+    const lower = id.toLowerCase();
+    return !NON_CHAT_EXCLUSIONS.some(ex => lower.includes(ex));
+  }
+
   /**
    * Fetch available models from provider API
    */
   async function fetchAvailableModels(provider, apiKey, baseUrl = '') {
+    let list = [];
+
     if (provider === 'gemini') {
       const url = 'https://generativelanguage.googleapis.com/v1beta/models';
       checkCSPAllowed(url);
@@ -354,51 +374,59 @@
         throw new Error(err?.error?.message || `HTTP ${res.status}`);
       }
       const data = await res.json();
-      const list = (data.models || [])
+      list = (data.models || [])
         .filter(m => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
         .map(m => {
           const id = m.name.replace(/^models\//, '');
           return { id, name: m.displayName ? `${m.displayName} (${id})` : id };
         });
-      return list;
-    }
-
-    let endpoint = '';
-    if (provider === 'groq') {
-      endpoint = 'https://api.groq.com/openai/v1/models';
-    } else if (provider === 'openai') {
-      endpoint = 'https://api.openai.com/v1/models';
-    } else if (provider === 'openrouter') {
-      endpoint = 'https://openrouter.ai/api/v1/models';
-    } else if (provider === 'custom') {
-      let b = baseUrl || 'https://api.openai.com/v1';
-      endpoint = b.replace(/\/chat\/completions\/?$/, '').replace(/\/+$/, '') + '/models';
-    }
-
-    if (!endpoint) return [];
-    checkCSPAllowed(endpoint);
-
-    const res = await fetch(endpoint, {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`
+    } else {
+      let endpoint = '';
+      if (provider === 'groq') {
+        endpoint = 'https://api.groq.com/openai/v1/models';
+      } else if (provider === 'openai') {
+        endpoint = 'https://api.openai.com/v1/models';
+      } else if (provider === 'openrouter') {
+        endpoint = 'https://openrouter.ai/api/v1/models';
+      } else if (provider === 'custom') {
+        let b = baseUrl || 'https://api.openai.com/v1';
+        endpoint = b.replace(/\/chat\/completions\/?$/, '').replace(/\/+$/, '') + '/models';
       }
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err?.error?.message || `HTTP ${res.status}`);
-    }
-    const data = await res.json();
-    let list = (data.data || []).map(m => ({ id: m.id, name: m.name || m.id }));
 
-    // Filter out non-chat models
-    if (provider === 'groq') {
-      list = list.filter(m => !m.id.includes('whisper') && !m.id.includes('tts'));
-    } else if (provider === 'openai') {
-      list = list.filter(m =>
-        (m.id.startsWith('gpt-') || m.id.startsWith('o1') || m.id.startsWith('o3') || m.id.startsWith('chatgpt-')) &&
-        !m.id.includes('realtime') && !m.id.includes('audio') && !m.id.includes('transcription')
-      );
+      if (!endpoint) return [];
+      checkCSPAllowed(endpoint);
+
+      const res = await fetch(endpoint, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`
+        }
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      list = (data.data || []).map(m => ({ id: m.id, name: m.name || m.id }));
     }
+
+    // Strictly filter out non-chat models across all providers
+    list = list.filter(m => isChatModel(m.id));
+
+    // Sort recommended/curated models to the top of the list
+    const provDef = AI_PROVIDERS[provider] || {};
+    const curatedIds = new Set([
+      provDef.defaultModel,
+      provDef.fallbackModel,
+      ...(provDef.models || []).map(m => m.id)
+    ].filter(Boolean));
+
+    list.sort((a, b) => {
+      const aCurated = curatedIds.has(a.id);
+      const bCurated = curatedIds.has(b.id);
+      if (aCurated && !bCurated) return -1;
+      if (!aCurated && bCurated) return 1;
+      return (a.name || a.id).localeCompare(b.name || b.id);
+    });
 
     return list;
   }
@@ -417,6 +445,8 @@
     getCachedModels,
     setCachedModels,
     checkCSPAllowed,
+    NON_CHAT_EXCLUSIONS,
+    isChatModel,
     fetchAvailableModels
   };
 });

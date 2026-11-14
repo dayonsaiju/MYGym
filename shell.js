@@ -1,6 +1,6 @@
 // shell.js - Lightweight PWA shell & non-destructive Service Worker update listener
 (function() {
-  var SHELL_VERSION = 'mygym-core-v7.2.0';
+  var SHELL_VERSION = 'mygym-core-v7.3.0';
   try { localStorage.setItem('mygym_shell_version', SHELL_VERSION); } catch(_) {}
 
   // Active workout check & reload loop guard
