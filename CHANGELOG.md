@@ -2,6 +2,21 @@
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
 
+## [8.0.1] - Permanent Onboarding Purge, 3D Silhouette Calibration, Custom OBJ/Photos, & Cache Refresh - 2026-11-14
+
+### Onboarding Removal & Safety Hard-Block
+- **Permanently Purged Welcome / Onboarding Modal**: Removed onboarding popup lifecycle entirely from `app.js`. Guaranteed defaults `S.onboarded = true` and `S.cfg.onboarded = true`. Added hard-block interception in `modal()` preventing any legacy or deferred markup matching `Welcome to MyGyM` or `Personalize your offline training profile` from ever rendering.
+- **Immediate Shell Auto-Purge (`shell.js`)**: Configured `shell.js` to detect version changes (`cachedVersion !== SHELL_VERSION`), purge obsolete `mygym-core-*` caches immediately via CacheStorage API, request background worker update, and execute timestamp-busting reload to ensure mobile Safari fetches fresh v8.0.1 code without manual cache clearing.
+
+### 3D Lighting Calibration & Custom Avatar (.OBJ & Photos)
+- **Shader Lighting & White Silhouette Fix**: Added view-space transformation for directional lights, Half-Lambert diffuse wrapping, and balanced rim lighting (`vec3(0.55, 0.75, 1.0) * rimFactor`), preventing specular saturation and washed-out white silhouette in procedural models.
+- **Wavefront OBJ Parser & IndexedDB Mesh Storage**: Added `parseOBJ` in `vendor/three.module.js` with auto-normalization, geometric centering, and normal generation. Added `"My Photo / Custom 3D (.OBJ)"` modal for uploading custom OBJ meshes and physique reference photos.
+- **Interactive Before/After Split Slider**: Integrated interactive split-view comparison slider comparing baseline vs current physique progress photos.
+
+### Free Workout Builder & Rest Timer Enhancements
+- **Grid Alignment Fix**: Resolved layout alignment and right-side margin gaps in `.free-builder-sheet`, `#free-ex-list`, and `.free-ex-row`. Replaced preview trigger with SVG `${ic('info', 16)}`.
+- **Rest Interval Picker Commitment**: Enabled preset rest intervals (`data-a="saveexrest"`) and custom seconds input committing directly to `S.cfg.exerciseRest[exId]`.
+
 ## [8.0.0] - Phase 7-8 3D Anatomy Polish, Morph Throttling, Reduced-Motion Compliance & Production Release - 2026-11-14
 
 ### 3D Anatomy, Physique Morph & WebGL Engine Polish (Phase 7)

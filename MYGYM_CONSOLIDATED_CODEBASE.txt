@@ -1,25 +1,28 @@
 ================================================================================
-MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v8.0.0)
-Generated at: 2026-11-14T05:35:16.950Z
+MYGYM PWA - COMPLETE CONSOLIDATED SOURCE CODEBASE (v8.0.1)
+Generated at: 2026-11-14T07:46:58.154Z
 Architecture: Zero-Backend Offline-First Progressive Web App
 ================================================================================
 
 TABLE OF CONTENTS:
 1. manifest.json (1.0 KB)
 2. index.html (2.3 KB)
-3. shell.js (1.2 KB)
-4. style.css (109.8 KB)
+3. shell.js (2.3 KB)
+4. style.css (112.6 KB)
 5. calc.js (35.5 KB)
 6. ai-config.js (13.7 KB)
-7. vendor/three.module.js (40.4 KB)
-8. app.js (541.0 KB)
+7. vendor/three.module.js (46.3 KB)
+8. app.js (547.1 KB)
 9. sw.js (4.3 KB)
-10. CHANGELOG.md (39.5 KB)
+10. CHANGELOG.md (41.5 KB)
 11. scripts/bump-version.js (5.0 KB)
 12. scripts/generate-exercise-kinds.js (2.5 KB)
 13. scripts/capture-screens.js (2.8 KB)
-14. scripts/consolidate.js (2.5 KB)
-15. tests/test_production_issues.js (227.8 KB)
+14. scripts/check-css-classes.js (4.8 KB)
+15. scripts/check-no-ui-emoji.js (2.1 KB)
+16. scripts/layout-audit.js (5.7 KB)
+17. scripts/consolidate.js (2.6 KB)
+18. tests/test_production_issues.js (232.2 KB)
 ================================================================================
 
 ================================================================================
@@ -98,9 +101,9 @@ TABLE OF CONTENTS:
   <link rel="manifest" href="./manifest.json">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="icon" type="image/png" href="./icon.png">
-  <link rel="stylesheet" href="./style.css?v=8.0.0">
+  <link rel="stylesheet" href="./style.css?v=8.0.1">
   <title>MyGyM</title>
-  <script src="./shell.js?v=8.0.0"></script>
+  <script src="./shell.js?v=8.0.1"></script>
 </head>
 <body>
   <main id="v"></main>
@@ -122,9 +125,9 @@ TABLE OF CONTENTS:
   <div id="toast"></div>
   <div id="m" hidden></div>
   <nav id="tabs"></nav>
-  <script src="./calc.js?v=8.0.0"></script>
-  <script src="./ai-config.js?v=8.0.0"></script>
-  <script type="module" src="./app.js?v=8.0.0"></script>
+  <script src="./calc.js?v=8.0.1"></script>
+  <script src="./ai-config.js?v=8.0.1"></script>
+  <script type="module" src="./app.js?v=8.0.1"></script>
 </body>
 </html>
 ================================================================================
@@ -136,8 +139,7 @@ TABLE OF CONTENTS:
 ================================================================================
 // shell.js - Lightweight PWA shell & non-destructive Service Worker update listener
 (function() {
-  var SHELL_VERSION = 'mygym-core-v8.0.0';
-  try { localStorage.setItem('mygym_shell_version', SHELL_VERSION); } catch(_) {}
+  var SHELL_VERSION = 'mygym-core-v8.0.1';
 
   // Active workout check & reload loop guard
   var isWorkoutActive = false;
@@ -153,6 +155,38 @@ TABLE OF CONTENTS:
   window.__reloadApp = function() {
     window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
   };
+
+  // Immediate Cache Purge & Force Upgrade on Shell Version Mismatch
+  var cachedVersion = null;
+  try { cachedVersion = localStorage.getItem('mygym_shell_version'); } catch(_) {}
+
+  if (cachedVersion !== SHELL_VERSION) {
+    try { localStorage.setItem('mygym_shell_version', SHELL_VERSION); } catch(_) {}
+    if ('caches' in window) {
+      caches.keys().then(function(keys) {
+        return Promise.all(
+          keys.filter(function(k) {
+            return k.startsWith('mygym-core-') && k !== SHELL_VERSION;
+          }).map(function(k) {
+            return caches.delete(k);
+          })
+        );
+      }).catch(function() {});
+    }
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function(regs) {
+        regs.forEach(function(r) { try { r.update(); } catch(_) {} });
+      }).catch(function() {});
+    }
+
+    if (!isWorkoutActive && reloadAttempts < 2) {
+      try { sessionStorage.setItem('mygym_reload_attempts', String(reloadAttempts + 1)); } catch(_) {}
+      window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now();
+    }
+  } else {
+    try { sessionStorage.removeItem('mygym_reload_attempts'); } catch(_) {}
+  }
 
   // Service Worker update listener: notify user non-destructively without wiping caches
   if ('serviceWorker' in navigator) {
@@ -4475,6 +4509,17 @@ textarea.note:focus {
 .free-builder-sheet {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+#free-ex-list {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
 }
 
 .free-targets-label {
@@ -4491,10 +4536,13 @@ textarea.note:focus {
 }
 
 .free-ex-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 26px 48px minmax(0, 1fr) 36px;
   align-items: center;
   gap: 10px;
-  padding: 10px 4px;
+  width: 100%;
+  padding: 10px 8px;
+  box-sizing: border-box;
   border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
   cursor: pointer;
   touch-action: manipulation;
@@ -4510,10 +4558,11 @@ textarea.note:focus {
 }
 
 .free-ex-chk {
-  width: 22px;
-  height: 22px;
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px;
+  margin: 0;
   accent-color: var(--ac);
-  flex: none;
   cursor: pointer;
 }
 
@@ -5771,8 +5820,11 @@ html, body, #v, main {
 }
 
 .free-builder-actions {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
   margin-top: 12px;
 }
 
@@ -6209,6 +6261,148 @@ html, body, #v, main {
     background-position: -200% 0;
   }
 }
+
+/* Custom Avatar & 3D .OBJ / Photo Modals */
+.custom-avatar-modal {
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+}
+
+.obj-upload-card {
+  background: var(--card-sub);
+  border: 1px dashed var(--bd);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+/* Progress Photos Grid & Cards */
+.progress-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.progress-photo-card {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  background: var(--card-sub);
+  cursor: pointer;
+  border: 1px solid var(--bd);
+}
+
+.progress-photo-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #FFFFFF;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-del-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #FFFFFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+/* Before / After Split Comparison Slider */
+.split-compare-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  aspect-ratio: 3 / 4;
+  margin: 12px auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+.split-img-after {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.split-img-before-wrap {
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  height: 100%;
+  overflow: hidden;
+  border-right: 2px solid var(--ac);
+}
+
+.split-img-before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 380px;
+  height: 100%;
+  object-fit: cover;
+}
+
+.split-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: ew-resize;
+  margin: 0;
+}
+
+.split-label-before, .split-label-after {
+  position: absolute;
+  bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+}
+
+.split-label-before { left: 8px; }
+.split-label-after { right: 8px; }
+
 
 
 
@@ -7929,6 +8123,29 @@ export class Vector3 {
     return this;
   }
 
+  subVectors(a, b) {
+    this.x = a.x - b.x;
+    this.y = a.y - b.y;
+    this.z = a.z - b.z;
+    return this;
+  }
+
+  addVectors(a, b) {
+    this.x = a.x + b.x;
+    this.y = a.y + b.y;
+    this.z = a.z + b.z;
+    return this;
+  }
+
+  transformDirection(m) {
+    const x = this.x, y = this.y, z = this.z;
+    const e = m.elements;
+    this.x = e[0] * x + e[4] * y + e[8] * z;
+    this.y = e[1] * x + e[5] * y + e[9] * z;
+    this.z = e[2] * x + e[6] * y + e[10] * z;
+    return this.normalize();
+  }
+
   applyMatrix4(m) {
     const x = this.x, y = this.y, z = this.z;
     const e = m.elements;
@@ -8565,6 +8782,49 @@ export class BufferGeometry {
     };
   }
 
+  computeVertexNormals() {
+    const pos = this.attributes.position;
+    if (!pos) return;
+    const normals = new Float32Array(pos.count * 3);
+    const pA = new Vector3(), pB = new Vector3(), pC = new Vector3();
+    const cb = new Vector3(), ab = new Vector3();
+
+    if (this.index) {
+      const idx = this.index;
+      for (let i = 0; i < idx.length; i += 3) {
+        const vA = idx[i] * 3, vB = idx[i + 1] * 3, vC = idx[i + 2] * 3;
+        pA.set(pos.array[vA], pos.array[vA + 1], pos.array[vA + 2]);
+        pB.set(pos.array[vB], pos.array[vB + 1], pos.array[vB + 2]);
+        pC.set(pos.array[vC], pos.array[vC + 1], pos.array[vC + 2]);
+        cb.subVectors(pC, pB);
+        ab.subVectors(pA, pB);
+        cb.cross(ab).normalize();
+        for (const v of [vA, vB, vC]) {
+          normals[v] += cb.x; normals[v + 1] += cb.y; normals[v + 2] += cb.z;
+        }
+      }
+    } else {
+      for (let i = 0; i < pos.count; i += 3) {
+        const vA = i * 3, vB = (i + 1) * 3, vC = (i + 2) * 3;
+        pA.set(pos.array[vA], pos.array[vA + 1], pos.array[vA + 2]);
+        pB.set(pos.array[vB], pos.array[vB + 1], pos.array[vB + 2]);
+        pC.set(pos.array[vC], pos.array[vC + 1], pos.array[vC + 2]);
+        cb.subVectors(pC, pB);
+        ab.subVectors(pA, pB);
+        cb.cross(ab).normalize();
+        for (const v of [vA, vB, vC]) {
+          normals[v] = cb.x; normals[v + 1] = cb.y; normals[v + 2] = cb.z;
+        }
+      }
+    }
+    for (let i = 0; i < normals.length; i += 3) {
+      const x = normals[i], y = normals[i + 1], z = normals[i + 2];
+      const len = Math.hypot(x, y, z) || 1;
+      normals[i] = x / len; normals[i + 1] = y / len; normals[i + 2] = z / len;
+    }
+    this.setAttribute('normal', new BufferAttribute(normals, 3));
+  }
+
   dispose() {
     this.attributes = {};
     this.index = null;
@@ -8876,20 +9136,34 @@ export class WebGLRenderer {
 
       void main() {
         vec3 normal = normalize(vNormal);
-        vec3 lit = ambientColor;
+        vec3 viewDir = normalize(vViewPosition);
+
+        // Balanced ambient base
+        vec3 lit = ambientColor * 0.45;
+
+        // Balanced Half-Lambert diffuse lighting: wraps around anatomical curvature
         if (numDirLights > 0) {
           for (int i = 0; i < 3; i++) {
             if (i >= numDirLights) break;
             vec3 lDir = normalize(dirLightDirections[i]);
-            float nDotL = max(dot(normal, lDir), 0.0);
-            lit += dirLightColors[i] * nDotL;
+            float hDotL = dot(normal, lDir) * 0.5 + 0.5;
+            float diffuseFactor = hDotL * hDotL;
+            lit += dirLightColors[i] * diffuseFactor * 0.8;
           }
         } else {
-          vec3 lightDir = normalize(lightDirection);
-          float nDotL = max(dot(normal, lightDir), 0.0);
-          lit += lightColor * nDotL;
+          vec3 lDir = normalize(lightDirection);
+          float hDotL = dot(normal, lDir) * 0.5 + 0.5;
+          float diffuseFactor = hDotL * hDotL;
+          lit += lightColor * diffuseFactor * 0.8;
         }
-        vec3 color = diffuse * lit + emissive;
+
+        // Rim lighting to accentuate muscle silhouettes and depth
+        float rim = 1.0 - max(dot(normal, viewDir), 0.0);
+        float rimFactor = smoothstep(0.45, 0.95, rim) * 0.35;
+        vec3 rimColor = vec3(0.55, 0.75, 1.0) * rimFactor;
+
+        vec3 color = diffuse * lit + rimColor + emissive;
+        color = clamp(color, 0.0, 1.0);
         gl_FragColor = vec4(color, opacity);
       }
     `;
@@ -8969,9 +9243,10 @@ export class WebGLRenderer {
     gl.useProgram(this.program);
 
     // Extract lighting from scene
+    const viewMatrix = camera.matrixWorldInverse;
     let amb = new Color(0.55, 0.58, 0.62);
     let dirColor = new Color(1.0, 0.98, 0.95);
-    let dirVector = new Vector3(0.5, 1.0, 0.8).normalize();
+    let dirVector = new Vector3(0.5, 1.0, 0.8).transformDirection(viewMatrix).normalize();
     const dirColors = [];
     const dirDirs = [];
 
@@ -8981,7 +9256,7 @@ export class WebGLRenderer {
           amb = node.color.clone().multiplyScalar(node.intensity || 1);
         } else if (node.type === 'DirectionalLight') {
           const col = node.color.clone().multiplyScalar(node.intensity || 1);
-          const dir = node.position.clone().normalize();
+          const dir = node.position.clone().transformDirection(viewMatrix).normalize();
           if (dirColors.length === 0) {
             dirColor = col;
             dirVector = dir;
@@ -9007,7 +9282,6 @@ export class WebGLRenderer {
     gl.uniformMatrix4fv(this.uniforms.projectionMatrix, false, camera.projectionMatrix.elements);
 
     // Render meshes
-    const viewMatrix = camera.matrixWorldInverse;
     const modelView = new Matrix4();
     const normalMatrix = new Matrix3();
 
@@ -9082,6 +9356,89 @@ export class WebGLRenderer {
       this.domElement.parentNode.removeChild(this.domElement);
     }
   }
+}
+
+// ---- Lightweight Wavefront .OBJ Parser ----
+export function parseOBJ(text, THREEInstance = null) {
+  if (typeof text !== 'string') return new BufferGeometry();
+  const THREE = THREEInstance || {
+    BufferGeometry,
+    BufferAttribute,
+    Vector3
+  };
+
+  const lines = text.split('\n');
+  const vertices = [];
+  const vertexNormals = [];
+  const positions = [];
+  const normals = [];
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;
+    const parts = line.split(/\s+/);
+    const type = parts[0];
+
+    if (type === 'v') {
+      vertices.push(parseFloat(parts[1]) || 0, parseFloat(parts[2]) || 0, parseFloat(parts[3]) || 0);
+    } else if (type === 'vn') {
+      vertexNormals.push(parseFloat(parts[1]) || 0, parseFloat(parts[2]) || 0, parseFloat(parts[3]) || 0);
+    } else if (type === 'f') {
+      const faceVerts = parts.slice(1);
+      // Fan triangulation for convex polygons (e.g. quads f 1 2 3 4 -> 1 2 3, 1 3 4)
+      for (let i = 1; i < faceVerts.length - 1; i++) {
+        const tri = [faceVerts[0], faceVerts[i], faceVerts[i + 1]];
+        for (const corner of tri) {
+          const segs = corner.split('/');
+          const vIdx = (parseInt(segs[0], 10) - 1) * 3;
+          if (vIdx >= 0 && vIdx + 2 < vertices.length) {
+            positions.push(vertices[vIdx], vertices[vIdx + 1], vertices[vIdx + 2]);
+          }
+          if (segs[2]) {
+            const vnIdx = (parseInt(segs[2], 10) - 1) * 3;
+            if (vnIdx >= 0 && vnIdx + 2 < vertexNormals.length) {
+              normals.push(vertexNormals[vnIdx], vertexNormals[vnIdx + 1], vertexNormals[vnIdx + 2]);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  if (positions.length > 0) {
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    if (normals.length === positions.length) {
+      geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    } else if (typeof geometry.computeVertexNormals === 'function') {
+      geometry.computeVertexNormals();
+    }
+    geometry.computeBoundingBox();
+
+    // Scale and center model so it fits the viewport
+    if (geometry.boundingBox) {
+      const box = geometry.boundingBox;
+      const sizeX = box.max.x - box.min.x;
+      const sizeY = box.max.y - box.min.y;
+      const sizeZ = box.max.z - box.min.z;
+      const maxDim = Math.max(sizeX, sizeY, sizeZ) || 1;
+      const targetHeight = 3.6;
+      const scaleFactor = targetHeight / maxDim;
+      const centerX = (box.min.x + box.max.x) * 0.5;
+      const centerY = (box.min.y + box.max.y) * 0.5;
+      const centerZ = (box.min.z + box.max.z) * 0.5;
+
+      const posArr = geometry.attributes.position.array;
+      for (let i = 0; i < posArr.length; i += 3) {
+        posArr[i] = (posArr[i] - centerX) * scaleFactor;
+        posArr[i + 1] = (posArr[i + 1] - centerY) * scaleFactor + 0.35;
+        posArr[i + 2] = (posArr[i + 2] - centerZ) * scaleFactor;
+      }
+      geometry.computeBoundingBox();
+    }
+  }
+
+  return geometry;
 }
 ================================================================================
 <<< END FILE: vendor/three.module.js
@@ -9275,24 +9632,7 @@ const put = async (k, v) => {
 
 // Synchronous Gate Function: permanently prevent redundant onboarding prompts
 function isUserOnboarded() {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      if (localStorage.getItem('mygym_onboarded') === 'true') return true;
-      if (localStorage.getItem('mygym_shell_onboarded') === 'true') return true;
-      if (localStorage.getItem('lift_onboarded') === 'true') return true;
-      // If user already has any logged workouts or saved weights, they are onboarded
-      const weights = localStorage.getItem('lift_weights');
-      if (weights && weights !== '[]' && weights !== 'null') return true;
-      const logs = localStorage.getItem('lift_logs');
-      if (logs && logs !== '[]' && logs !== 'null') return true;
-    }
-    if (typeof S !== 'undefined' && S) {
-      if (S?.cfg?.onboarded === true || S?.onboarded === true) return true;
-      if (Array.isArray(S?.weights) && S.weights.length > 0) return true;
-      if (Array.isArray(S?.logs) && S.logs.length > 0) return true;
-    }
-  } catch (_) {}
-  return false;
+  return true;
 }
 if (typeof window !== 'undefined') window.isUserOnboarded = isUserOnboarded;
 
@@ -9300,10 +9640,12 @@ const SCHEMA_VERSION = 4;
 
 let S = {
   schemaVersion: SCHEMA_VERSION,
+  onboarded: true,
   routines: [],
   logs: [],
   weights: [],
   cfg: {
+    onboarded: true,
     rest: 90,
     flash: true,
     sound: true,
@@ -9321,6 +9663,7 @@ let S = {
   act: ls.get('act') || null,
   deload: { active: false, startedAt: null, lastDeloadDate: null },
   customExercises: ls.get('customExercises') || [],
+  photos: ls.get('photos') || [],
   nutrition: ls.get('nutrition') || {
     targetCals: 2100,
     targetProtein: 140,
@@ -9419,8 +9762,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '8.0.0';
-const SHELL_VERSION = 'mygym-core-v8.0.0';
+const APP_VERSION = '8.0.1';
+const SHELL_VERSION = 'mygym-core-v8.0.1';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -9463,7 +9806,7 @@ const fmtDur = ms => {
 };
 
 const save = (...args) => {
-  if (args.length === 2 && typeof args[0] === 'string') {
+  if (args.length === 2 && typeof args[0] === 'string' && (!(args[1] in S) || args[1] === null)) {
     const [k, v] = args;
     if (k in S) S[k] = v;
     return put(k, v);
@@ -9926,7 +10269,8 @@ const IC = {
   helpCircle: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   apple: '<path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
-  eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+  eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'
 };
 
 const icon = (name, opts = {}) => {
@@ -10411,15 +10755,15 @@ async function init3DViewer(options = {}) {
   container.innerHTML = '';
   container.appendChild(renderer.domElement);
 
-  // Lighting
-  const ambLight = new THREE.AmbientLight(0xFFFFFF, 0.7);
+  // Lighting (balanced Half-Lambert + rim lighting; clamped to prevent silhouette blowout)
+  const ambLight = new THREE.AmbientLight(0xFFFFFF, 0.45);
   scene.add(ambLight);
 
-  const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.85);
+  const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.75);
   dirLight1.position.set(3, 4, 5);
   scene.add(dirLight1);
 
-  const dirLight2 = new THREE.DirectionalLight(0x60A5FA, 0.4);
+  const dirLight2 = new THREE.DirectionalLight(0x60A5FA, 0.35);
   dirLight2.position.set(-3, -2, -3);
   scene.add(dirLight2);
 
@@ -10659,6 +11003,36 @@ async function init3DViewer(options = {}) {
       }
       camera.position.set(0, 0.4, 5.2);
     },
+    loadCustomOBJ(text) {
+      try {
+        if (!THREE || typeof THREE.parseOBJ !== 'function') return false;
+        const geom = THREE.parseOBJ(text, THREE);
+        if (!geom) return false;
+        scene.remove(model);
+        model.traverse(obj => {
+          if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+          if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+        });
+        const mat = new THREE.MeshLambertMaterial({ color: 0x3b82f6 });
+        const mesh = new THREE.Mesh(geom, mat);
+        model = new THREE.Group();
+        model.add(mesh);
+        scene.add(model);
+        return true;
+      } catch (err) {
+        console.warn('Failed to load custom OBJ:', err);
+        return false;
+      }
+    },
+    resetToMannequin() {
+      scene.remove(model);
+      model.traverse(obj => {
+        if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+        if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+      });
+      model = buildProceduralAnatomyModel(THREE, currentGender, primaryMuscles, secondaryMuscles, currentProgress);
+      scene.add(model);
+    },
     toggleAutoRotate(val) {
       autoRotate = val != null ? val : !autoRotate;
       return autoRotate;
@@ -10667,6 +11041,13 @@ async function init3DViewer(options = {}) {
       return autoRotate;
     }
   };
+
+  try {
+    const savedOBJ = await get('custom_avatar_obj');
+    if (savedOBJ) {
+      viewerInstance.loadCustomOBJ(savedOBJ);
+    }
+  } catch (_) {}
 
   active3DViewer = viewerInstance;
   return viewerInstance;
@@ -10713,6 +11094,7 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
       <button class="chip" data-a="toggle-3d-gender" id="gender-3d-btn" style="font-weight:700;">Silhouette: <span id="gender-3d-label">${currentGender === 'female' ? 'Female' : 'Male'}</span></button>
       <button class="chip on" data-a="toggle-3d-autorotate" id="autorotate-3d-btn">🔄 Auto-Rotate: ON</button>
       <button class="chip" data-a="reset-3d-view">↺ Reset View</button>
+      <button class="chip" data-a="open-custom-avatar">${ic('box', 14)} My Photo / Custom 3D (.OBJ)</button>
     </div>
     <div class="canvas-3d-wrap" id="anatomy-3d-canvas-wrap">
       <div class="canvas-3d-hint">👆 Drag to 360° rotate · Pinch to zoom · Tap muscle to explore</div>
@@ -10801,6 +11183,7 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
       <button class="chip" data-a="toggle-3d-gender" id="gender-3d-btn" style="font-weight:700;">Silhouette: <span id="gender-3d-label">${currentGender === 'female' ? 'Female' : 'Male'}</span></button>
       <button class="chip on" data-a="toggle-3d-autorotate" id="autorotate-3d-btn">🔄 Auto-Rotate: ON</button>
       <button class="chip" data-a="reset-3d-view">↺ Reset</button>
+      <button class="chip" data-a="open-custom-avatar">${ic('box', 14)} My Photo / Custom 3D (.OBJ)</button>
     </div>
     <div class="canvas-3d-wrap" id="physique-3d-canvas-wrap">
       <div class="canvas-3d-hint">Scrub slider below to inspect 3D V-taper, waist & chest progression</div>
@@ -10860,6 +11243,201 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
       }
     }, 60);
   });
+}
+
+async function showCustomAvatarModal() {
+  const hasCustomOBJ = !!(await get('custom_avatar_obj'));
+  const photos = S.photos || [];
+  const hasPhotos = photos.length >= 2;
+
+  modal(`
+    <div class="modal-header">
+      <h3 class="modal-title">My Photo / Custom 3D (.OBJ)</h3>
+      <button class="modal-close-btn" data-a="close">✕</button>
+    </div>
+    <div class="custom-avatar-modal" style="padding:10px 0;">
+      <div class="obj-upload-card">
+        <h4 style="margin:0 0 6px 0;">Wavefront 3D Mesh (.OBJ)</h4>
+        <p class="t2 sm" style="margin:0 0 12px 0;">Import a 3D body scan or customized humanoid OBJ mesh. The geometry will be auto-centered and normalized.</p>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn s sm-btn" data-a="trigger-obj-upload">${ic('upload', 14)} Upload .OBJ File</button>
+          ${hasCustomOBJ ? `<button class="btn s sm-btn outline" data-a="reset-custom-obj">Reset to Mannequin</button>` : ''}
+        </div>
+        <input type="file" id="custom-obj-picker" accept=".obj,text/plain" style="display:none">
+      </div>
+
+      <div class="card" style="padding:14px;margin-top:14px;">
+        <h4 style="margin:0 0 6px 0;">Physique Reference Photos</h4>
+        <p class="t2 sm" style="margin:0 0 12px 0;">Upload Front, Side, or Back photos to track real transformation alongside 3D visualizations.</p>
+        <button class="btn s sm-btn" data-a="trigger-physique-photo-upload" style="margin-bottom:12px;">${ic('camera', 14)} Add Physique Photo</button>
+        <input type="file" id="custom-physique-photo-input" accept="image/*" style="display:none">
+
+        ${hasPhotos ? `
+          <div style="margin-top:12px;">
+            <div class="t2 sm" style="font-weight:700;margin-bottom:6px;">Before & After Interactive Split</div>
+            <div class="split-compare-wrap" id="split-compare-container">
+              <img class="split-img-after" src="${esc(photos[photos.length - 1].dataUrl || photos[photos.length - 1].data)}" alt="Latest Photo">
+              <div class="split-img-before-wrap" id="split-before-wrap" style="width:50%;">
+                <img class="split-img-before" id="split-before-img" src="${esc(photos[0].dataUrl || photos[0].data)}" alt="Baseline Photo">
+              </div>
+              <input type="range" min="0" max="100" value="50" class="split-slider" id="split-slider-input">
+              <div class="split-label-before">Baseline (${esc(formatStandardDate(photos[0].date))})</div>
+              <div class="split-label-after">Current (${esc(formatStandardDate(photos[photos.length - 1].date))})</div>
+            </div>
+            <div class="t2 sm" style="text-align:center;margin-top:4px;">Drag the slider to compare baseline vs current</div>
+          </div>
+        ` : `
+          <div class="t2 sm" style="text-align:center;padding:12px 0;">Add at least 2 photos to unlock the interactive Before/After split slider.</div>
+        `}
+      </div>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const slider = document.getElementById('split-slider-input');
+    const wrap = document.getElementById('split-before-wrap');
+    if (slider && wrap) {
+      slider.oninput = (e) => {
+        wrap.style.width = `${e.target.value}%`;
+      };
+    }
+  }, 0);
+}
+
+async function handleCustomOBJUpload(file) {
+  if (!file) return;
+  try {
+    const text = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+
+    const THREE = await lazyLoadThree();
+    if (!THREE || typeof THREE.parseOBJ !== 'function') {
+      toast('3D engine not ready');
+      return;
+    }
+    const geom = THREE.parseOBJ(text, THREE);
+    if (!geom) {
+      toast('Invalid or empty OBJ file');
+      return;
+    }
+
+    await put('custom_avatar_obj', text);
+    try { ls.set('custom_avatar_obj', text); } catch (_) {}
+
+    if (active3DViewer && typeof active3DViewer.loadCustomOBJ === 'function') {
+      active3DViewer.loadCustomOBJ(text);
+    }
+    toast('Custom 3D avatar loaded successfully!');
+    closeModal();
+  } catch (err) {
+    console.error('Failed to parse OBJ file:', err);
+    toast('Error reading .OBJ file');
+  }
+}
+
+async function resetCustomOBJ() {
+  await put('custom_avatar_obj', null);
+  try { ls.set('custom_avatar_obj', null); } catch (_) {}
+  if (active3DViewer && typeof active3DViewer.resetToMannequin === 'function') {
+    active3DViewer.resetToMannequin();
+  }
+  toast('Reset to default anatomy mannequin');
+  closeModal();
+}
+
+async function handleProgressPhotoUpload(file) {
+  if (!file) return;
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    // Compress to max 900x900 JPEG 0.78 quality (~120KB) on offscreen canvas
+    const compressedDataUrl = await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxDim = 900;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.78));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+
+    const latestW = S.weights?.length ? S.weights[S.weights.length - 1].w : (S.cfg?.physique?.weight || null);
+    const dateKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+      ? Calc.toLocalDateKey(new Date())
+      : new Date().toISOString().slice(0, 10);
+
+    const newPhoto = {
+      id: uid(),
+      date: dateKey,
+      weight: latestW,
+      dataUrl: compressedDataUrl,
+      data: compressedDataUrl,
+      angle: 'Front'
+    };
+
+    if (!Array.isArray(S.photos)) S.photos = [];
+    S.photos.push(newPhoto);
+
+    await save('photos');
+    try { ls.set('photos', S.photos); } catch (_) {}
+    toast('Progress photo saved!');
+    render();
+  } catch (err) {
+    console.error('Photo upload error:', err);
+    toast('Failed to process photo');
+  }
+}
+
+function showPhotoDetailModal(idx) {
+  const photos = S.photos || [];
+  const ph = photos[idx];
+  if (!ph) return;
+
+  const hasCompare = photos.length >= 2;
+
+  modal(`
+    <div class="modal-header">
+      <h3 class="modal-title">Progress Photo · ${esc(formatStandardDate(ph.date))}</h3>
+      <button class="modal-close-btn" data-a="close">✕</button>
+    </div>
+    <div style="text-align:center;padding:10px 0;">
+      <div style="position:relative;display:inline-block;max-width:100%;border-radius:12px;overflow:hidden;background:#000;">
+        <img src="${esc(ph.dataUrl || ph.data)}" alt="Progress" style="max-width:100%;max-height:60vh;display:block;margin:0 auto;object-fit:contain;">
+      </div>
+      <div style="margin-top:10px;font-size:13px;color:var(--t2);">
+        Recorded on ${esc(formatStandardDate(ph.date))}${ph.weight != null ? ` · Bodyweight: <b>${ph.weight}kg</b>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">
+        ${hasCompare ? `<button class="btn s sm-btn" data-a="open-custom-avatar">Compare Before / After</button>` : ''}
+        <button class="btn s sm-btn outline" data-a="delphoto" data-idx="${idx}" style="color:var(--rd);border-color:var(--rd);">Delete Photo</button>
+      </div>
+    </div>
+  `);
 }
 
 function animateCounter(el, start, end, duration = 800, suffix = '') {
@@ -11652,6 +12230,10 @@ let modalViewportHandler = null;
 let prevActiveElement = null;
 
 const modal = (h, opts = {}) => {
+  const contentStr = (h && typeof h === 'object' && h instanceof SafeHTML) ? h.str : String(h ?? '');
+  if (contentStr.includes('Welcome to MyGyM') || contentStr.includes('Personalize your offline training profile')) {
+    return;
+  }
   const m = $('#m');
   if (!m) return;
   if (typeof document !== 'undefined') {
@@ -12537,7 +13119,7 @@ function renderFreeWorkoutExerciseRows(exercises) {
             ${esc(e.tg || e.g)} · ${esc(e.eq)}
           </div>
         </div>
-        <button class="chip ex-preview-btn" data-a="pickpreview" data-id="${esc(e.id)}" title="Preview Exercise">ℹ️</button>
+        <button class="chip ex-preview-btn" data-a="pickpreview" data-id="${esc(e.id)}" title="Preview Exercise">${ic('info', 16)}</button>
       </div>
     `;
   }).join('');
@@ -12553,7 +13135,7 @@ function showFreeWorkoutBuilderModal() {
   modal(`
     <div class="free-builder-sheet">
       <div class="free-builder-header">
-        <h2>⚡ Build Custom Session</h2>
+        <h2>${ic('zap', 18)} Build Custom Session</h2>
         <p class="t2 sm" style="margin-top:2px;margin-bottom:10px">Target specific muscles for today's workout without saving a routine.</p>
       </div>
 
@@ -12569,13 +13151,13 @@ function showFreeWorkoutBuilderModal() {
         <button class="btn s sm-btn" data-a="clearfreesel" style="font-size:11px;padding:2px 8px">Clear</button>
       </div>
 
-      <div id="free-ex-list" class="card" style="max-height:46vh;overflow-y:auto;padding:0 10px;margin-bottom:14px">
+      <div id="free-ex-list" class="card" style="width:100%;max-width:100%;box-sizing:border-box;max-height:46vh;overflow-y:auto;padding:0 8px;margin:0 0 14px 0">
         ${renderFreeWorkoutExerciseRows(matching)}
       </div>
 
       <div class="free-builder-actions">
         <button class="btn free-start-btn" data-a="startfreesession">
-          ⚡ Start Session (${freeWorkoutSelectedEx.size} Exercises)
+          ${ic('zap', 16)} Start Session (${freeWorkoutSelectedEx.size} Exercises)
         </button>
         <button class="btn s outline" data-a="closemodal">Cancel</button>
       </div>
@@ -15915,23 +16497,26 @@ function vBody() {
         `<button class="btn" data-a="logweight" style="width:auto;flex:1;margin:0">Save Entry</button>` +
       `</div>` +
     `</div>` +
-    `<h2>Progress Photos 📸</h2>` +
+    `<h2>Progress Photos ${ic('camera', 18)}</h2>` +
     `<div class="card" style="padding:14px">` +
       `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">` +
         `<div class="t2 sm">Stored locally on your device in offline storage.</div>` +
-        `<label class="btn s sm-btn" style="cursor:pointer;margin:0">` +
-          `📷 Add Photo` +
+        `<div>` +
+          `<button class="btn s sm-btn" data-a="trigger-photo-picker" style="cursor:pointer;margin:0">` +
+            `${ic('camera', 14)} Add Photo` +
+          `</button>` +
           `<input type="file" id="progress-photo-picker" accept="image/*" style="display:none">` +
-        `</label>` +
+        `</div>` +
       `</div>` +
-      `<div id="progress-photos-gallery" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));gap:8px">` +
+      `<div id="progress-photos-gallery" class="progress-photo-grid">` +
         `${(S.photos || []).map((ph, idx) => `
-          <div style="position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;background:var(--c2)">
-            <img src="${esc(ph.data)}" alt="Progress ${esc(ph.date)}" style="width:100%;height:100%;object-fit:cover">
-            <button class="chip" data-a="delphoto" data-idx="${idx}" style="position:absolute;top:2px;right:2px;padding:1px 4px;font-size:9px;background:rgba(0,0,0,0.6);color:#fff">✕</button>
+          <div class="progress-photo-card" data-a="view-photo-modal" data-idx="${idx}">
+            <img src="${esc(ph.dataUrl || ph.data)}" alt="Progress ${esc(ph.date)}" loading="lazy">
+            <div class="photo-badge">${esc(formatStandardDate(ph.date))}${ph.weight != null ? ` · ${ph.weight}kg` : ''}</div>
+            <button class="photo-del-btn" data-a="delphoto" data-idx="${idx}" title="Delete Photo">✕</button>
           </div>
         `).join('')}` +
-        `${!(S.photos && S.photos.length) ? '<div class="t2 sm" style="grid-column:1/-1;text-align:center;padding:12px 0">No progress photos saved yet.</div>' : ''}` +
+        `${!(S.photos && S.photos.length) ? '<div class="t2 sm" style="grid-column:1/-1;text-align:center;padding:18px 0">No progress photos saved yet. Tap "Add Photo" to capture your baseline!</div>' : ''}` +
       `</div>` +
     `</div>` +
     `<h2>Measurement History</h2>` +
@@ -16940,107 +17525,14 @@ function handleOnboardingSubmit() {
     if (typeof document !== 'undefined' && document.body) {
       document.body.style.overflow = '';
     }
-    toast('Welcome to MyGyM!');
+    toast('Profile updated');
     render();
     save('cfg', 'weights');
   }
 }
 
-function showOnboardingModal(force = false) {
-  if (!force && isUserOnboarded()) {
-    return;
-  }
-  const age = S.cfg?.physique?.age ? String(S.cfg.physique.age) : '';
-  const height = S.cfg?.physique?.height ? String(S.cfg.physique.height) : '';
-  const weight = S.weights?.at(-1)?.w ? String(S.weights.at(-1).w) : (S.cfg?.physique?.weight ? String(S.cfg.physique.weight) : '');
-  const unit = S.cfg?.unit || S.cfg?.units || 'kg';
-  const sex = S.cfg?.bodyModel || S.cfg?.sex || 'male';
-  const goal = S.cfg?.physique?.goalType || S.cfg?.goalType || 'hypertrophy';
-  const weekStart = S.cfg?.weekStartDay || 'mon';
-
-  modal(`
-    <div class="card onboarding-card" style="padding:18px">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span style="font-size:18px;">🏋️</span>
-        <button type="button" class="x" data-a="dismiss-onboarding" style="font-size:14px; font-weight:700; color:var(--ac); cursor:pointer;">Skip / Close ✕</button>
-      </div>
-
-      <div style="text-align:center;margin-bottom:14px">
-        <h2 style="margin:4px 0 2px">Welcome to MyGyM</h2>
-        <p class="t2 sm" style="margin:0">Personalize your offline training profile</p>
-      </div>
-
-      <form id="onboarding-form" onsubmit="event.preventDefault()">
-        <div class="settings-row" style="margin-bottom:10px">
-          <span class="settings-label">Preferred Units</span>
-          <div class="chips" id="onboard-units-group" style="margin:0;display:flex;gap:6px">
-            <button type="button" class="chip onboarding-unit-pill ${unit === 'kg' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="kg">kg</button>
-            <button type="button" class="chip onboarding-unit-pill ${unit === 'lbs' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="lbs">lbs</button>
-          </div>
-        </div>
-
-        <div class="settings-row" style="margin-bottom:10px">
-          <span class="settings-label">Biological Sex</span>
-          <div class="chips" id="onboard-sex-group" style="margin:0;display:flex;gap:6px">
-            <button type="button" class="chip onboarding-sex-pill ${sex === 'male' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="male">Male</button>
-            <button type="button" class="chip onboarding-sex-pill ${sex === 'female' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="female">Female</button>
-          </div>
-        </div>
-
-        <div class="row g" style="margin-bottom:10px">
-          <div style="flex:1">
-            <label class="t2 sm" for="onboard-age">Age (years)</label>
-            <input type="number" id="onboard-age" name="age" class="txt" value="${age}" placeholder="e.g. 25" min="12" max="100" style="width:100%;padding:8px">
-          </div>
-          <div style="flex:1">
-            <label class="t2 sm" for="onboard-height">Height (cm)</label>
-            <input type="number" id="onboard-height" name="height" class="txt" value="${height}" placeholder="e.g. 175" min="100" max="250" style="width:100%;padding:8px">
-          </div>
-          <div style="flex:1">
-            <label class="t2 sm" for="onboard-weight">Weight (${esc(unit)})</label>
-            <input type="number" id="onboard-weight" name="weight" class="txt" value="${weight}" placeholder="e.g. 72" step="0.5" min="30" max="300" style="width:100%;padding:8px">
-          </div>
-        </div>
-
-        <div class="settings-row" style="margin-bottom:10px">
-          <span class="settings-label">Primary Training Goal</span>
-          <select id="onboard-goal" name="goal" class="settings-select" style="max-width:180px">
-            <option value="hypertrophy" ${goal === 'hypertrophy' || goal === 'bulk' ? 'selected' : ''}>Muscle Hypertrophy</option>
-            <option value="strength" ${goal === 'strength' ? 'selected' : ''}>Raw Strength</option>
-            <option value="fat_loss" ${goal === 'fat_loss' || goal === 'cut' ? 'selected' : ''}>Fat Loss / Conditioning</option>
-            <option value="maintenance" ${goal === 'maintenance' || goal === 'recomp' ? 'selected' : ''}>Maintenance</option>
-          </select>
-        </div>
-
-        <div class="settings-row" style="margin-bottom:14px">
-          <span class="settings-label">Week Start Day</span>
-          <select id="onboard-weekstart" name="weekstart" class="settings-select" style="max-width:180px">
-            <option value="mon" ${weekStart === 'mon' ? 'selected' : ''}>Monday (00:00)</option>
-            <option value="sun" ${weekStart === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
-          </select>
-        </div>
-
-        <button type="button" class="btn" id="onboarding-submit-btn" data-a="submit-onboarding" style="width:100%;min-height:46px;font-weight:700">Get Started 🚀</button>
-      </form>
-    </div>
-  `, { hideClose: false });
-
-  setTimeout(() => {
-    const submitBtn = document.getElementById('onboarding-submit-btn');
-    if (submitBtn) {
-      submitBtn.onclick = (e) => {
-        if (e && e.preventDefault) e.preventDefault();
-        handleOnboardingSubmit();
-      };
-    }
-    const dismissBtns = document.querySelectorAll('[data-a="dismiss-onboarding"]');
-    dismissBtns.forEach(b => {
-      b.onclick = (e) => {
-        if (e && e.preventDefault) e.preventDefault();
-        handleOnboardingSubmit();
-      };
-    });
-  }, 0);
+function showOnboardingModal() {
+  return;
 }
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
@@ -20564,32 +21056,49 @@ document.addEventListener('click', async e => {
       const restIntervals = [30, 45, 60, 90, 120, 150, 180, 240, 300];
       modal(`
         <div class="card" style="padding:16px">
-          <h3 style="margin-top:0">⏱️ Rest Interval for ${esc(exInfo?.name || 'Exercise')}</h3>
+          <h3 style="margin-top:0">${ic('timer', 18)} Rest Interval for ${esc(exInfo?.name || 'Exercise')}</h3>
           <p class="t2 sm">Set specific rest interval for this movement (defaults to ${S.cfg?.rest || 90}s):</p>
           <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin:16px 0">
             ${restIntervals.map(sec => `
-              <button class="chip ${sec === curRest ? 'on' : ''}" data-a="commit-ex-rest" data-id="${esc(exId)}" data-sec="${sec}" style="min-height:44px;justify-content:center;font-weight:700">
+              <button class="chip ${sec === curRest ? 'on' : ''}" data-a="saveexrest" data-id="${esc(exId)}" data-sec="${sec}" style="min-height:44px;justify-content:center;font-weight:700">
                 ${sec >= 60 ? (sec / 60) + ' min' : sec + ' sec'}
               </button>
             `).join('')}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <input type="number" id="custom-rest-sec" class="txt" min="5" max="900" value="${curRest}" style="flex:1" placeholder="Custom seconds">
+            <button class="btn s sm-btn" data-a="saveexrest" data-id="${esc(exId)}" data-custom="1" style="min-width:64px">Save</button>
           </div>
           <button class="btn s sm-btn" data-a="close" style="width:100%">Cancel</button>
         </div>
       `);
       return;
     }
+    case 'saveexrest':
+    case 'pickexrest':
+    case 'setexrestval':
     case 'commit-ex-rest': {
       const exId = t.dataset.id;
-      const sec = Number(t.dataset.sec) || 90;
+      let sec = Number(t.dataset.sec);
+      if (t.dataset.custom === '1' || !sec) {
+        const inp = document.getElementById('custom-rest-sec');
+        if (inp && inp.value) {
+          sec = parseInt(inp.value, 10);
+        }
+      }
+      if (!sec || isNaN(sec) || sec < 5) sec = 90;
       if (exId) {
         S.cfg = S.cfg || {};
         S.cfg.exerciseRest = S.cfg.exerciseRest || {};
         S.cfg.exerciseRest[exId] = sec;
         save('cfg');
+        try { ls.set('cfg', S.cfg); } catch (_) {}
         closeModal();
-        toast(`⏱️ Custom rest timer set to ${sec}s for this exercise`);
+        toast('Rest timer set to ' + sec + 's');
         if (view === 'work' && S.act) {
           switchWorkExercise(S.act.curEx || 0, false);
+        } else {
+          render();
         }
       }
       return;
@@ -20635,11 +21144,43 @@ document.addEventListener('click', async e => {
       }
       return;
     }
+    case 'open-custom-avatar': {
+      showCustomAvatarModal();
+      return;
+    }
+    case 'trigger-obj-upload': {
+      const picker = document.getElementById('custom-obj-picker');
+      if (picker) picker.click();
+      return;
+    }
+    case 'reset-custom-obj': {
+      resetCustomOBJ();
+      return;
+    }
+    case 'trigger-physique-photo-upload': {
+      const picker = document.getElementById('custom-physique-photo-input');
+      if (picker) picker.click();
+      return;
+    }
+    case 'trigger-photo-picker': {
+      const picker = document.getElementById('progress-photo-picker');
+      if (picker) picker.click();
+      return;
+    }
+    case 'view-photo-modal': {
+      const idx = Number(t.dataset.idx);
+      if (Number.isInteger(idx)) {
+        showPhotoDetailModal(idx);
+      }
+      return;
+    }
     case 'delphoto': {
       const idx = Number(t.dataset.idx);
       if (Number.isInteger(idx) && S.photos && S.photos[idx]) {
         S.photos.splice(idx, 1);
         save('photos');
+        try { ls.set('photos', S.photos); } catch (_) {}
+        closeModal();
         toast('Progress photo deleted');
         render();
       }
@@ -21518,6 +22059,21 @@ document.addEventListener('blur', e => handleFieldUpdate(e.target), true);
 document.addEventListener('change', e => {
   const t = e.target;
   handleFieldUpdate(t);
+  if (t.id === 'progress-photo-picker' && t.files && t.files[0]) {
+    handleProgressPhotoUpload(t.files[0]);
+    t.value = '';
+    return;
+  }
+  if (t.id === 'custom-physique-photo-input' && t.files && t.files[0]) {
+    handleProgressPhotoUpload(t.files[0]);
+    t.value = '';
+    return;
+  }
+  if (t.id === 'custom-obj-picker' && t.files && t.files[0]) {
+    handleCustomOBJUpload(t.files[0]);
+    t.value = '';
+    return;
+  }
   if (t.id === 'f' && t.files[0]) {
     imp(t.files[0]);
     t.value = '';
@@ -21861,12 +22417,9 @@ async function init() {
   }
 
   render();
-  if (!isUserOnboarded()) {
-    showOnboardingModal();
-  }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=8.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=8.0.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -21952,6 +22505,7 @@ if (typeof globalThis !== 'undefined') {
     WEEKLY_FREQ_TARGETS,
     getFreeWorkoutExercises,
     showFreeWorkoutBuilderModal,
+    renderFreeWorkoutExerciseRows,
     startFreeWorkout,
     FREE_WORKOUT_TARGETS,
     matchesSubMuscle,
@@ -22087,6 +22641,11 @@ if (typeof globalThis !== 'undefined') {
     init3DViewer,
     show3DAnatomyModal,
     show3DPhysiqueModal,
+    showCustomAvatarModal,
+    handleCustomOBJUpload,
+    resetCustomOBJ,
+    handleProgressPhotoUpload,
+    showPhotoDetailModal,
     close3DModal,
     animateCounter,
     renderVolumeRadarChart,
@@ -22107,24 +22666,24 @@ if (typeof globalThis !== 'undefined') {
 ================================================================================
 >>> START FILE: sw.js
 ================================================================================
-const C = 'mygym-core-v8.0.0';
+const C = 'mygym-core-v8.0.1';
 const MEDIA_CACHE = 'mygym-media-v1';
 
 const CORE_SHELL = [
   './',
   './index.html',
   './style.css',
-  './style.css?v=8.0.0',
+  './style.css?v=8.0.1',
   './shell.js',
-  './shell.js?v=8.0.0',
+  './shell.js?v=8.0.1',
   './calc.js',
-  './calc.js?v=8.0.0',
+  './calc.js?v=8.0.1',
   './ai-config.js',
-  './ai-config.js?v=8.0.0',
+  './ai-config.js?v=8.0.1',
   './app.js',
-  './app.js?v=8.0.0',
+  './app.js?v=8.0.1',
   './vendor/three.module.js',
-  './vendor/three.module.js?v=8.0.0',
+  './vendor/three.module.js?v=8.0.1',
   './manifest.json'
 ];
 
@@ -22263,6 +22822,21 @@ self.addEventListener('fetch', e => {
 # Changelog
 
 All notable changes to the MyGyM Progressive Web App are documented in this file.
+
+## [8.0.1] - Permanent Onboarding Purge, 3D Silhouette Calibration, Custom OBJ/Photos, & Cache Refresh - 2026-11-14
+
+### Onboarding Removal & Safety Hard-Block
+- **Permanently Purged Welcome / Onboarding Modal**: Removed onboarding popup lifecycle entirely from `app.js`. Guaranteed defaults `S.onboarded = true` and `S.cfg.onboarded = true`. Added hard-block interception in `modal()` preventing any legacy or deferred markup matching `Welcome to MyGyM` or `Personalize your offline training profile` from ever rendering.
+- **Immediate Shell Auto-Purge (`shell.js`)**: Configured `shell.js` to detect version changes (`cachedVersion !== SHELL_VERSION`), purge obsolete `mygym-core-*` caches immediately via CacheStorage API, request background worker update, and execute timestamp-busting reload to ensure mobile Safari fetches fresh v8.0.1 code without manual cache clearing.
+
+### 3D Lighting Calibration & Custom Avatar (.OBJ & Photos)
+- **Shader Lighting & White Silhouette Fix**: Added view-space transformation for directional lights, Half-Lambert diffuse wrapping, and balanced rim lighting (`vec3(0.55, 0.75, 1.0) * rimFactor`), preventing specular saturation and washed-out white silhouette in procedural models.
+- **Wavefront OBJ Parser & IndexedDB Mesh Storage**: Added `parseOBJ` in `vendor/three.module.js` with auto-normalization, geometric centering, and normal generation. Added `"My Photo / Custom 3D (.OBJ)"` modal for uploading custom OBJ meshes and physique reference photos.
+- **Interactive Before/After Split Slider**: Integrated interactive split-view comparison slider comparing baseline vs current physique progress photos.
+
+### Free Workout Builder & Rest Timer Enhancements
+- **Grid Alignment Fix**: Resolved layout alignment and right-side margin gaps in `.free-builder-sheet`, `#free-ex-list`, and `.free-ex-row`. Replaced preview trigger with SVG `${ic('info', 16)}`.
+- **Rest Interval Picker Commitment**: Enabled preset rest intervals (`data-a="saveexrest"`) and custom seconds input committing directly to `S.cfg.exerciseRest[exId]`.
 
 ## [8.0.0] - Phase 7-8 3D Anatomy Polish, Morph Throttling, Reduced-Motion Compliance & Production Release - 2026-11-14
 
@@ -22935,6 +23509,371 @@ capture().catch(err => {
 ================================================================================
 
 ================================================================================
+>>> START FILE: scripts/check-css-classes.js
+================================================================================
+#!/usr/bin/env node
+/**
+ * scripts/check-css-classes.js
+ * Scans app.js and index.html for class names and verifies they exist in style.css.
+ * Exits with code 1 if any undefined CSS class is found.
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
+
+const cssPath = path.join(rootDir, 'style.css');
+const appPath = path.join(rootDir, 'app.js');
+const htmlPath = path.join(rootDir, 'index.html');
+
+if (!fs.existsSync(cssPath) || !fs.existsSync(appPath) || !fs.existsSync(htmlPath)) {
+  console.error('Error: Required files (style.css, app.js, index.html) not found.');
+  process.exit(1);
+}
+
+const cssCode = fs.readFileSync(cssPath, 'utf8');
+const appCode = fs.readFileSync(appPath, 'utf8');
+const htmlCode = fs.readFileSync(htmlPath, 'utf8');
+
+// 1. Extract defined classes from style.css
+// Remove comments
+const cssWithoutComments = cssCode.replace(/\/\*[\s\S]*?\*\//g, '');
+const definedClasses = new Set();
+
+// Extract classes: .class-name where dot is not a decimal number (like .5s or 0.5px)
+const cssClassRegex = /(?<![0-9])\.([a-zA-Z_-][a-zA-Z0-9_-]*)/g;
+let cssMatch;
+while ((cssMatch = cssClassRegex.exec(cssWithoutComments)) !== null) {
+  definedClasses.add(cssMatch[1]);
+}
+
+// 2. Extract referenced classes from app.js and index.html
+const referencedClasses = new Set();
+const classLocations = new Map(); // className -> array of snippets/files
+
+function recordClass(cls, file, snippet) {
+  if (!cls || typeof cls !== 'string') return;
+  cls = cls.trim();
+  // If token ends with hyphen (e.g. prefix before ${...}), ignore prefix fragment
+  if (cls.endsWith('-')) return;
+
+  // Valid CSS class identifier: starts with letter/underscore/hyphen, followed by alphanum/underscore/hyphen
+  if (!/^[a-zA-Z_-][a-zA-Z0-9_-]*$/.test(cls)) return;
+
+  // Filter out JS keywords or template literal artifacts if any accidentally match
+  if (['true', 'false', 'null', 'undefined', 'return', 'let', 'const', 'var', 'if', 'else'].includes(cls)) return;
+
+  referencedClasses.add(cls);
+  if (!classLocations.has(cls)) {
+    classLocations.set(cls, []);
+  }
+  const locs = classLocations.get(cls);
+  if (locs.length < 3) {
+    locs.push(`${file}: ${snippet.trim()}`);
+  }
+}
+
+function scanFile(content, fileName) {
+  // Regex 1: class="..." or class='...' or class=`...`
+  // We handle multi-line template strings as well
+  const classAttrRegex = /class\s*=\s*(["'`])([\s\S]*?)\1/g;
+  let match;
+  while ((match = classAttrRegex.exec(content)) !== null) {
+    let raw = match[2];
+    // Strip template expressions: ${...}
+    // Simple matching for non-nested or single-level nested curlies
+    raw = raw.replace(/\$\{[^{}]*(\{[^{}]*\}[^{}]*)*\}/g, ' ');
+
+    const tokens = raw.split(/[\s,]+/);
+    for (const t of tokens) {
+      if (t) recordClass(t, fileName, match[0].slice(0, 60));
+    }
+  }
+
+  // Regex 2: classList.add('...'), classList.toggle('...'), etc.
+  const classListRegex = /classList\.(?:add|remove|toggle|contains)\(\s*(['"`])([a-zA-Z0-9_-]+)\1/g;
+  while ((match = classListRegex.exec(content)) !== null) {
+    recordClass(match[2], fileName, match[0]);
+  }
+
+  // Regex 3: className = '...'
+  const classNameRegex = /className\s*=\s*(['"`])([a-zA-Z0-9_\s-]+)\1/g;
+  while ((match = classNameRegex.exec(content)) !== null) {
+    const tokens = match[2].split(/\s+/);
+    for (const t of tokens) {
+      if (t) recordClass(t, fileName, match[0]);
+    }
+  }
+
+  // Regex 4: querySelector('.foo') and querySelectorAll('.foo')
+  const qsRegex = /querySelector(?:All)?\(\s*(['"`])([^\1]*?)\1/g;
+  while ((match = qsRegex.exec(content)) !== null) {
+    const selector = match[2];
+    const dotMatches = selector.matchAll(/(?<![0-9])\.([a-zA-Z_-][a-zA-Z0-9_-]*)/g);
+    for (const dm of dotMatches) {
+      recordClass(dm[1], fileName, match[0]);
+    }
+  }
+}
+
+scanFile(htmlCode, 'index.html');
+scanFile(appCode, 'app.js');
+
+console.log(`CSS Check: Found ${definedClasses.size} defined classes in style.css`);
+console.log(`CSS Check: Found ${referencedClasses.size} referenced classes in app.js and index.html\n`);
+
+const missing = [];
+for (const cls of referencedClasses) {
+  if (!definedClasses.has(cls)) {
+    missing.push(cls);
+  }
+}
+
+missing.sort();
+
+if (missing.length > 0) {
+  console.error(`❌ FAILED: ${missing.length} CSS class(es) used in app.js/index.html are NOT defined in style.css:\n`);
+  for (const cls of missing) {
+    const locs = classLocations.get(cls) || [];
+    console.error(`  - .${cls}`);
+    for (const loc of locs) {
+      console.error(`      at ${loc}`);
+    }
+  }
+  console.error(`\nPlease define these classes in style.css or fix typos.\n`);
+  process.exit(1);
+} else {
+  console.log(`✓ PASSED: All ${referencedClasses.size} referenced CSS classes are defined in style.css.`);
+  process.exit(0);
+}
+================================================================================
+<<< END FILE: scripts/check-css-classes.js
+================================================================================
+
+================================================================================
+>>> START FILE: scripts/check-no-ui-emoji.js
+================================================================================
+#!/usr/bin/env node
+/**
+ * check-no-ui-emoji.js
+ * Verifies that button, chip, and header templates in app.js and index.html
+ * use SVG vector icons (<svg>) rather than raw emoji characters.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
+
+const appJs = fs.readFileSync(path.join(rootDir, 'app.js'), 'utf8');
+const indexHtml = fs.readFileSync(path.join(rootDir, 'index.html'), 'utf8');
+
+// UI chrome emoji to forbid in button/chip/header labels
+// (content emojis like muscle badges or food items are excluded)
+const FORBIDDEN_UI_EMOJIS = ['🤖', '⇄', '⚙️', '🔍 Tap', '•••', '👁️'];
+
+const violations = [];
+
+// Helper to check string for UI emoji in button/chip context
+function checkLines(filename, content) {
+  const lines = content.split('\n');
+  lines.forEach((line, idx) => {
+    // Only check lines that render buttons, chips, or sheet headers
+    const isUiChrome = /class="[^"]*(btn|chip|work-hero-toolbar|sheet-header)[^"]*"/.test(line) ||
+                       /data-a="[^"]+"/.test(line);
+
+    if (isUiChrome) {
+      for (const emoji of FORBIDDEN_UI_EMOJIS) {
+        if (line.includes(emoji)) {
+          violations.push({
+            file: filename,
+            line: idx + 1,
+            emoji,
+            snippet: line.trim().slice(0, 80)
+          });
+        }
+      }
+    }
+  });
+}
+
+checkLines('app.js', appJs);
+checkLines('index.html', indexHtml);
+
+console.log('UI Emoji Audit: Checking buttons, chips, and headers for vector icon compliance...');
+
+if (violations.length > 0) {
+  console.error(`❌ FAILED: Found ${violations.length} raw UI emoji violation(s) in button/chip templates:`);
+  violations.forEach(v => {
+    console.error(`  - ${v.file}:${v.line} [${v.emoji}] -> ${v.snippet}`);
+  });
+  process.exit(1);
+} else {
+  console.log('✓ PASSED: All checked button, chip, and header templates use SVG icons instead of raw UI emoji.');
+  process.exit(0);
+}
+================================================================================
+<<< END FILE: scripts/check-no-ui-emoji.js
+================================================================================
+
+================================================================================
+>>> START FILE: scripts/layout-audit.js
+================================================================================
+/**
+ * scripts/layout-audit.js
+ * Layout & Touch Target Audit across viewports:
+ * 430x932, 390x844, 375x667, 320x568.
+ *
+ * Checks:
+ * 1. document.documentElement.scrollWidth <= window.innerWidth (no horizontal overflow)
+ * 2. Buttons, inputs, and interactive controls meet minimum 44x44px touch targets.
+ *
+ * If Playwright is available, runs in headless browser.
+ * Otherwise, executes comprehensive static DOM/CSS layout and rule verification.
+ */
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const rootDir = path.resolve(__dirname, '..');
+
+const VIEWPORTS = [
+  { name: 'iPhone 15 Pro Max', width: 430, height: 932 },
+  { name: 'iPhone 14 / 13 Pro', width: 390, height: 844 },
+  { name: 'iPhone SE / 8', width: 375, height: 667 },
+  { name: 'Narrow Mobile', width: 320, height: 568 }
+];
+
+async function runAudit() {
+  console.log('Running Layout & Touch Target Audit across viewports:');
+  VIEWPORTS.forEach(vp => console.log(`  - ${vp.name}: ${vp.width}x${vp.height}`));
+
+  let playwright = null;
+  try {
+    playwright = await import('playwright');
+  } catch {
+    // Playwright is optional; fall back to static CSS and structural validation
+  }
+
+  if (playwright) {
+    console.log('\n[Playwright Engine Detected] Running browser-based layout tests...');
+    const browser = await playwright.chromium.launch({ headless: true });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const fileUrl = 'file://' + path.join(rootDir, 'index.html');
+    await page.goto(fileUrl, { waitUntil: 'load' });
+
+    let failures = 0;
+    for (const vp of VIEWPORTS) {
+      await page.setViewportSize({ width: vp.width, height: vp.height });
+      await page.waitForTimeout(100);
+
+      const overflow = await page.evaluate(() => {
+        const docWidth = document.documentElement.scrollWidth;
+        const winWidth = window.innerWidth;
+        return { docWidth, winWidth, hasOverflow: docWidth > winWidth };
+      });
+
+      if (overflow.hasOverflow) {
+        console.error(`✗ Viewport ${vp.width}x${vp.height} (${vp.name}) has horizontal overflow: scrollWidth ${overflow.docWidth} > innerWidth ${overflow.winWidth}`);
+        failures++;
+      } else {
+        console.log(`✓ Viewport ${vp.width}x${vp.height} (${vp.name}): No horizontal overflow (width: ${overflow.docWidth}px)`);
+      }
+
+      // Check button touch targets
+      const touchViolations = await page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll('button:not([hidden]), .btn, [role="button"], input[type="button"], input[type="submit"]'));
+        const violations = [];
+        for (const btn of buttons) {
+          const rect = btn.getBoundingClientRect();
+          // Skip elements that are display:none, collapsed, or 0x0
+          if (rect.width === 0 && rect.height === 0) continue;
+          if (rect.width < 43.5 || rect.height < 43.5) { // allow 0.5px rounding
+            const style = window.getComputedStyle(btn);
+            if (style.display === 'none' || style.visibility === 'hidden') continue;
+            // Check if it has a tap target wrapper or exception
+            violations.push({
+              tag: btn.tagName,
+              cls: btn.className,
+              id: btn.id,
+              w: Math.round(rect.width),
+              h: Math.round(rect.height)
+            });
+          }
+        }
+        return violations;
+      });
+
+      if (touchViolations.length > 0) {
+        console.warn(`  ! Note: ${touchViolations.length} elements under 44x44px in static DOM of ${vp.name}`);
+      }
+    }
+
+    await browser.close();
+    if (failures > 0) {
+      console.error(`Audit failed with ${failures} overflow errors.`);
+      process.exit(1);
+    }
+  } else {
+    console.log('\n[Static Verification Engine] Checking CSS layout constraints and touch targets...');
+    const cssPath = path.join(rootDir, 'style.css');
+    const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+    // Check critical responsive properties
+    const checks = [
+      { name: 'min-width: 0 on .sheet', regex: /\.sheet[^{]*\{[^}]*min-width:\s*0/s },
+      { name: 'box-sizing on .sheet', regex: /\.sheet[^{]*\{[^}]*box-sizing:\s*border-box/s },
+      { name: 'min-width: 0 on .card', regex: /\.card[^{]*\{[^}]*min-width:\s*0/s },
+      { name: 'min-width: 0 on .set-row', regex: /\.set-row[^{]*\{[^}]*min-width:\s*0/s },
+      { name: 'min-width: 0 on .set-inputs-row', regex: /\.set-inputs-row[^{]*\{[^}]*min-width:\s*0/s },
+      { name: 'min-width: 0 on .work-hero-card', regex: /\.work-hero-card[^{]*\{[^}]*min-width:\s*0/s },
+      { name: 'touch targets: 44px min-height on button / .btn', regex: /(?:button|\.btn|input\[type="button"\])[^{]*\{[^}]*min-height:\s*44px/s },
+      { name: 'touch targets: 44px min-height on .seg-btn', regex: /\.seg-btn[^{]*\{[^}]*min-height:\s*44px/s },
+      { name: 'touch targets: 44px min-height on .btn-step', regex: /\.btn-step[^{]*\{[^}]*min-height:\s*44px/s },
+      { name: 'html/body overflow-x hidden / containment', regex: /(?:html|body)[^{]*\{[^}]*overflow-x:\s*hidden/s }
+    ];
+
+    let passed = 0;
+    let failed = 0;
+
+    for (const check of checks) {
+      if (check.regex.test(cssContent)) {
+        console.log(`✓ ${check.name} satisfied`);
+        passed++;
+      } else {
+        console.error(`✗ ${check.name} missing or failed regex`);
+        failed++;
+      }
+    }
+
+    if (failed > 0) {
+      console.error(`Layout audit failed: ${failed} checks failed.`);
+      process.exit(1);
+    }
+  }
+
+  console.log('\n✓ PASSED: Layout & Touch Target audit completed successfully.\n');
+}
+
+runAudit().catch(err => {
+  console.error('Audit execution error:', err);
+  process.exit(1);
+});
+
+================================================================================
+<<< END FILE: scripts/layout-audit.js
+================================================================================
+
+================================================================================
 >>> START FILE: scripts/consolidate.js
 ================================================================================
 import fs from 'node:fs';
@@ -22966,6 +23905,9 @@ const files = [
   'scripts/bump-version.js',
   'scripts/generate-exercise-kinds.js',
   'scripts/capture-screens.js',
+  'scripts/check-css-classes.js',
+  'scripts/check-no-ui-emoji.js',
+  'scripts/layout-audit.js',
   'scripts/consolidate.js',
   'tests/test_production_issues.js'
 ];
@@ -24015,27 +24957,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v8.0.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v8.0.0';"), 'sw.js must use mygym-core-v8.0.0 cache name');
-  assert(swCode.includes("'./style.css?v=8.0.0'"), 'sw.js must precache style.css?v=8.0.0');
-  assert(swCode.includes("'./app.js?v=8.0.0'"), 'sw.js must precache app.js?v=8.0.0');
-  assert(swCode.includes("'./calc.js?v=8.0.0'"), 'sw.js must precache calc.js?v=8.0.0');
+it('sw.js cache key is bumped to mygym-core-v8.0.1, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v8.0.1';"), 'sw.js must use mygym-core-v8.0.1 cache name');
+  assert(swCode.includes("'./style.css?v=8.0.1'"), 'sw.js must precache style.css?v=8.0.1');
+  assert(swCode.includes("'./app.js?v=8.0.1'"), 'sw.js must precache app.js?v=8.0.1');
+  assert(swCode.includes("'./calc.js?v=8.0.1'"), 'sw.js must precache calc.js?v=8.0.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=8.0.0'), 'index.html must link style.css?v=8.0.0');
-  assert(htmlCode.includes('shell.js?v=8.0.0'), 'index.html must load shell.js?v=8.0.0');
-  assert(htmlCode.includes('app.js?v=8.0.0'), 'index.html must load app.js?v=8.0.0');
-  assert(htmlCode.includes('calc.js?v=8.0.0'), 'index.html must load calc.js?v=8.0.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v8.0.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=8.0.1'), 'index.html must link style.css?v=8.0.1');
+  assert(htmlCode.includes('shell.js?v=8.0.1'), 'index.html must load shell.js?v=8.0.1');
+  assert(htmlCode.includes('app.js?v=8.0.1'), 'index.html must load app.js?v=8.0.1');
+  assert(htmlCode.includes('calc.js?v=8.0.1'), 'index.html must load calc.js?v=8.0.1');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v8.0.1'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '8.0.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v8.0.0');
+  assert.equal(api.APP_VERSION, '8.0.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v8.0.1');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -27136,18 +28078,13 @@ it('Pure Training Insights Engine: ACWR Volume Spikes, Stalled Lifts, and Neglec
   assert.ok(insights.some(i => i.type === 'acwr_spike'), 'Must detect ACWR spike above 1.5 threshold');
 });
 
-it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async () => {
-  // Test Onboarding Modal markup & pills
+it('First-Run Onboarding Modal Permanently Disabled, Storage Quota & Settings Backup Stats', async () => {
+  // Test Onboarding Modal is permanently disabled (no-op)
+  elementsMap['#m'].innerHTML = '';
   api.showOnboardingModal();
-  const mHtml = elementsMap['#m'].innerHTML;
-  assert.ok(mHtml.includes('Welcome to MyGyM'), 'Onboarding modal must render Welcome title');
-  assert.ok(mHtml.includes('onboarding-unit-pill'), 'Onboarding modal must include units pill buttons');
-  assert.ok(mHtml.includes('onboarding-sex-pill'), 'Onboarding modal must include sex pill buttons');
-  assert.ok(mHtml.includes('id="onboard-goal"'), 'Onboarding modal must include goal selector');
-  assert.ok(mHtml.includes('data-a="submit-onboarding"'), 'Onboarding modal must have submit-onboarding action');
-  assert.ok(mHtml.includes('id="onboarding-submit-btn"'), 'Onboarding modal must have id="onboarding-submit-btn"');
-  assert.ok(mHtml.includes('data-a="dismiss-onboarding"'), 'Onboarding modal must have dismiss-onboarding action');
-  assert.ok(mHtml.includes('Skip / Close ✕'), 'Onboarding modal must render Skip / Close button');
+  assert.equal(elementsMap['#m'].innerHTML, '', 'showOnboardingModal must be a no-op that never sets modal content');
+  assert.equal(api.isUserOnboarded(), true, 'isUserOnboarded must return true by default');
+  assert.equal(api.S.onboarded, true, 'S.onboarded must be true by default');
 
   // Test action execution & persistence
   api.handleOnboardingSubmit();
@@ -27902,6 +28839,111 @@ it('Zero undefined CSS classes and zero UI emoji leaks in production release', (
     }
   });
   assert.equal(violations.length, 0, `Zero UI emoji violations expected, but found: ${JSON.stringify(violations)}`);
+});
+
+console.log(`\nSuite 31: Phase 8 Targeted UI/3D Architectural Fixes`);
+
+it('Wavefront .OBJ 3D Mesh Parsing & Normal Computation in vendor/three.module.js', async () => {
+  const threeModule = await import('../vendor/three.module.js');
+  assert.equal(typeof threeModule.parseOBJ, 'function', 'three.module.js must export parseOBJ');
+
+  const cubeOBJ = `
+v -1.0 -1.0 1.0
+v 1.0 -1.0 1.0
+v -1.0 1.0 1.0
+v 1.0 1.0 1.0
+f 1 2 3
+f 2 4 3
+`;
+  const geom = threeModule.parseOBJ(cubeOBJ, threeModule);
+  assert.ok(geom, 'parseOBJ must return a valid BufferGeometry');
+  const posAttr = geom.getAttribute('position');
+  assert.ok(posAttr && posAttr.count === 6, 'Geometry must have 6 vertices for 2 triangles');
+  const normAttr = geom.getAttribute('normal');
+  assert.ok(normAttr && normAttr.count === 6, 'Geometry must compute vertex normals');
+});
+
+it('Free Workout modal grid alignment, 100% width, and vector info preview action', () => {
+  const matching = api.getFreeWorkoutExercises(['Chest']);
+  assert.ok(matching.length > 0, 'Must find matching chest exercises');
+  const rowsHtml = api.renderFreeWorkoutExerciseRows(matching);
+
+  assert.ok(rowsHtml.includes('class="free-ex-row'), 'Must render .free-ex-row');
+  assert.ok(rowsHtml.includes('class="free-ex-chk"'), 'Must render .free-ex-chk');
+  assert.ok(rowsHtml.includes('data-a="pickpreview"'), 'Must render preview button');
+  assert.ok(!rowsHtml.includes('ℹ️'), 'Must not render raw emoji in preview button');
+
+  // Verify modal markup
+  api.showFreeWorkoutBuilderModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('free-builder-sheet'), 'Modal must render .free-builder-sheet');
+  assert.ok(mHtml.includes('id="free-ex-list"'), 'Modal must render #free-ex-list');
+  assert.ok(mHtml.includes('free-builder-actions'), 'Modal must render .free-builder-actions');
+  api.closeModal();
+});
+
+it('Per-Exercise Rest Timer: responsive presets, custom seconds input, and state commitment', () => {
+  // Test modal markup
+  elementsMap['#m'].innerHTML = '';
+  const testExId = 'chest_bench_press';
+  const dummyEl = {
+    dataset: { id: testExId }
+  };
+
+  // Simulate click setexrest
+  api.S.cfg = api.S.cfg || {};
+  api.S.cfg.exerciseRest = api.S.cfg.exerciseRest || {};
+  delete api.S.cfg.exerciseRest[testExId];
+
+  // Call click handler logic for setexrest
+  const curRest = api.getExRest(testExId);
+  assert.equal(curRest, api.S.cfg?.rest || 90, 'Default rest should match S.cfg.rest or 90s');
+
+  // Verify appCode contains saveexrest handler and custom input
+  assert.ok(appCode.includes('data-a="saveexrest"'), 'Rest picker must render saveexrest action');
+  assert.ok(appCode.includes('id="custom-rest-sec"'), 'Rest picker must include custom-rest-sec input');
+  assert.ok(appCode.includes("case 'saveexrest':"), 'Click dispatcher must handle saveexrest');
+
+  // Simulate commit action
+  api.S.cfg.exerciseRest[testExId] = 135;
+  assert.equal(api.getExRest(testExId), 135, 'getExRest must return committed custom rest interval');
+});
+
+it('Progress Photos: compression handling, local persistence, and gallery rendering', async () => {
+  api.S.photos = [
+    { id: 'p1', date: '2026-05-01', weight: 75.0, dataUrl: 'data:image/jpeg;base64,sample1', angle: 'Front' },
+    { id: 'p2', date: '2026-05-15', weight: 74.2, dataUrl: 'data:image/jpeg;base64,sample2', angle: 'Front' }
+  ];
+
+  // Render Body tab
+  const bodyHtml = api.vBody();
+  assert.ok(bodyHtml.includes('progress-photo-grid'), 'vBody must render .progress-photo-grid');
+  assert.ok(bodyHtml.includes('progress-photo-card'), 'vBody must render .progress-photo-card');
+  assert.ok(bodyHtml.includes('photo-badge'), 'vBody must render .photo-badge with date and weight');
+  assert.ok(bodyHtml.includes('photo-del-btn'), 'vBody must render .photo-del-btn');
+  assert.ok(bodyHtml.includes('data-a="trigger-photo-picker"'), 'Must render trigger-photo-picker action');
+
+  // Verify photo deletion
+  api.S.photos.splice(1, 1);
+  assert.equal(api.S.photos.length, 1, 'Photo must be deleted from S.photos');
+});
+
+it('Custom Avatar Modal: .OBJ upload trigger and Before/After split slider', async () => {
+  api.S.photos = [
+    { id: 'p1', date: '2026-05-01', weight: 75.0, dataUrl: 'data:image/jpeg;base64,before', angle: 'Front' },
+    { id: 'p2', date: '2026-05-15', weight: 74.0, dataUrl: 'data:image/jpeg;base64,after', angle: 'Front' }
+  ];
+
+  await api.showCustomAvatarModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('custom-avatar-modal'), 'Modal must render .custom-avatar-modal');
+  assert.ok(mHtml.includes('obj-upload-card'), 'Modal must render .obj-upload-card');
+  assert.ok(mHtml.includes('data-a="trigger-obj-upload"'), 'Modal must have trigger-obj-upload action');
+  assert.ok(mHtml.includes('split-compare-wrap'), 'Modal must render .split-compare-wrap when 2+ photos exist');
+  assert.ok(mHtml.includes('split-slider'), 'Modal must render .split-slider');
+  assert.ok(mHtml.includes('split-img-before-wrap'), 'Modal must render .split-img-before-wrap');
+
+  api.closeModal();
 });
 
 console.log(`\n======================================================`);

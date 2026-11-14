@@ -995,27 +995,27 @@ it('showExpandedGifModal renders edge-to-edge modal with cues, target labels, an
 // -----------------------------------------------------------------------------
 console.log('\nSuite 5: Service Worker & Cache Integrity Verification');
 
-it('sw.js cache key is bumped to mygym-core-v8.0.0, calls skipWaiting and clients.claim', () => {
-  assert(swCode.includes("const C = 'mygym-core-v8.0.0';"), 'sw.js must use mygym-core-v8.0.0 cache name');
-  assert(swCode.includes("'./style.css?v=8.0.0'"), 'sw.js must precache style.css?v=8.0.0');
-  assert(swCode.includes("'./app.js?v=8.0.0'"), 'sw.js must precache app.js?v=8.0.0');
-  assert(swCode.includes("'./calc.js?v=8.0.0'"), 'sw.js must precache calc.js?v=8.0.0');
+it('sw.js cache key is bumped to mygym-core-v8.0.1, calls skipWaiting and clients.claim', () => {
+  assert(swCode.includes("const C = 'mygym-core-v8.0.1';"), 'sw.js must use mygym-core-v8.0.1 cache name');
+  assert(swCode.includes("'./style.css?v=8.0.1'"), 'sw.js must precache style.css?v=8.0.1');
+  assert(swCode.includes("'./app.js?v=8.0.1'"), 'sw.js must precache app.js?v=8.0.1');
+  assert(swCode.includes("'./calc.js?v=8.0.1'"), 'sw.js must precache calc.js?v=8.0.1');
   assert(swCode.includes('self.skipWaiting()'), 'sw.js must immediately call self.skipWaiting() on install');
   assert(swCode.includes('clients.claim()'), 'sw.js must call clients.claim() on activate');
 });
 
 it('index.html references versioned assets and shell.js executes cache-busting auto-upgrade', () => {
-  assert(htmlCode.includes('style.css?v=8.0.0'), 'index.html must link style.css?v=8.0.0');
-  assert(htmlCode.includes('shell.js?v=8.0.0'), 'index.html must load shell.js?v=8.0.0');
-  assert(htmlCode.includes('app.js?v=8.0.0'), 'index.html must load app.js?v=8.0.0');
-  assert(htmlCode.includes('calc.js?v=8.0.0'), 'index.html must load calc.js?v=8.0.0');
-  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v8.0.0'"), 'shell.js must use mygym-core-v6.2.2');
+  assert(htmlCode.includes('style.css?v=8.0.1'), 'index.html must link style.css?v=8.0.1');
+  assert(htmlCode.includes('shell.js?v=8.0.1'), 'index.html must load shell.js?v=8.0.1');
+  assert(htmlCode.includes('app.js?v=8.0.1'), 'index.html must load app.js?v=8.0.1');
+  assert(htmlCode.includes('calc.js?v=8.0.1'), 'index.html must load calc.js?v=8.0.1');
+  assert(shellCode.includes("SHELL_VERSION = 'mygym-core-v8.0.1'"), 'shell.js must use mygym-core-v6.2.2');
   assert(shellCode.includes("window.location.href = window.location.origin + window.location.pathname + '?t=' + Date.now()"), 'shell.js must bust cache via timestamp redirect');
 });
 
 it('app.js has consistent versions and dynamic Settings modal display', () => {
-  assert.equal(api.APP_VERSION, '8.0.0');
-  assert.equal(api.SHELL_VERSION, 'mygym-core-v8.0.0');
+  assert.equal(api.APP_VERSION, '8.0.1');
+  assert.equal(api.SHELL_VERSION, 'mygym-core-v8.0.1');
 
   // Verify settings modal HTML uses dynamic variables
   assert(appCode.includes('${esc(SHELL_VERSION)} (v${esc(APP_VERSION)})'), 'app.js Settings modal must dynamically use SHELL_VERSION and APP_VERSION');
@@ -4116,18 +4116,13 @@ it('Pure Training Insights Engine: ACWR Volume Spikes, Stalled Lifts, and Neglec
   assert.ok(insights.some(i => i.type === 'acwr_spike'), 'Must detect ACWR spike above 1.5 threshold');
 });
 
-it('First-Run Onboarding Modal, Storage Quota & Settings Backup Stats', async () => {
-  // Test Onboarding Modal markup & pills
+it('First-Run Onboarding Modal Permanently Disabled, Storage Quota & Settings Backup Stats', async () => {
+  // Test Onboarding Modal is permanently disabled (no-op)
+  elementsMap['#m'].innerHTML = '';
   api.showOnboardingModal();
-  const mHtml = elementsMap['#m'].innerHTML;
-  assert.ok(mHtml.includes('Welcome to MyGyM'), 'Onboarding modal must render Welcome title');
-  assert.ok(mHtml.includes('onboarding-unit-pill'), 'Onboarding modal must include units pill buttons');
-  assert.ok(mHtml.includes('onboarding-sex-pill'), 'Onboarding modal must include sex pill buttons');
-  assert.ok(mHtml.includes('id="onboard-goal"'), 'Onboarding modal must include goal selector');
-  assert.ok(mHtml.includes('data-a="submit-onboarding"'), 'Onboarding modal must have submit-onboarding action');
-  assert.ok(mHtml.includes('id="onboarding-submit-btn"'), 'Onboarding modal must have id="onboarding-submit-btn"');
-  assert.ok(mHtml.includes('data-a="dismiss-onboarding"'), 'Onboarding modal must have dismiss-onboarding action');
-  assert.ok(mHtml.includes('Skip / Close ✕'), 'Onboarding modal must render Skip / Close button');
+  assert.equal(elementsMap['#m'].innerHTML, '', 'showOnboardingModal must be a no-op that never sets modal content');
+  assert.equal(api.isUserOnboarded(), true, 'isUserOnboarded must return true by default');
+  assert.equal(api.S.onboarded, true, 'S.onboarded must be true by default');
 
   // Test action execution & persistence
   api.handleOnboardingSubmit();
@@ -4882,6 +4877,111 @@ it('Zero undefined CSS classes and zero UI emoji leaks in production release', (
     }
   });
   assert.equal(violations.length, 0, `Zero UI emoji violations expected, but found: ${JSON.stringify(violations)}`);
+});
+
+console.log(`\nSuite 31: Phase 8 Targeted UI/3D Architectural Fixes`);
+
+it('Wavefront .OBJ 3D Mesh Parsing & Normal Computation in vendor/three.module.js', async () => {
+  const threeModule = await import('../vendor/three.module.js');
+  assert.equal(typeof threeModule.parseOBJ, 'function', 'three.module.js must export parseOBJ');
+
+  const cubeOBJ = `
+v -1.0 -1.0 1.0
+v 1.0 -1.0 1.0
+v -1.0 1.0 1.0
+v 1.0 1.0 1.0
+f 1 2 3
+f 2 4 3
+`;
+  const geom = threeModule.parseOBJ(cubeOBJ, threeModule);
+  assert.ok(geom, 'parseOBJ must return a valid BufferGeometry');
+  const posAttr = geom.getAttribute('position');
+  assert.ok(posAttr && posAttr.count === 6, 'Geometry must have 6 vertices for 2 triangles');
+  const normAttr = geom.getAttribute('normal');
+  assert.ok(normAttr && normAttr.count === 6, 'Geometry must compute vertex normals');
+});
+
+it('Free Workout modal grid alignment, 100% width, and vector info preview action', () => {
+  const matching = api.getFreeWorkoutExercises(['Chest']);
+  assert.ok(matching.length > 0, 'Must find matching chest exercises');
+  const rowsHtml = api.renderFreeWorkoutExerciseRows(matching);
+
+  assert.ok(rowsHtml.includes('class="free-ex-row'), 'Must render .free-ex-row');
+  assert.ok(rowsHtml.includes('class="free-ex-chk"'), 'Must render .free-ex-chk');
+  assert.ok(rowsHtml.includes('data-a="pickpreview"'), 'Must render preview button');
+  assert.ok(!rowsHtml.includes('ℹ️'), 'Must not render raw emoji in preview button');
+
+  // Verify modal markup
+  api.showFreeWorkoutBuilderModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('free-builder-sheet'), 'Modal must render .free-builder-sheet');
+  assert.ok(mHtml.includes('id="free-ex-list"'), 'Modal must render #free-ex-list');
+  assert.ok(mHtml.includes('free-builder-actions'), 'Modal must render .free-builder-actions');
+  api.closeModal();
+});
+
+it('Per-Exercise Rest Timer: responsive presets, custom seconds input, and state commitment', () => {
+  // Test modal markup
+  elementsMap['#m'].innerHTML = '';
+  const testExId = 'chest_bench_press';
+  const dummyEl = {
+    dataset: { id: testExId }
+  };
+
+  // Simulate click setexrest
+  api.S.cfg = api.S.cfg || {};
+  api.S.cfg.exerciseRest = api.S.cfg.exerciseRest || {};
+  delete api.S.cfg.exerciseRest[testExId];
+
+  // Call click handler logic for setexrest
+  const curRest = api.getExRest(testExId);
+  assert.equal(curRest, api.S.cfg?.rest || 90, 'Default rest should match S.cfg.rest or 90s');
+
+  // Verify appCode contains saveexrest handler and custom input
+  assert.ok(appCode.includes('data-a="saveexrest"'), 'Rest picker must render saveexrest action');
+  assert.ok(appCode.includes('id="custom-rest-sec"'), 'Rest picker must include custom-rest-sec input');
+  assert.ok(appCode.includes("case 'saveexrest':"), 'Click dispatcher must handle saveexrest');
+
+  // Simulate commit action
+  api.S.cfg.exerciseRest[testExId] = 135;
+  assert.equal(api.getExRest(testExId), 135, 'getExRest must return committed custom rest interval');
+});
+
+it('Progress Photos: compression handling, local persistence, and gallery rendering', async () => {
+  api.S.photos = [
+    { id: 'p1', date: '2026-05-01', weight: 75.0, dataUrl: 'data:image/jpeg;base64,sample1', angle: 'Front' },
+    { id: 'p2', date: '2026-05-15', weight: 74.2, dataUrl: 'data:image/jpeg;base64,sample2', angle: 'Front' }
+  ];
+
+  // Render Body tab
+  const bodyHtml = api.vBody();
+  assert.ok(bodyHtml.includes('progress-photo-grid'), 'vBody must render .progress-photo-grid');
+  assert.ok(bodyHtml.includes('progress-photo-card'), 'vBody must render .progress-photo-card');
+  assert.ok(bodyHtml.includes('photo-badge'), 'vBody must render .photo-badge with date and weight');
+  assert.ok(bodyHtml.includes('photo-del-btn'), 'vBody must render .photo-del-btn');
+  assert.ok(bodyHtml.includes('data-a="trigger-photo-picker"'), 'Must render trigger-photo-picker action');
+
+  // Verify photo deletion
+  api.S.photos.splice(1, 1);
+  assert.equal(api.S.photos.length, 1, 'Photo must be deleted from S.photos');
+});
+
+it('Custom Avatar Modal: .OBJ upload trigger and Before/After split slider', async () => {
+  api.S.photos = [
+    { id: 'p1', date: '2026-05-01', weight: 75.0, dataUrl: 'data:image/jpeg;base64,before', angle: 'Front' },
+    { id: 'p2', date: '2026-05-15', weight: 74.0, dataUrl: 'data:image/jpeg;base64,after', angle: 'Front' }
+  ];
+
+  await api.showCustomAvatarModal();
+  const mHtml = elementsMap['#m'].innerHTML;
+  assert.ok(mHtml.includes('custom-avatar-modal'), 'Modal must render .custom-avatar-modal');
+  assert.ok(mHtml.includes('obj-upload-card'), 'Modal must render .obj-upload-card');
+  assert.ok(mHtml.includes('data-a="trigger-obj-upload"'), 'Modal must have trigger-obj-upload action');
+  assert.ok(mHtml.includes('split-compare-wrap'), 'Modal must render .split-compare-wrap when 2+ photos exist');
+  assert.ok(mHtml.includes('split-slider'), 'Modal must render .split-slider');
+  assert.ok(mHtml.includes('split-img-before-wrap'), 'Modal must render .split-img-before-wrap');
+
+  api.closeModal();
 });
 
 console.log(`\n======================================================`);

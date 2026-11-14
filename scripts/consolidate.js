@@ -27,6 +27,9 @@ const files = [
   'scripts/bump-version.js',
   'scripts/generate-exercise-kinds.js',
   'scripts/capture-screens.js',
+  'scripts/check-css-classes.js',
+  'scripts/check-no-ui-emoji.js',
+  'scripts/layout-audit.js',
   'scripts/consolidate.js',
   'tests/test_production_issues.js'
 ];

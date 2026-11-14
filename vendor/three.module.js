@@ -209,6 +209,29 @@ export class Vector3 {
     return this;
   }
 
+  subVectors(a, b) {
+    this.x = a.x - b.x;
+    this.y = a.y - b.y;
+    this.z = a.z - b.z;
+    return this;
+  }
+
+  addVectors(a, b) {
+    this.x = a.x + b.x;
+    this.y = a.y + b.y;
+    this.z = a.z + b.z;
+    return this;
+  }
+
+  transformDirection(m) {
+    const x = this.x, y = this.y, z = this.z;
+    const e = m.elements;
+    this.x = e[0] * x + e[4] * y + e[8] * z;
+    this.y = e[1] * x + e[5] * y + e[9] * z;
+    this.z = e[2] * x + e[6] * y + e[10] * z;
+    return this.normalize();
+  }
+
   applyMatrix4(m) {
     const x = this.x, y = this.y, z = this.z;
     const e = m.elements;
@@ -845,6 +868,49 @@ export class BufferGeometry {
     };
   }
 
+  computeVertexNormals() {
+    const pos = this.attributes.position;
+    if (!pos) return;
+    const normals = new Float32Array(pos.count * 3);
+    const pA = new Vector3(), pB = new Vector3(), pC = new Vector3();
+    const cb = new Vector3(), ab = new Vector3();
+
+    if (this.index) {
+      const idx = this.index;
+      for (let i = 0; i < idx.length; i += 3) {
+        const vA = idx[i] * 3, vB = idx[i + 1] * 3, vC = idx[i + 2] * 3;
+        pA.set(pos.array[vA], pos.array[vA + 1], pos.array[vA + 2]);
+        pB.set(pos.array[vB], pos.array[vB + 1], pos.array[vB + 2]);
+        pC.set(pos.array[vC], pos.array[vC + 1], pos.array[vC + 2]);
+        cb.subVectors(pC, pB);
+        ab.subVectors(pA, pB);
+        cb.cross(ab).normalize();
+        for (const v of [vA, vB, vC]) {
+          normals[v] += cb.x; normals[v + 1] += cb.y; normals[v + 2] += cb.z;
+        }
+      }
+    } else {
+      for (let i = 0; i < pos.count; i += 3) {
+        const vA = i * 3, vB = (i + 1) * 3, vC = (i + 2) * 3;
+        pA.set(pos.array[vA], pos.array[vA + 1], pos.array[vA + 2]);
+        pB.set(pos.array[vB], pos.array[vB + 1], pos.array[vB + 2]);
+        pC.set(pos.array[vC], pos.array[vC + 1], pos.array[vC + 2]);
+        cb.subVectors(pC, pB);
+        ab.subVectors(pA, pB);
+        cb.cross(ab).normalize();
+        for (const v of [vA, vB, vC]) {
+          normals[v] = cb.x; normals[v + 1] = cb.y; normals[v + 2] = cb.z;
+        }
+      }
+    }
+    for (let i = 0; i < normals.length; i += 3) {
+      const x = normals[i], y = normals[i + 1], z = normals[i + 2];
+      const len = Math.hypot(x, y, z) || 1;
+      normals[i] = x / len; normals[i + 1] = y / len; normals[i + 2] = z / len;
+    }
+    this.setAttribute('normal', new BufferAttribute(normals, 3));
+  }
+
   dispose() {
     this.attributes = {};
     this.index = null;
@@ -1156,20 +1222,34 @@ export class WebGLRenderer {
 
       void main() {
         vec3 normal = normalize(vNormal);
-        vec3 lit = ambientColor;
+        vec3 viewDir = normalize(vViewPosition);
+
+        // Balanced ambient base
+        vec3 lit = ambientColor * 0.45;
+
+        // Balanced Half-Lambert diffuse lighting: wraps around anatomical curvature
         if (numDirLights > 0) {
           for (int i = 0; i < 3; i++) {
             if (i >= numDirLights) break;
             vec3 lDir = normalize(dirLightDirections[i]);
-            float nDotL = max(dot(normal, lDir), 0.0);
-            lit += dirLightColors[i] * nDotL;
+            float hDotL = dot(normal, lDir) * 0.5 + 0.5;
+            float diffuseFactor = hDotL * hDotL;
+            lit += dirLightColors[i] * diffuseFactor * 0.8;
           }
         } else {
-          vec3 lightDir = normalize(lightDirection);
-          float nDotL = max(dot(normal, lightDir), 0.0);
-          lit += lightColor * nDotL;
+          vec3 lDir = normalize(lightDirection);
+          float hDotL = dot(normal, lDir) * 0.5 + 0.5;
+          float diffuseFactor = hDotL * hDotL;
+          lit += lightColor * diffuseFactor * 0.8;
         }
-        vec3 color = diffuse * lit + emissive;
+
+        // Rim lighting to accentuate muscle silhouettes and depth
+        float rim = 1.0 - max(dot(normal, viewDir), 0.0);
+        float rimFactor = smoothstep(0.45, 0.95, rim) * 0.35;
+        vec3 rimColor = vec3(0.55, 0.75, 1.0) * rimFactor;
+
+        vec3 color = diffuse * lit + rimColor + emissive;
+        color = clamp(color, 0.0, 1.0);
         gl_FragColor = vec4(color, opacity);
       }
     `;
@@ -1249,9 +1329,10 @@ export class WebGLRenderer {
     gl.useProgram(this.program);
 
     // Extract lighting from scene
+    const viewMatrix = camera.matrixWorldInverse;
     let amb = new Color(0.55, 0.58, 0.62);
     let dirColor = new Color(1.0, 0.98, 0.95);
-    let dirVector = new Vector3(0.5, 1.0, 0.8).normalize();
+    let dirVector = new Vector3(0.5, 1.0, 0.8).transformDirection(viewMatrix).normalize();
     const dirColors = [];
     const dirDirs = [];
 
@@ -1261,7 +1342,7 @@ export class WebGLRenderer {
           amb = node.color.clone().multiplyScalar(node.intensity || 1);
         } else if (node.type === 'DirectionalLight') {
           const col = node.color.clone().multiplyScalar(node.intensity || 1);
-          const dir = node.position.clone().normalize();
+          const dir = node.position.clone().transformDirection(viewMatrix).normalize();
           if (dirColors.length === 0) {
             dirColor = col;
             dirVector = dir;
@@ -1287,7 +1368,6 @@ export class WebGLRenderer {
     gl.uniformMatrix4fv(this.uniforms.projectionMatrix, false, camera.projectionMatrix.elements);
 
     // Render meshes
-    const viewMatrix = camera.matrixWorldInverse;
     const modelView = new Matrix4();
     const normalMatrix = new Matrix3();
 
@@ -1362,4 +1442,87 @@ export class WebGLRenderer {
       this.domElement.parentNode.removeChild(this.domElement);
     }
   }
+}
+
+// ---- Lightweight Wavefront .OBJ Parser ----
+export function parseOBJ(text, THREEInstance = null) {
+  if (typeof text !== 'string') return new BufferGeometry();
+  const THREE = THREEInstance || {
+    BufferGeometry,
+    BufferAttribute,
+    Vector3
+  };
+
+  const lines = text.split('\n');
+  const vertices = [];
+  const vertexNormals = [];
+  const positions = [];
+  const normals = [];
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;
+    const parts = line.split(/\s+/);
+    const type = parts[0];
+
+    if (type === 'v') {
+      vertices.push(parseFloat(parts[1]) || 0, parseFloat(parts[2]) || 0, parseFloat(parts[3]) || 0);
+    } else if (type === 'vn') {
+      vertexNormals.push(parseFloat(parts[1]) || 0, parseFloat(parts[2]) || 0, parseFloat(parts[3]) || 0);
+    } else if (type === 'f') {
+      const faceVerts = parts.slice(1);
+      // Fan triangulation for convex polygons (e.g. quads f 1 2 3 4 -> 1 2 3, 1 3 4)
+      for (let i = 1; i < faceVerts.length - 1; i++) {
+        const tri = [faceVerts[0], faceVerts[i], faceVerts[i + 1]];
+        for (const corner of tri) {
+          const segs = corner.split('/');
+          const vIdx = (parseInt(segs[0], 10) - 1) * 3;
+          if (vIdx >= 0 && vIdx + 2 < vertices.length) {
+            positions.push(vertices[vIdx], vertices[vIdx + 1], vertices[vIdx + 2]);
+          }
+          if (segs[2]) {
+            const vnIdx = (parseInt(segs[2], 10) - 1) * 3;
+            if (vnIdx >= 0 && vnIdx + 2 < vertexNormals.length) {
+              normals.push(vertexNormals[vnIdx], vertexNormals[vnIdx + 1], vertexNormals[vnIdx + 2]);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  if (positions.length > 0) {
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
+    if (normals.length === positions.length) {
+      geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(normals), 3));
+    } else if (typeof geometry.computeVertexNormals === 'function') {
+      geometry.computeVertexNormals();
+    }
+    geometry.computeBoundingBox();
+
+    // Scale and center model so it fits the viewport
+    if (geometry.boundingBox) {
+      const box = geometry.boundingBox;
+      const sizeX = box.max.x - box.min.x;
+      const sizeY = box.max.y - box.min.y;
+      const sizeZ = box.max.z - box.min.z;
+      const maxDim = Math.max(sizeX, sizeY, sizeZ) || 1;
+      const targetHeight = 3.6;
+      const scaleFactor = targetHeight / maxDim;
+      const centerX = (box.min.x + box.max.x) * 0.5;
+      const centerY = (box.min.y + box.max.y) * 0.5;
+      const centerZ = (box.min.z + box.max.z) * 0.5;
+
+      const posArr = geometry.attributes.position.array;
+      for (let i = 0; i < posArr.length; i += 3) {
+        posArr[i] = (posArr[i] - centerX) * scaleFactor;
+        posArr[i + 1] = (posArr[i + 1] - centerY) * scaleFactor + 0.35;
+        posArr[i + 2] = (posArr[i + 2] - centerZ) * scaleFactor;
+      }
+      geometry.computeBoundingBox();
+    }
+  }
+
+  return geometry;
 }

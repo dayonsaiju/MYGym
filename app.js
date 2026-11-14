@@ -183,24 +183,7 @@ const put = async (k, v) => {
 
 // Synchronous Gate Function: permanently prevent redundant onboarding prompts
 function isUserOnboarded() {
-  try {
-    if (typeof localStorage !== 'undefined') {
-      if (localStorage.getItem('mygym_onboarded') === 'true') return true;
-      if (localStorage.getItem('mygym_shell_onboarded') === 'true') return true;
-      if (localStorage.getItem('lift_onboarded') === 'true') return true;
-      // If user already has any logged workouts or saved weights, they are onboarded
-      const weights = localStorage.getItem('lift_weights');
-      if (weights && weights !== '[]' && weights !== 'null') return true;
-      const logs = localStorage.getItem('lift_logs');
-      if (logs && logs !== '[]' && logs !== 'null') return true;
-    }
-    if (typeof S !== 'undefined' && S) {
-      if (S?.cfg?.onboarded === true || S?.onboarded === true) return true;
-      if (Array.isArray(S?.weights) && S.weights.length > 0) return true;
-      if (Array.isArray(S?.logs) && S.logs.length > 0) return true;
-    }
-  } catch (_) {}
-  return false;
+  return true;
 }
 if (typeof window !== 'undefined') window.isUserOnboarded = isUserOnboarded;
 
@@ -208,10 +191,12 @@ const SCHEMA_VERSION = 4;
 
 let S = {
   schemaVersion: SCHEMA_VERSION,
+  onboarded: true,
   routines: [],
   logs: [],
   weights: [],
   cfg: {
+    onboarded: true,
     rest: 90,
     flash: true,
     sound: true,
@@ -229,6 +214,7 @@ let S = {
   act: ls.get('act') || null,
   deload: { active: false, startedAt: null, lastDeloadDate: null },
   customExercises: ls.get('customExercises') || [],
+  photos: ls.get('photos') || [],
   nutrition: ls.get('nutrition') || {
     targetCals: 2100,
     targetProtein: 140,
@@ -327,8 +313,8 @@ async function runMigrations(state = S) {
   return state.schemaVersion;
 }
 
-const APP_VERSION = '8.0.0';
-const SHELL_VERSION = 'mygym-core-v8.0.0';
+const APP_VERSION = '8.0.1';
+const SHELL_VERSION = 'mygym-core-v8.0.1';
 
 let view = 'train', P, E, U, wl, ac, tt;
 let pickQuery = '', pickCategory = 'All', workTimerInterval = null;
@@ -371,7 +357,7 @@ const fmtDur = ms => {
 };
 
 const save = (...args) => {
-  if (args.length === 2 && typeof args[0] === 'string') {
+  if (args.length === 2 && typeof args[0] === 'string' && (!(args[1] in S) || args[1] === null)) {
     const [k, v] = args;
     if (k in S) S[k] = v;
     return put(k, v);
@@ -834,7 +820,8 @@ const IC = {
   helpCircle: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
   apple: '<path d="M12 20.94c1.5 0 2.75 1.06 4 1.06 3 0 6-8 6-12.22A4.91 4.91 0 0 0 17 5c-2.22 0-4 1.44-5 2-1-.56-2.78-2-5-2a4.9 4.9 0 0 0-5 4.78C2 14 5 22 8 22c1.25 0 2.5-1.06 4-1.06Z"/><path d="M10 2c1 .5 2 2 2 5"/>',
   eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
-  eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+  eyeOff: '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>',
+  camera: '<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'
 };
 
 const icon = (name, opts = {}) => {
@@ -1319,15 +1306,15 @@ async function init3DViewer(options = {}) {
   container.innerHTML = '';
   container.appendChild(renderer.domElement);
 
-  // Lighting
-  const ambLight = new THREE.AmbientLight(0xFFFFFF, 0.7);
+  // Lighting (balanced Half-Lambert + rim lighting; clamped to prevent silhouette blowout)
+  const ambLight = new THREE.AmbientLight(0xFFFFFF, 0.45);
   scene.add(ambLight);
 
-  const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.85);
+  const dirLight1 = new THREE.DirectionalLight(0xFFFFFF, 0.75);
   dirLight1.position.set(3, 4, 5);
   scene.add(dirLight1);
 
-  const dirLight2 = new THREE.DirectionalLight(0x60A5FA, 0.4);
+  const dirLight2 = new THREE.DirectionalLight(0x60A5FA, 0.35);
   dirLight2.position.set(-3, -2, -3);
   scene.add(dirLight2);
 
@@ -1567,6 +1554,36 @@ async function init3DViewer(options = {}) {
       }
       camera.position.set(0, 0.4, 5.2);
     },
+    loadCustomOBJ(text) {
+      try {
+        if (!THREE || typeof THREE.parseOBJ !== 'function') return false;
+        const geom = THREE.parseOBJ(text, THREE);
+        if (!geom) return false;
+        scene.remove(model);
+        model.traverse(obj => {
+          if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+          if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+        });
+        const mat = new THREE.MeshLambertMaterial({ color: 0x3b82f6 });
+        const mesh = new THREE.Mesh(geom, mat);
+        model = new THREE.Group();
+        model.add(mesh);
+        scene.add(model);
+        return true;
+      } catch (err) {
+        console.warn('Failed to load custom OBJ:', err);
+        return false;
+      }
+    },
+    resetToMannequin() {
+      scene.remove(model);
+      model.traverse(obj => {
+        if (obj.geometry && typeof obj.geometry.dispose === 'function') obj.geometry.dispose();
+        if (obj.material && typeof obj.material.dispose === 'function') obj.material.dispose();
+      });
+      model = buildProceduralAnatomyModel(THREE, currentGender, primaryMuscles, secondaryMuscles, currentProgress);
+      scene.add(model);
+    },
     toggleAutoRotate(val) {
       autoRotate = val != null ? val : !autoRotate;
       return autoRotate;
@@ -1575,6 +1592,13 @@ async function init3DViewer(options = {}) {
       return autoRotate;
     }
   };
+
+  try {
+    const savedOBJ = await get('custom_avatar_obj');
+    if (savedOBJ) {
+      viewerInstance.loadCustomOBJ(savedOBJ);
+    }
+  } catch (_) {}
 
   active3DViewer = viewerInstance;
   return viewerInstance;
@@ -1621,6 +1645,7 @@ function show3DAnatomyModal(primaryMuscles = [], secondaryMuscles = []) {
       <button class="chip" data-a="toggle-3d-gender" id="gender-3d-btn" style="font-weight:700;">Silhouette: <span id="gender-3d-label">${currentGender === 'female' ? 'Female' : 'Male'}</span></button>
       <button class="chip on" data-a="toggle-3d-autorotate" id="autorotate-3d-btn">🔄 Auto-Rotate: ON</button>
       <button class="chip" data-a="reset-3d-view">↺ Reset View</button>
+      <button class="chip" data-a="open-custom-avatar">${ic('box', 14)} My Photo / Custom 3D (.OBJ)</button>
     </div>
     <div class="canvas-3d-wrap" id="anatomy-3d-canvas-wrap">
       <div class="canvas-3d-hint">👆 Drag to 360° rotate · Pinch to zoom · Tap muscle to explore</div>
@@ -1709,6 +1734,7 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
       <button class="chip" data-a="toggle-3d-gender" id="gender-3d-btn" style="font-weight:700;">Silhouette: <span id="gender-3d-label">${currentGender === 'female' ? 'Female' : 'Male'}</span></button>
       <button class="chip on" data-a="toggle-3d-autorotate" id="autorotate-3d-btn">🔄 Auto-Rotate: ON</button>
       <button class="chip" data-a="reset-3d-view">↺ Reset</button>
+      <button class="chip" data-a="open-custom-avatar">${ic('box', 14)} My Photo / Custom 3D (.OBJ)</button>
     </div>
     <div class="canvas-3d-wrap" id="physique-3d-canvas-wrap">
       <div class="canvas-3d-hint">Scrub slider below to inspect 3D V-taper, waist & chest progression</div>
@@ -1768,6 +1794,201 @@ function show3DPhysiqueModal(initialProgress = 0.5) {
       }
     }, 60);
   });
+}
+
+async function showCustomAvatarModal() {
+  const hasCustomOBJ = !!(await get('custom_avatar_obj'));
+  const photos = S.photos || [];
+  const hasPhotos = photos.length >= 2;
+
+  modal(`
+    <div class="modal-header">
+      <h3 class="modal-title">My Photo / Custom 3D (.OBJ)</h3>
+      <button class="modal-close-btn" data-a="close">✕</button>
+    </div>
+    <div class="custom-avatar-modal" style="padding:10px 0;">
+      <div class="obj-upload-card">
+        <h4 style="margin:0 0 6px 0;">Wavefront 3D Mesh (.OBJ)</h4>
+        <p class="t2 sm" style="margin:0 0 12px 0;">Import a 3D body scan or customized humanoid OBJ mesh. The geometry will be auto-centered and normalized.</p>
+        <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn s sm-btn" data-a="trigger-obj-upload">${ic('upload', 14)} Upload .OBJ File</button>
+          ${hasCustomOBJ ? `<button class="btn s sm-btn outline" data-a="reset-custom-obj">Reset to Mannequin</button>` : ''}
+        </div>
+        <input type="file" id="custom-obj-picker" accept=".obj,text/plain" style="display:none">
+      </div>
+
+      <div class="card" style="padding:14px;margin-top:14px;">
+        <h4 style="margin:0 0 6px 0;">Physique Reference Photos</h4>
+        <p class="t2 sm" style="margin:0 0 12px 0;">Upload Front, Side, or Back photos to track real transformation alongside 3D visualizations.</p>
+        <button class="btn s sm-btn" data-a="trigger-physique-photo-upload" style="margin-bottom:12px;">${ic('camera', 14)} Add Physique Photo</button>
+        <input type="file" id="custom-physique-photo-input" accept="image/*" style="display:none">
+
+        ${hasPhotos ? `
+          <div style="margin-top:12px;">
+            <div class="t2 sm" style="font-weight:700;margin-bottom:6px;">Before & After Interactive Split</div>
+            <div class="split-compare-wrap" id="split-compare-container">
+              <img class="split-img-after" src="${esc(photos[photos.length - 1].dataUrl || photos[photos.length - 1].data)}" alt="Latest Photo">
+              <div class="split-img-before-wrap" id="split-before-wrap" style="width:50%;">
+                <img class="split-img-before" id="split-before-img" src="${esc(photos[0].dataUrl || photos[0].data)}" alt="Baseline Photo">
+              </div>
+              <input type="range" min="0" max="100" value="50" class="split-slider" id="split-slider-input">
+              <div class="split-label-before">Baseline (${esc(formatStandardDate(photos[0].date))})</div>
+              <div class="split-label-after">Current (${esc(formatStandardDate(photos[photos.length - 1].date))})</div>
+            </div>
+            <div class="t2 sm" style="text-align:center;margin-top:4px;">Drag the slider to compare baseline vs current</div>
+          </div>
+        ` : `
+          <div class="t2 sm" style="text-align:center;padding:12px 0;">Add at least 2 photos to unlock the interactive Before/After split slider.</div>
+        `}
+      </div>
+    </div>
+  `);
+
+  setTimeout(() => {
+    const slider = document.getElementById('split-slider-input');
+    const wrap = document.getElementById('split-before-wrap');
+    if (slider && wrap) {
+      slider.oninput = (e) => {
+        wrap.style.width = `${e.target.value}%`;
+      };
+    }
+  }, 0);
+}
+
+async function handleCustomOBJUpload(file) {
+  if (!file) return;
+  try {
+    const text = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+
+    const THREE = await lazyLoadThree();
+    if (!THREE || typeof THREE.parseOBJ !== 'function') {
+      toast('3D engine not ready');
+      return;
+    }
+    const geom = THREE.parseOBJ(text, THREE);
+    if (!geom) {
+      toast('Invalid or empty OBJ file');
+      return;
+    }
+
+    await put('custom_avatar_obj', text);
+    try { ls.set('custom_avatar_obj', text); } catch (_) {}
+
+    if (active3DViewer && typeof active3DViewer.loadCustomOBJ === 'function') {
+      active3DViewer.loadCustomOBJ(text);
+    }
+    toast('Custom 3D avatar loaded successfully!');
+    closeModal();
+  } catch (err) {
+    console.error('Failed to parse OBJ file:', err);
+    toast('Error reading .OBJ file');
+  }
+}
+
+async function resetCustomOBJ() {
+  await put('custom_avatar_obj', null);
+  try { ls.set('custom_avatar_obj', null); } catch (_) {}
+  if (active3DViewer && typeof active3DViewer.resetToMannequin === 'function') {
+    active3DViewer.resetToMannequin();
+  }
+  toast('Reset to default anatomy mannequin');
+  closeModal();
+}
+
+async function handleProgressPhotoUpload(file) {
+  if (!file) return;
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+    // Compress to max 900x900 JPEG 0.78 quality (~120KB) on offscreen canvas
+    const compressedDataUrl = await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxDim = 900;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.78));
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    });
+
+    const latestW = S.weights?.length ? S.weights[S.weights.length - 1].w : (S.cfg?.physique?.weight || null);
+    const dateKey = (typeof Calc !== 'undefined' && Calc.toLocalDateKey)
+      ? Calc.toLocalDateKey(new Date())
+      : new Date().toISOString().slice(0, 10);
+
+    const newPhoto = {
+      id: uid(),
+      date: dateKey,
+      weight: latestW,
+      dataUrl: compressedDataUrl,
+      data: compressedDataUrl,
+      angle: 'Front'
+    };
+
+    if (!Array.isArray(S.photos)) S.photos = [];
+    S.photos.push(newPhoto);
+
+    await save('photos');
+    try { ls.set('photos', S.photos); } catch (_) {}
+    toast('Progress photo saved!');
+    render();
+  } catch (err) {
+    console.error('Photo upload error:', err);
+    toast('Failed to process photo');
+  }
+}
+
+function showPhotoDetailModal(idx) {
+  const photos = S.photos || [];
+  const ph = photos[idx];
+  if (!ph) return;
+
+  const hasCompare = photos.length >= 2;
+
+  modal(`
+    <div class="modal-header">
+      <h3 class="modal-title">Progress Photo · ${esc(formatStandardDate(ph.date))}</h3>
+      <button class="modal-close-btn" data-a="close">✕</button>
+    </div>
+    <div style="text-align:center;padding:10px 0;">
+      <div style="position:relative;display:inline-block;max-width:100%;border-radius:12px;overflow:hidden;background:#000;">
+        <img src="${esc(ph.dataUrl || ph.data)}" alt="Progress" style="max-width:100%;max-height:60vh;display:block;margin:0 auto;object-fit:contain;">
+      </div>
+      <div style="margin-top:10px;font-size:13px;color:var(--t2);">
+        Recorded on ${esc(formatStandardDate(ph.date))}${ph.weight != null ? ` · Bodyweight: <b>${ph.weight}kg</b>` : ''}
+      </div>
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:14px;flex-wrap:wrap;">
+        ${hasCompare ? `<button class="btn s sm-btn" data-a="open-custom-avatar">Compare Before / After</button>` : ''}
+        <button class="btn s sm-btn outline" data-a="delphoto" data-idx="${idx}" style="color:var(--rd);border-color:var(--rd);">Delete Photo</button>
+      </div>
+    </div>
+  `);
 }
 
 function animateCounter(el, start, end, duration = 800, suffix = '') {
@@ -2560,6 +2781,10 @@ let modalViewportHandler = null;
 let prevActiveElement = null;
 
 const modal = (h, opts = {}) => {
+  const contentStr = (h && typeof h === 'object' && h instanceof SafeHTML) ? h.str : String(h ?? '');
+  if (contentStr.includes('Welcome to MyGyM') || contentStr.includes('Personalize your offline training profile')) {
+    return;
+  }
   const m = $('#m');
   if (!m) return;
   if (typeof document !== 'undefined') {
@@ -3445,7 +3670,7 @@ function renderFreeWorkoutExerciseRows(exercises) {
             ${esc(e.tg || e.g)} · ${esc(e.eq)}
           </div>
         </div>
-        <button class="chip ex-preview-btn" data-a="pickpreview" data-id="${esc(e.id)}" title="Preview Exercise">ℹ️</button>
+        <button class="chip ex-preview-btn" data-a="pickpreview" data-id="${esc(e.id)}" title="Preview Exercise">${ic('info', 16)}</button>
       </div>
     `;
   }).join('');
@@ -3461,7 +3686,7 @@ function showFreeWorkoutBuilderModal() {
   modal(`
     <div class="free-builder-sheet">
       <div class="free-builder-header">
-        <h2>⚡ Build Custom Session</h2>
+        <h2>${ic('zap', 18)} Build Custom Session</h2>
         <p class="t2 sm" style="margin-top:2px;margin-bottom:10px">Target specific muscles for today's workout without saving a routine.</p>
       </div>
 
@@ -3477,13 +3702,13 @@ function showFreeWorkoutBuilderModal() {
         <button class="btn s sm-btn" data-a="clearfreesel" style="font-size:11px;padding:2px 8px">Clear</button>
       </div>
 
-      <div id="free-ex-list" class="card" style="max-height:46vh;overflow-y:auto;padding:0 10px;margin-bottom:14px">
+      <div id="free-ex-list" class="card" style="width:100%;max-width:100%;box-sizing:border-box;max-height:46vh;overflow-y:auto;padding:0 8px;margin:0 0 14px 0">
         ${renderFreeWorkoutExerciseRows(matching)}
       </div>
 
       <div class="free-builder-actions">
         <button class="btn free-start-btn" data-a="startfreesession">
-          ⚡ Start Session (${freeWorkoutSelectedEx.size} Exercises)
+          ${ic('zap', 16)} Start Session (${freeWorkoutSelectedEx.size} Exercises)
         </button>
         <button class="btn s outline" data-a="closemodal">Cancel</button>
       </div>
@@ -6823,23 +7048,26 @@ function vBody() {
         `<button class="btn" data-a="logweight" style="width:auto;flex:1;margin:0">Save Entry</button>` +
       `</div>` +
     `</div>` +
-    `<h2>Progress Photos 📸</h2>` +
+    `<h2>Progress Photos ${ic('camera', 18)}</h2>` +
     `<div class="card" style="padding:14px">` +
       `<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">` +
         `<div class="t2 sm">Stored locally on your device in offline storage.</div>` +
-        `<label class="btn s sm-btn" style="cursor:pointer;margin:0">` +
-          `📷 Add Photo` +
+        `<div>` +
+          `<button class="btn s sm-btn" data-a="trigger-photo-picker" style="cursor:pointer;margin:0">` +
+            `${ic('camera', 14)} Add Photo` +
+          `</button>` +
           `<input type="file" id="progress-photo-picker" accept="image/*" style="display:none">` +
-        `</label>` +
+        `</div>` +
       `</div>` +
-      `<div id="progress-photos-gallery" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(80px, 1fr));gap:8px">` +
+      `<div id="progress-photos-gallery" class="progress-photo-grid">` +
         `${(S.photos || []).map((ph, idx) => `
-          <div style="position:relative;border-radius:8px;overflow:hidden;aspect-ratio:1;background:var(--c2)">
-            <img src="${esc(ph.data)}" alt="Progress ${esc(ph.date)}" style="width:100%;height:100%;object-fit:cover">
-            <button class="chip" data-a="delphoto" data-idx="${idx}" style="position:absolute;top:2px;right:2px;padding:1px 4px;font-size:9px;background:rgba(0,0,0,0.6);color:#fff">✕</button>
+          <div class="progress-photo-card" data-a="view-photo-modal" data-idx="${idx}">
+            <img src="${esc(ph.dataUrl || ph.data)}" alt="Progress ${esc(ph.date)}" loading="lazy">
+            <div class="photo-badge">${esc(formatStandardDate(ph.date))}${ph.weight != null ? ` · ${ph.weight}kg` : ''}</div>
+            <button class="photo-del-btn" data-a="delphoto" data-idx="${idx}" title="Delete Photo">✕</button>
           </div>
         `).join('')}` +
-        `${!(S.photos && S.photos.length) ? '<div class="t2 sm" style="grid-column:1/-1;text-align:center;padding:12px 0">No progress photos saved yet.</div>' : ''}` +
+        `${!(S.photos && S.photos.length) ? '<div class="t2 sm" style="grid-column:1/-1;text-align:center;padding:18px 0">No progress photos saved yet. Tap "Add Photo" to capture your baseline!</div>' : ''}` +
       `</div>` +
     `</div>` +
     `<h2>Measurement History</h2>` +
@@ -7848,107 +8076,14 @@ function handleOnboardingSubmit() {
     if (typeof document !== 'undefined' && document.body) {
       document.body.style.overflow = '';
     }
-    toast('Welcome to MyGyM!');
+    toast('Profile updated');
     render();
     save('cfg', 'weights');
   }
 }
 
-function showOnboardingModal(force = false) {
-  if (!force && isUserOnboarded()) {
-    return;
-  }
-  const age = S.cfg?.physique?.age ? String(S.cfg.physique.age) : '';
-  const height = S.cfg?.physique?.height ? String(S.cfg.physique.height) : '';
-  const weight = S.weights?.at(-1)?.w ? String(S.weights.at(-1).w) : (S.cfg?.physique?.weight ? String(S.cfg.physique.weight) : '');
-  const unit = S.cfg?.unit || S.cfg?.units || 'kg';
-  const sex = S.cfg?.bodyModel || S.cfg?.sex || 'male';
-  const goal = S.cfg?.physique?.goalType || S.cfg?.goalType || 'hypertrophy';
-  const weekStart = S.cfg?.weekStartDay || 'mon';
-
-  modal(`
-    <div class="card onboarding-card" style="padding:18px">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-        <span style="font-size:18px;">🏋️</span>
-        <button type="button" class="x" data-a="dismiss-onboarding" style="font-size:14px; font-weight:700; color:var(--ac); cursor:pointer;">Skip / Close ✕</button>
-      </div>
-
-      <div style="text-align:center;margin-bottom:14px">
-        <h2 style="margin:4px 0 2px">Welcome to MyGyM</h2>
-        <p class="t2 sm" style="margin:0">Personalize your offline training profile</p>
-      </div>
-
-      <form id="onboarding-form" onsubmit="event.preventDefault()">
-        <div class="settings-row" style="margin-bottom:10px">
-          <span class="settings-label">Preferred Units</span>
-          <div class="chips" id="onboard-units-group" style="margin:0;display:flex;gap:6px">
-            <button type="button" class="chip onboarding-unit-pill ${unit === 'kg' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="kg">kg</button>
-            <button type="button" class="chip onboarding-unit-pill ${unit === 'lbs' ? 'on active' : ''}" data-a="toggle-onboard-unit" data-val="lbs">lbs</button>
-          </div>
-        </div>
-
-        <div class="settings-row" style="margin-bottom:10px">
-          <span class="settings-label">Biological Sex</span>
-          <div class="chips" id="onboard-sex-group" style="margin:0;display:flex;gap:6px">
-            <button type="button" class="chip onboarding-sex-pill ${sex === 'male' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="male">Male</button>
-            <button type="button" class="chip onboarding-sex-pill ${sex === 'female' ? 'on active' : ''}" data-a="toggle-onboard-sex" data-val="female">Female</button>
-          </div>
-        </div>
-
-        <div class="row g" style="margin-bottom:10px">
-          <div style="flex:1">
-            <label class="t2 sm" for="onboard-age">Age (years)</label>
-            <input type="number" id="onboard-age" name="age" class="txt" value="${age}" placeholder="e.g. 25" min="12" max="100" style="width:100%;padding:8px">
-          </div>
-          <div style="flex:1">
-            <label class="t2 sm" for="onboard-height">Height (cm)</label>
-            <input type="number" id="onboard-height" name="height" class="txt" value="${height}" placeholder="e.g. 175" min="100" max="250" style="width:100%;padding:8px">
-          </div>
-          <div style="flex:1">
-            <label class="t2 sm" for="onboard-weight">Weight (${esc(unit)})</label>
-            <input type="number" id="onboard-weight" name="weight" class="txt" value="${weight}" placeholder="e.g. 72" step="0.5" min="30" max="300" style="width:100%;padding:8px">
-          </div>
-        </div>
-
-        <div class="settings-row" style="margin-bottom:10px">
-          <span class="settings-label">Primary Training Goal</span>
-          <select id="onboard-goal" name="goal" class="settings-select" style="max-width:180px">
-            <option value="hypertrophy" ${goal === 'hypertrophy' || goal === 'bulk' ? 'selected' : ''}>Muscle Hypertrophy</option>
-            <option value="strength" ${goal === 'strength' ? 'selected' : ''}>Raw Strength</option>
-            <option value="fat_loss" ${goal === 'fat_loss' || goal === 'cut' ? 'selected' : ''}>Fat Loss / Conditioning</option>
-            <option value="maintenance" ${goal === 'maintenance' || goal === 'recomp' ? 'selected' : ''}>Maintenance</option>
-          </select>
-        </div>
-
-        <div class="settings-row" style="margin-bottom:14px">
-          <span class="settings-label">Week Start Day</span>
-          <select id="onboard-weekstart" name="weekstart" class="settings-select" style="max-width:180px">
-            <option value="mon" ${weekStart === 'mon' ? 'selected' : ''}>Monday (00:00)</option>
-            <option value="sun" ${weekStart === 'sun' ? 'selected' : ''}>Sunday (00:00)</option>
-          </select>
-        </div>
-
-        <button type="button" class="btn" id="onboarding-submit-btn" data-a="submit-onboarding" style="width:100%;min-height:46px;font-weight:700">Get Started 🚀</button>
-      </form>
-    </div>
-  `, { hideClose: false });
-
-  setTimeout(() => {
-    const submitBtn = document.getElementById('onboarding-submit-btn');
-    if (submitBtn) {
-      submitBtn.onclick = (e) => {
-        if (e && e.preventDefault) e.preventDefault();
-        handleOnboardingSubmit();
-      };
-    }
-    const dismissBtns = document.querySelectorAll('[data-a="dismiss-onboarding"]');
-    dismissBtns.forEach(b => {
-      b.onclick = (e) => {
-        if (e && e.preventDefault) e.preventDefault();
-        handleOnboardingSubmit();
-      };
-    });
-  }, 0);
+function showOnboardingModal() {
+  return;
 }
 
 // ---- Settings Modal (Clean Separation of App Prefs, Cache, Data Management) ----
@@ -11472,32 +11607,49 @@ document.addEventListener('click', async e => {
       const restIntervals = [30, 45, 60, 90, 120, 150, 180, 240, 300];
       modal(`
         <div class="card" style="padding:16px">
-          <h3 style="margin-top:0">⏱️ Rest Interval for ${esc(exInfo?.name || 'Exercise')}</h3>
+          <h3 style="margin-top:0">${ic('timer', 18)} Rest Interval for ${esc(exInfo?.name || 'Exercise')}</h3>
           <p class="t2 sm">Set specific rest interval for this movement (defaults to ${S.cfg?.rest || 90}s):</p>
           <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin:16px 0">
             ${restIntervals.map(sec => `
-              <button class="chip ${sec === curRest ? 'on' : ''}" data-a="commit-ex-rest" data-id="${esc(exId)}" data-sec="${sec}" style="min-height:44px;justify-content:center;font-weight:700">
+              <button class="chip ${sec === curRest ? 'on' : ''}" data-a="saveexrest" data-id="${esc(exId)}" data-sec="${sec}" style="min-height:44px;justify-content:center;font-weight:700">
                 ${sec >= 60 ? (sec / 60) + ' min' : sec + ' sec'}
               </button>
             `).join('')}
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+            <input type="number" id="custom-rest-sec" class="txt" min="5" max="900" value="${curRest}" style="flex:1" placeholder="Custom seconds">
+            <button class="btn s sm-btn" data-a="saveexrest" data-id="${esc(exId)}" data-custom="1" style="min-width:64px">Save</button>
           </div>
           <button class="btn s sm-btn" data-a="close" style="width:100%">Cancel</button>
         </div>
       `);
       return;
     }
+    case 'saveexrest':
+    case 'pickexrest':
+    case 'setexrestval':
     case 'commit-ex-rest': {
       const exId = t.dataset.id;
-      const sec = Number(t.dataset.sec) || 90;
+      let sec = Number(t.dataset.sec);
+      if (t.dataset.custom === '1' || !sec) {
+        const inp = document.getElementById('custom-rest-sec');
+        if (inp && inp.value) {
+          sec = parseInt(inp.value, 10);
+        }
+      }
+      if (!sec || isNaN(sec) || sec < 5) sec = 90;
       if (exId) {
         S.cfg = S.cfg || {};
         S.cfg.exerciseRest = S.cfg.exerciseRest || {};
         S.cfg.exerciseRest[exId] = sec;
         save('cfg');
+        try { ls.set('cfg', S.cfg); } catch (_) {}
         closeModal();
-        toast(`⏱️ Custom rest timer set to ${sec}s for this exercise`);
+        toast('Rest timer set to ' + sec + 's');
         if (view === 'work' && S.act) {
           switchWorkExercise(S.act.curEx || 0, false);
+        } else {
+          render();
         }
       }
       return;
@@ -11543,11 +11695,43 @@ document.addEventListener('click', async e => {
       }
       return;
     }
+    case 'open-custom-avatar': {
+      showCustomAvatarModal();
+      return;
+    }
+    case 'trigger-obj-upload': {
+      const picker = document.getElementById('custom-obj-picker');
+      if (picker) picker.click();
+      return;
+    }
+    case 'reset-custom-obj': {
+      resetCustomOBJ();
+      return;
+    }
+    case 'trigger-physique-photo-upload': {
+      const picker = document.getElementById('custom-physique-photo-input');
+      if (picker) picker.click();
+      return;
+    }
+    case 'trigger-photo-picker': {
+      const picker = document.getElementById('progress-photo-picker');
+      if (picker) picker.click();
+      return;
+    }
+    case 'view-photo-modal': {
+      const idx = Number(t.dataset.idx);
+      if (Number.isInteger(idx)) {
+        showPhotoDetailModal(idx);
+      }
+      return;
+    }
     case 'delphoto': {
       const idx = Number(t.dataset.idx);
       if (Number.isInteger(idx) && S.photos && S.photos[idx]) {
         S.photos.splice(idx, 1);
         save('photos');
+        try { ls.set('photos', S.photos); } catch (_) {}
+        closeModal();
         toast('Progress photo deleted');
         render();
       }
@@ -12426,6 +12610,21 @@ document.addEventListener('blur', e => handleFieldUpdate(e.target), true);
 document.addEventListener('change', e => {
   const t = e.target;
   handleFieldUpdate(t);
+  if (t.id === 'progress-photo-picker' && t.files && t.files[0]) {
+    handleProgressPhotoUpload(t.files[0]);
+    t.value = '';
+    return;
+  }
+  if (t.id === 'custom-physique-photo-input' && t.files && t.files[0]) {
+    handleProgressPhotoUpload(t.files[0]);
+    t.value = '';
+    return;
+  }
+  if (t.id === 'custom-obj-picker' && t.files && t.files[0]) {
+    handleCustomOBJUpload(t.files[0]);
+    t.value = '';
+    return;
+  }
   if (t.id === 'f' && t.files[0]) {
     imp(t.files[0]);
     t.value = '';
@@ -12769,12 +12968,9 @@ async function init() {
   }
 
   render();
-  if (!isUserOnboarded()) {
-    showOnboardingModal();
-  }
   navigator.storage?.persist?.();
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js?v=8.0.0').then(reg => {
+    navigator.serviceWorker.register('./sw.js?v=8.0.1').then(reg => {
       reg.update();
     }).catch(err => console.warn('SW registration issue:', err));
 
@@ -12860,6 +13056,7 @@ if (typeof globalThis !== 'undefined') {
     WEEKLY_FREQ_TARGETS,
     getFreeWorkoutExercises,
     showFreeWorkoutBuilderModal,
+    renderFreeWorkoutExerciseRows,
     startFreeWorkout,
     FREE_WORKOUT_TARGETS,
     matchesSubMuscle,
@@ -12995,6 +13192,11 @@ if (typeof globalThis !== 'undefined') {
     init3DViewer,
     show3DAnatomyModal,
     show3DPhysiqueModal,
+    showCustomAvatarModal,
+    handleCustomOBJUpload,
+    resetCustomOBJ,
+    handleProgressPhotoUpload,
+    showPhotoDetailModal,
     close3DModal,
     animateCounter,
     renderVolumeRadarChart,

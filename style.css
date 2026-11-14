@@ -4301,6 +4301,17 @@ textarea.note:focus {
 .free-builder-sheet {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+#free-ex-list {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
 }
 
 .free-targets-label {
@@ -4317,10 +4328,13 @@ textarea.note:focus {
 }
 
 .free-ex-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 26px 48px minmax(0, 1fr) 36px;
   align-items: center;
   gap: 10px;
-  padding: 10px 4px;
+  width: 100%;
+  padding: 10px 8px;
+  box-sizing: border-box;
   border-bottom: 0.5px solid rgba(255, 255, 255, 0.06);
   cursor: pointer;
   touch-action: manipulation;
@@ -4336,10 +4350,11 @@ textarea.note:focus {
 }
 
 .free-ex-chk {
-  width: 22px;
-  height: 22px;
+  width: 22px !important;
+  height: 22px !important;
+  min-width: 22px;
+  margin: 0;
   accent-color: var(--ac);
-  flex: none;
   cursor: pointer;
 }
 
@@ -5597,8 +5612,11 @@ html, body, #v, main {
 }
 
 .free-builder-actions {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
   margin-top: 12px;
 }
 
@@ -6035,6 +6053,148 @@ html, body, #v, main {
     background-position: -200% 0;
   }
 }
+
+/* Custom Avatar & 3D .OBJ / Photo Modals */
+.custom-avatar-modal {
+  width: 100%;
+  max-width: 480px;
+  box-sizing: border-box;
+}
+
+.obj-upload-card {
+  background: var(--card-sub);
+  border: 1px dashed var(--bd);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  margin-bottom: 14px;
+}
+
+/* Progress Photos Grid & Cards */
+.progress-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.progress-photo-card {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+  aspect-ratio: 3 / 4;
+  background: var(--card-sub);
+  cursor: pointer;
+  border: 1px solid var(--bd);
+}
+
+.progress-photo-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-badge {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  right: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 6px;
+  background: rgba(0, 0, 0, 0.72);
+  color: #FFFFFF;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.photo-del-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
+  padding: 0;
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #FFFFFF;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  cursor: pointer;
+}
+
+/* Before / After Split Comparison Slider */
+.split-compare-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 380px;
+  aspect-ratio: 3 / 4;
+  margin: 12px auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+}
+
+.split-img-after {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.split-img-before-wrap {
+  position: absolute;
+  inset: 0;
+  width: 50%;
+  height: 100%;
+  overflow: hidden;
+  border-right: 2px solid var(--ac);
+}
+
+.split-img-before {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 380px;
+  height: 100%;
+  object-fit: cover;
+}
+
+.split-slider {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: ew-resize;
+  margin: 0;
+}
+
+.split-label-before, .split-label-after {
+  position: absolute;
+  bottom: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.75);
+  color: #fff;
+}
+
+.split-label-before { left: 8px; }
+.split-label-after { right: 8px; }
+
 
 
 
